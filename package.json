@@ -1,0 +1,37 @@
+{
+  "name": "cttrains-api",
+  "version": "1.0.0",
+  "description": "Unofficial API and scraper for Cape Town Trains (cttrains.co.za). Complete data extraction with 96 stations, schedule scraper, and technical documentation.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node src/test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Xhanti-mbasa/cttrains-api.git"
+  },
+  "keywords": [
+    "cape-town",
+    "trains",
+    "metrorail",
+    "timetable",
+    "api",
+    "south-africa"
+  ],
+  "author": "Xhanti-mbasa",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Xhanti-mbasa/cttrains-api/issues"
+  },
+  "homepage": "https://github.com/Xhanti-mbasa/cttrains-api#readme",
+  "dependencies": {
+    "axios": "^1.17.0",
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "node-cron": "^4.2.1"
+  }
+}
