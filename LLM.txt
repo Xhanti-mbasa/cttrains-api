@@ -1,0 +1,37 @@
+# CTTrains API - AI Context File
+
+Welcome, AI Agent! If you are reading this file, you have been tasked with understanding, modifying, or deploying the CTTrains API repository. This document provides the critical context you need to succeed.
+
+## SYSTEM CHECK PROTOCOL (MANDATORY)
+Before executing any deployment or installation commands, you MUST run the following commands to fingerprint the host system:
+1. `uname -a`
+2. `cat /etc/os-release`
+3. `node -v` (if applicable)
+4. `docker --version` (if applicable)
+
+Do not assume the operating system. The user may be running CachyOS (Arch), Ubuntu (Debian), or another Linux distribution. Adjust your `pacman` or `apt` package manager commands based on the `os-release` output.
+
+## Architecture Overview
+This project is an unofficial REST API and MCP (Model Context Protocol) Server for Cape Town Metrorail.
+- **Data Source:** It scrapes live data from `https://cttrains.co.za` using Cheerio and Axios.
+- **API Layer:** Node.js with Express.
+- **Caching:** Redis is used heavily (via `ioredis`) to cache schedules and service updates to prevent rate-limiting and bans from the target site. It falls back to an in-memory cache if Redis is unavailable.
+- **Scraper Design:** The target site recently shifted to a unified `GET /train-schedule.php` endpoint that returns Tailwind CSS-styled HTML cards. Our parsing logic relies on selecting `div` elements, not tables.
+
+## Model Context Protocol (MCP)
+This repository includes a fully functioning MCP server at `src/mcp-server.js` using the standard `stdio` transport. It exposes three tools to AI clients:
+1. `get_train_schedule`: Fetches A-to-B train times.
+2. `get_line_timetable`: Simulates a full-day line timetable using terminus stations.
+3. `get_service_updates`: Returns live disruption info.
+
+There is also a standalone bridge script at `src/gemini-client.js` designed to let users chat with Gemini natively in their terminal using the Gemini Developer API.
+
+## Requirements
+- Node.js >= 18
+- Redis (Optional but highly recommended for production)
+- Docker & Docker Compose (Optional, for containerized deployments)
+
+## Automated Setup
+To deploy this project, humans and agents should rely on the `setup.sh` script located in the root directory. It automatically installs Node, Redis, and Docker, and sets up the environment variables.
+
+If making changes to the scraper, ensure you test changes using `node src/test-live-scraper.js`.
