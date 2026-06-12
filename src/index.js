@@ -13,6 +13,7 @@ const cache = require('./utils/cache');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const startedAt = new Date().toISOString();
 
 // ── Middleware ──────────────────────────────────────────────────────────────
 app.use(cors());
@@ -43,12 +44,22 @@ app.get('/', (req, res) => {
 });
 
 // ── Health ──────────────────────────────────────────────────────────────────
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  const memUsage = process.memoryUsage();
+  const cacheStats = await cache.stats();
+
   res.json({
     status: 'ok',
     uptime_seconds: Math.floor(process.uptime()),
-    cache_entries: cache.size(),
     timestamp: new Date().toISOString(),
+    started_at: startedAt,
+    cache: cacheStats,
+    system: {
+      memory_usage_mb: Math.round(memUsage.rss / 1024 / 1024),
+      cpu_cores: require('os').cpus().length,
+      platform: process.platform,
+    },
+    source: 'https://github.com/Xhanti-mbasa/cttrains-api',
   });
 });
 
@@ -67,7 +78,7 @@ app.use(errorHandler);
 cron.schedule('*/5 5-23 * * 1-6', async () => {
   try {
     const updates = await scrapeServiceUpdates();
-    cache.set('service_updates', updates, 5 * 60);
+    await cache.set('service_updates', updates, 5 * 60);
     if (updates.length > 0) {
       console.log(`[cron] Refreshed ${updates.length} service update(s)`);
     }
@@ -77,9 +88,19 @@ cron.schedule('*/5 5-23 * * 1-6', async () => {
 }, { timezone: 'Africa/Johannesburg' });
 
 // ── Start ───────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`CTTrains API running on http://localhost:${PORT}`);
-  console.log('Disclaimer: Unofficial — not affiliated with Metrorail/PRASA');
+async function start() {
+  // Initialise Redis (no-op if REDIS_URL is not set)
+  await cache.initRedis();
+
+  app.listen(PORT, () => {
+    console.log(`CTTrains API running on http://localhost:${PORT}`);
+    console.log('Disclaimer: Unofficial — not affiliated with Metrorail/PRASA');
+  });
+}
+
+start().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });
 
 module.exports = app;

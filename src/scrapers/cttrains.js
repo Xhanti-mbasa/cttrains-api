@@ -3,7 +3,11 @@ const cheerio = require('cheerio');
 
 const BASE_URL = 'https://cttrains.co.za';
 
-// Maps line IDs to their route selector PHP page
+// The site has migrated all schedules to a unified GET endpoint
+const SCHEDULE_URL = `${BASE_URL}/train-schedule.php`;
+const STATUS_URL = `${BASE_URL}/status2.php`;
+
+// Deprecated URLs kept for backwards compatibility in the API routes
 const LINE_URLS = {
   southern:    `${BASE_URL}/ss_route_select.php`,
   cape_flats:  `${BASE_URL}/cf_route_select.php`,
@@ -12,45 +16,51 @@ const LINE_URLS = {
   monte_vista: `${BASE_URL}/mv_route_select.php`,
 };
 
-// Maps line IDs to their form action page (where results are posted to)
-const TIMETABLE_URLS = {
-  southern:    `${BASE_URL}/ss_timetable.php`,
-  cape_flats:  `${BASE_URL}/cf_timetable.php`,
-  central:     `${BASE_URL}/cl_timetable.php`,
-  northern:    `${BASE_URL}/nl_timetable.php`,
-  monte_vista: `${BASE_URL}/mv_timetable.php`,
+// Hardcoded terminus stations since the line-specific API was removed by the site
+const LINE_TERMINUS = {
+  southern: { from: 'Cape Town', to: "Simon's Town" },
+  cape_flats: { from: 'Cape Town', to: 'Retreat' },
+  central: { from: 'Cape Town', to: 'Chris Hani' },
+  northern: { from: 'Cape Town', to: 'Bellville' },
+  monte_vista: { from: 'Cape Town', to: 'Bellville' },
 };
 
-const CROSS_LINE_SEARCH_URL = `${BASE_URL}/train-form.php`;
-const CROSS_LINE_RESULTS_URL = `${BASE_URL}/train-results.php`;
-const STATUS_URL = `${BASE_URL}/status2.php`;
-
 const DEFAULT_HEADERS = {
-  'User-Agent': 'CTTrains-API/1.0 (https://github.com/Xhanti-mbasa/cttrains-api; unofficial community tool)',
+  'User-Agent': 'CTTrains-API/2.0 (https://github.com/Xhanti-mbasa/cttrains-api; unofficial community tool)',
   'Accept': 'text/html,application/xhtml+xml',
   'Accept-Language': 'en-ZA,en;q=0.9',
   'Referer': BASE_URL,
 };
 
 /**
- * Normalises a day-of-week string to the values cttrains.co.za uses.
- * @param {string} day  'weekday' | 'saturday' | 'monday-friday' | 'mon-fri' etc.
- * @returns {'Mon-Fri'|'Saturday'}
+ * Normalises a day-of-week string to a Date for the new date-based search.
  */
-function normaliseDays(day = 'weekday') {
-  const d = day.toLowerCase().trim();
-  if (d === 'saturday' || d === 'sat') return 'Saturday';
-  return 'Mon-Fri';
+function getNextDateForDayType(days = 'weekday') {
+  const now = new Date();
+  const d = days.toLowerCase();
+  if (d.includes('sat')) {
+    now.setDate(now.getDate() + ((6 - now.getDay() + 7) % 7 || 7));
+  } else if (d.includes('sun')) {
+    now.setDate(now.getDate() + ((0 - now.getDay() + 7) % 7 || 7));
+  } else {
+    if (now.getDay() === 0) now.setDate(now.getDate() + 1);
+    else if (now.getDay() === 6) now.setDate(now.getDate() + 2);
+  }
+  
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 /**
- * Scrapes schedule results from the cross-line station-to-station search.
+ * Scrapes schedule results from the new unified GET endpoint.
  *
  * @param {object} params
- * @param {string} params.from       Departure station name (exact, as on site)
+ * @param {string} params.from       Departure station name
  * @param {string} params.to         Arrival station name
  * @param {string} params.date       Travel date YYYY-MM-DD
- * @param {string} [params.time]     Departure time HH:MM (defaults to current time)
+ * @param {string} [params.time]     Departure time HH:MM
  * @returns {Promise<object[]>}
  */
 async function scrapeSchedule({ from, to, date, time }) {
@@ -59,18 +69,14 @@ async function scrapeSchedule({ from, to, date, time }) {
   const departureTime = time || '06:00';
 
   const params = new URLSearchParams({
-    dep_station: from,
-    arr_station: to,
-    travel_date: formattedDate,
-    dep_time: departureTime,
+    fromStation: from,
+    toStation: to,
+    travelDate: formattedDate,
+    departureTime: departureTime,
   });
 
-  const response = await axios.post(CROSS_LINE_RESULTS_URL, params.toString(), {
-    headers: {
-      ...DEFAULT_HEADERS,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Origin': BASE_URL,
-    },
+  const response = await axios.get(`${SCHEDULE_URL}?${params.toString()}`, {
+    headers: DEFAULT_HEADERS,
     timeout: 15000,
   });
 
@@ -78,52 +84,25 @@ async function scrapeSchedule({ from, to, date, time }) {
 }
 
 /**
- * Scrapes the full timetable for a specific line between two stations.
- *
- * @param {object} params
- * @param {string} params.line       Line ID
- * @param {string} params.from       Departure station
- * @param {string} params.to         Arrival station
- * @param {string} [params.days]     'weekday' or 'saturday'
- * @param {string} [params.searchBy] 'departure' | 'arrival' | 'all'
- * @param {string} [params.time]     HH:MM
- * @returns {Promise<object[]>}
+ * Simulates a full line timetable by querying the schedule between its terminus stations.
+ * The old PHP line endpoints (ss_timetable.php etc.) were removed from the site.
  */
-async function scrapeLineTimetable({ line, from, to, days = 'weekday', searchBy = 'departure', time = '06:00' }) {
-  const timetableUrl = TIMETABLE_URLS[line];
-  if (!timetableUrl) throw new Error(`Unknown line: ${line}`);
+async function scrapeLineTimetable({ line, from, to, days = 'weekday', searchBy = 'departure', time = '05:00' }) {
+  const terminus = LINE_TERMINUS[line] || LINE_TERMINUS.northern;
+  const queryFrom = from || terminus.from;
+  const queryTo = to || terminus.to;
+  const queryDate = getNextDateForDayType(days);
 
-  const [hour, minute] = (time || '06:00').split(':');
-  const dayParam = normaliseDays(days);
-  const searchByParam = searchBy === 'arrival' ? 'Arrival'
-    : searchBy === 'all' ? 'Show Entire Day'
-    : 'Departure';
-
-  const params = new URLSearchParams({
-    dep_station: from,
-    arr_station: to,
-    days: dayParam,
-    search_by: searchByParam,
-    hour,
-    minute: minute || '00',
+  return scrapeSchedule({
+    from: queryFrom,
+    to: queryTo,
+    date: queryDate,
+    time: time || '04:00'
   });
-
-  const response = await axios.post(timetableUrl, params.toString(), {
-    headers: {
-      ...DEFAULT_HEADERS,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Origin': BASE_URL,
-      'Referer': LINE_URLS[line] || BASE_URL,
-    },
-    timeout: 15000,
-  });
-
-  return parseScheduleResults(response.data, { from, to, line, days: dayParam });
 }
 
 /**
- * Parses schedule result HTML into a structured array.
- * The site renders results as an HTML table with train numbers and times.
+ * Parses the new Tailwind CSS card-based HTML into a structured array.
  *
  * @param {string} html
  * @param {object} context
@@ -133,57 +112,59 @@ function parseScheduleResults(html, context = {}) {
   const $ = cheerio.load(html);
   const results = [];
 
-  // The timetable is rendered as table rows — each row is one train service.
-  // Structure varies slightly per page; we handle the most common patterns.
-  $('table tr').each((i, row) => {
-    const cells = $(row).find('td');
-    if (cells.length < 2) return;
+  // Each route option is in a rounded card
+  $('.bg-white.rounded-lg.shadow-lg').each((i, el) => {
+    const block = $(el);
 
-    const firstCell = $(cells[0]).text().trim();
-    const secondCell = $(cells[1]).text().trim();
-
-    // Skip header rows
-    if (firstCell.toLowerCase().includes('train') || firstCell.toLowerCase().includes('depart')) return;
-
-    // Try to extract train number (format: T####)
-    const trainMatch = firstCell.match(/T\d{4}/i);
-    if (!trainMatch && !/^\d{2}:\d{2}$/.test(firstCell)) return;
+    // Train number string e.g. "Train number: 3500"
+    const headerText = block.find('.font-normal.text-base').text();
+    const trainMatch = headerText.match(/Train number:\s*(\w+)/i);
+    let trainNumber = trainMatch ? trainMatch[1].trim() : null;
+    
+    // Normalise to T####
+    if (trainNumber && /^\d+$/.test(trainNumber)) {
+      trainNumber = 'T' + trainNumber;
+    }
 
     const service = {
-      train_number: trainMatch ? trainMatch[0].toUpperCase() : null,
+      train_number: trainNumber ? trainNumber.toUpperCase() : null,
       departure_time: null,
       arrival_time: null,
+      platform: null,
       stops: [],
     };
 
-    // Collect all time cells from the row
-    const times = [];
-    cells.each((j, cell) => {
-      const text = $(cell).text().trim();
-      if (/^\d{2}:\d{2}$/.test(text)) times.push(text);
-    });
+    // The times are inside .space-y-3 > .station-time
+    const stationsList = block.find('.space-y-3');
+    
+    // First time is departure
+    const depTimeStr = stationsList.find('.station-time').first().text().trim();
+    if (/^\d{2}:\d{2}$/.test(depTimeStr)) service.departure_time = depTimeStr;
 
-    if (times.length >= 1) service.departure_time = times[0];
-    if (times.length >= 2) service.arrival_time = times[times.length - 1];
+    // Last time is arrival
+    const arrTimeStr = stationsList.find('.station-time').last().text().trim();
+    if (/^\d{2}:\d{2}$/.test(arrTimeStr)) service.arrival_time = arrTimeStr;
+
+    // Extract platform from any text in the block
+    const fullText = block.text();
+    const platformMatch = fullText.match(/(?:Platform|P)\s*(\d{1,2})\b/i);
+    if (platformMatch) {
+      service.platform = parseInt(platformMatch[1], 10);
+    }
+    
+    // Bonus: extract intermediate stops if available
+    stationsList.find('.intermediate-stops .flex').each((j, stopEl) => {
+      const sTime = $(stopEl).find('.station-time').text().trim();
+      const sName = $(stopEl).find('.station-name').text().trim();
+      if (sTime && sName) {
+        service.stops.push({ name: sName, time: sTime });
+      }
+    });
 
     if (service.departure_time || service.train_number) {
       results.push({ ...service, ...context });
     }
   });
-
-  // Fallback: try to extract any time pattern from the page if table parse yields nothing
-  if (results.length === 0) {
-    const timePattern = /T(\d{4})[^\d]*(\d{2}:\d{2})[^\d]*(\d{2}:\d{2})/g;
-    let match;
-    while ((match = timePattern.exec(html)) !== null) {
-      results.push({
-        train_number: `T${match[1]}`,
-        departure_time: match[2],
-        arrival_time: match[3],
-        ...context,
-      });
-    }
-  }
 
   return results;
 }
@@ -210,7 +191,6 @@ function parseServiceUpdates(html) {
   const $ = cheerio.load(html);
   const updates = [];
 
-  // Updates appear as paragraphs or list items on the status page
   const textBlocks = [];
   $('p, li, .update, .alert, .delay').each((i, el) => {
     const text = $(el).text().trim();
@@ -232,7 +212,6 @@ function parseServiceUpdates(html) {
  * @returns {object|null}
  */
 function parseUpdateBlock(text, idx) {
-  // Skip boilerplate text
   const skipPatterns = [
     /please note/i, /no association/i, /community service/i,
     /protection services/i, /transport information/i,
@@ -250,22 +229,18 @@ function parseUpdateBlock(text, idx) {
     published_at: new Date().toISOString(),
   };
 
-  // Extract train number
   const trainMatch = text.match(/T(\d{4})/i);
   if (trainMatch) update.train_number = `T${trainMatch[1]}`;
 
-  // Detect line
   if (/southern/i.test(text)) update.line = 'southern';
   else if (/northern/i.test(text)) update.line = 'northern';
   else if (/central/i.test(text)) update.line = 'central';
   else if (/cape flats/i.test(text)) update.line = 'cape_flats';
 
-  // Detect type
   if (/cancel/i.test(text)) update.type = 'cancellation';
   else if (/terminat/i.test(text)) update.type = 'truncation';
   else if (/delay/i.test(text) || /additional travel time/i.test(text)) update.type = 'delay';
 
-  // Extract delay range e.g. "15 - 20 minutes" or "20 - 30 minutes"
   const delayMatch = text.match(/(\d+)\s*[-–to]+\s*(\d+)\s*min/i);
   if (delayMatch) {
     update.delay_min = parseInt(delayMatch[1], 10);
