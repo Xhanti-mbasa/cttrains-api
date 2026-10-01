@@ -44,7 +44,37 @@ The `core` JVM tests cover captured live HTML for direct and transfer journeys, 
 ./gradlew :app:lintDebug :app:assembleDebug
 ```
 
-The repository's Android workflow performs these checks and uploads the APK and reports. It never publishes to the Play Store.
+The repository's **Android build and release** workflow runs a clean build, all JVM tests, debug and release lint, and both APK variants. It verifies the release APK signature and checks that it is not debuggable. It uploads the APK, SHA-256 checksum and reports. Pull requests run these checks without publishing or accessing production signing secrets.
+
+## GitHub Releases
+
+After this PR is merged, changes to `android/` on `main` automatically create a GitHub prerelease with the installable APK and checksum in the repository's **Releases** section. Each automatic build gets its own `android-v1.0.0-build.N` tag, pointing at the exact source commit.
+
+For a named version, push a tag or use **Actions → Android build and release → Run workflow** on `main`, and enter a tag such as `android-v1.0.1`:
+
+```bash
+git checkout main
+git pull
+git tag android-v1.0.1
+git push origin android-v1.0.1
+```
+
+`android/version.properties` stores the default app version. Named tags set the APK's version name; the workflow adds its run number to the base version code. The About screen displays the built version. Failed builds never publish a release. Publishing stages a draft until both assets are uploaded, and a rerun leaves an already published release unchanged.
+
+### Signing
+
+With no signing secrets configured, the workflow explicitly opts into **development signing** using an Android debug key. These release-variant APKs are installable and not debuggable, but are marked **prereleases** and labelled `development`. The key may change between workflow runs. If Android rejects an update due to a signature mismatch, uninstall the previous development build before installing the new one; this also removes its locally saved data.
+
+For stable production signing, add all four repository **Actions secrets** under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `CTTRAINS_KEYSTORE_BASE64` | Single-line Base64 of your private release keystore |
+| `CTTRAINS_KEYSTORE_PASSWORD` | Keystore password |
+| `CTTRAINS_KEY_ALIAS` | Signing key alias |
+| `CTTRAINS_KEY_PASSWORD` | Signing key password |
+
+Use the same private key for every production version. Keep it backed up privately and outside Git. Partial signing configuration fails explicitly. The decoded key is temporary, never included in artifacts, and removed after the build. A stable tag such as `android-v1.0.1` with all four secrets configured publishes a normal release; development signatures and tags with a suffix remain prereleases. The workflow does not publish to the Play Store.
 
 ## Data integration
 

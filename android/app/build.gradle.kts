@@ -4,6 +4,10 @@ plugins {
     kotlin("plugin.compose")
     kotlin("plugin.serialization")
 }
+val appVersion = java.util.Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
+}
+val releaseStore = System.getenv("CTTRAINS_KEYSTORE_PATH")
 android {
     namespace = "za.co.cttrains.app"
     compileSdk = 35
@@ -11,14 +15,35 @@ android {
         applicationId = "za.co.cttrains.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = (System.getenv("CTTRAINS_VERSION_CODE") ?: appVersion.getProperty("versionCode"))
+            .toInt().also { require(it > 0) { "versionCode must be positive" } }
+        versionName = System.getenv("CTTRAINS_VERSION_NAME") ?: appVersion.getProperty("versionName")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    signingConfigs {
+        if (!releaseStore.isNullOrBlank()) {
+            create("production") {
+                storeFile = file(releaseStore)
+                storePassword = requireNotNull(System.getenv("CTTRAINS_KEYSTORE_PASSWORD"))
+                keyAlias = requireNotNull(System.getenv("CTTRAINS_KEY_ALIAS"))
+                keyPassword = requireNotNull(System.getenv("CTTRAINS_KEY_PASSWORD"))
+            }
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            signingConfig = when {
+                !releaseStore.isNullOrBlank() -> signingConfigs.getByName("production")
+                // Explicit opt-in for installable GitHub prereleases; never a production key.
+                System.getenv("CTTRAINS_USE_DEVELOPMENT_SIGNING") == "true" -> signingConfigs.getByName("debug")
+                else -> null
+            }
+        }
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 dependencies {

@@ -9,6 +9,8 @@ An unofficial REST API and Model Context Protocol (MCP) server for Cape Town Met
 
 The [`android/`](android/README.md) directory contains a native **Kotlin + Jetpack Compose + Google Material 3** app with station-to-station search, transfer details, saved routes, offline timetable fallback and dark mode. Open `android/` in Android Studio to run it. The app connects directly to CT Trains and needs no API-server setup.
 
+The **Android build and release** GitHub Action tests, lints and builds both APK variants, then publishes a verified APK and checksum to GitHub Releases on Android changes to `main`, `android-v*` tags, or a manual run on `main`. Development-signed builds are labelled prereleases; optional private signing secrets support production releases. See the [release instructions](android/README.md#github-releases).
+
 > **Disclaimer:** This project is a community-built tool and is **not affiliated with or endorsed by Metrorail or PRASA**. 
 
 ---

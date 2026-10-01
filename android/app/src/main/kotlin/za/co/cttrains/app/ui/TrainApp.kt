@@ -37,6 +37,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import za.co.cttrains.app.TrainState
+import za.co.cttrains.app.BuildConfig
 import za.co.cttrains.app.TrainViewModel
 import za.co.cttrains.core.*
 
@@ -357,7 +358,7 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel) {
         Text("Timetables are not live tracking. Delays, cancelled services and platform changes may not appear here. The finder supports today through the end of next month and does not list Sunday or public-holiday services.")
         OutlinedButton(onClick = { uri.openUri("https://cttrains.co.za/train-form.php") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.AutoMirrored.Outlined.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Visit CT Trains") }
         TextButton(onClick = { uri.openUri("https://github.com/Xhanti-mbasa/cttrains-api") }) { Text("Source code on GitHub") }
-        Text("CT Trains for Android · 1.0.0", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("CT Trains for Android · ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("Clear saved timetables?") }, text = { Text("You’ll need an internet connection for your next search. Your favourite routes will stay saved.") }, confirmButton = { TextButton(onClick = { model.clearCache(); confirmClear = false }) { Text("Clear") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } })
 }
