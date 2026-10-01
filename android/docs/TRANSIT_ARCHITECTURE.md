@@ -7,25 +7,35 @@ The original product brief is preserved in [SMART_TRANSIT_VISION.md](SMART_TRANS
 | Capability | Implementation |
 | --- | --- |
 | Map-first home | 102 real station positions, station taps/search, pan/zoom, origin/destination selection |
-| Google Maps | Maps Compose SDK with build-time key and explicit opt-in; offline station map without a key |
+| Street maps | MapLibre Native/OpenFreeMap without a key or login; online mode, bounded SDK offline regions with progress/pause/delete, and station-atlas fallback |
 | Route visualization | Separate coloured train-leg connections over known stops; no invented track or walking geometry |
 | Timetables and fares | Direct CT Trains source and optional normalized server source; source/fetch date shown; exact-query/source offline cache |
-| Source switching | Available source chips. Both current adapters use CT Trains; external Google directions are a separate comparison |
+| Source switching | Available source chips. Both current adapters use CT Trains; source/query caches stay separate |
 | Favourites | Local favourite stations and routes, existing favourite routes migrated |
 | Profile and storage | Random local UUID, Room, Keystore encryption for personal record content, old DataStore migration |
-| Journey planning | Saved journeys, bounded custom reminder lead, user-entered access/buffer estimate and deterministic leave-by time |
-| Notifications | Permission-gated WorkManager reminders; cancelled when plan is removed; expired departures never notified |
-| Calendar | User-reviewed insert intent and app chooser, compatible with installed Google Calendar; no background sync/read permission |
-| Location | Optional coarse/fine permission, one balanced-power bounded foreground sample; forgotten when app backgrounds |
+| Journey planning | Building label, user-entered access/buffer estimate, deterministic leave-by time and custom lead before leaving |
+| Notifications | Permission-gated WorkManager reminders; up to three dismissal-triggered backups with individual delay/severity; acknowledgement stops the chain, expired departures are rejected |
+| Budget | Explicit source fare parsing, exact integer-cent totals, ticket/pass quantities and travellers; encrypted route/ticket-specific local corrections with source restoration |
+| Website tools | Updates/delays and early reporter browser links plus native fare/budget calculator; no automatic reports or invented live delays |
+| Calendar | User-reviewed insert intent and app chooser, works with an installed calendar app; no background sync/read permission |
+| Location | Optional coarse/fine permission, one bounded foreground sample via Android system providers; forgotten when app backgrounds |
 | Privacy | No account, hardware identifiers, analytics, cloud behavioral profile, health permission or background GPS. Reset deletes local personal data and cancels app reminders |
 
 Map display does not prove service availability. Timetable snapshots are not live train tracking. WorkManager delivery is approximate and may be delayed by Android battery controls. A saved plan is not recorded as an observed journey. Calendar events remain under the user's calendar account and are not deleted when local app data is reset.
 
 ## Boundaries
 
-`ui/` uses Navigation Compose and observes `TrainViewModel`. The ViewModel coordinates `data/`, `location/` and `scheduling/`. The `core` module contains normalized journeys, source/query validation, time arithmetic, cache policy and planning rules without Android dependencies. `data/LocalTransitStore` owns Room and the one-time migration; `SecureCodec` protects private payloads with an AES-GCM Android Keystore key. Public station positions and indexed scheduling timestamps are not encrypted. Backup and device transfer remain disabled; reinstall creates a new local UUID.
+`ui/` uses Navigation Compose and observes `TrainViewModel`. The ViewModel coordinates `data/`, `maps/`, `location/` and `scheduling/`. The `core` module contains normalized journeys, source/query validation, time arithmetic, cache policy and planning rules without Android dependencies. `data/LocalTransitStore` owns Room and the one-time migration; `SecureCodec` protects private payloads with an AES-GCM Android Keystore key. Public station positions and indexed scheduling timestamps are not encrypted. The separate MapLibre database stores unencrypted public map resources and region bounds; personal-data reset preserves map downloads, which have their own deletion controls. Backup and device transfer remain disabled; reinstall creates a new local UUID.
 
-`TrainRepository` presents normalized source results. The configured API adapter allows the scraper to run outside the Android app. The existing parser remains a direct-source fallback so the app still works without a deployment. Caches are keyed by source and exact query, with 12 entries/14-day limits. Personal preference updates are serialized. Reminder input contains only random journey/profile identifiers; the worker loads encrypted content locally. No personal profile, calendar content, health information or location is sent to the transit server.
+`TrainRepository` presents normalized source results. The configured API adapter allows the scraper to run outside the Android app. The existing parser remains a direct-source fallback so the app still works without a deployment. Caches are keyed by source and exact query, with 12 entries/14-day limits. Personal preference updates are serialized. Reminder input contains random journey/profile identifiers, generation tokens and stage numbers; the worker loads encrypted content locally. No personal profile, calendar content, health information or location is sent to the transit server.
+
+## Map and reminder boundaries
+
+`maps/MapEngine` controls a map-only HTTP client. Switching to Offline/Stations cancels in-flight map requests and disables the SDK network gate before the preference is persisted. The street view waits for loaded preferences, preserving offline mode across launches. Timetable/browser requests are independent. Online provider requests reveal viewed regions and IP; locally rendered station/route/location overlays are not posted to the map provider. Attribution stays visible. Offline definitions include style/sprites/fonts, cap zoom/area estimates, pause on backgrounding, and require explicit resume. The 200 MB budget is a soft download limit, not a guarantee of exact disk use.
+
+New plans schedule against leave-by time; legacy payloads default to departure-based reminders. `JourneyPlanning.afterDismiss` validates generation/stage and anchors each backup delay to the dismissal time. Atomic encrypted record updates prevent duplicate dismissal actions from advancing twice. Acknowledgement marks the chain stopped and cancels work/notifications. Backup work has distinct stage names and a per-journey tag; startup restoration checks history/generation before recovering missing work. Worker checks prevent stale profiles, generations, stages, stopped plans and past departures from posting. WorkManager and Android notification channels govern actual delivery; urgent does not bypass Do Not Disturb.
+
+`TripBudget` recognizes explicitly labelled rand amounts and never infers absent prices. Corrections use `(from, to, ticketId)` keys and timestamps; direction and pass type remain distinct. Quantity and traveller bounds keep exact-cent arithmetic finite. Native budget refresh uses the same validated query/source path as Plan; saved snapshots and their fetch time remain labelled. Corrections affect only local calculations.
 
 ## Normalized server contract
 

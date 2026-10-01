@@ -28,7 +28,8 @@ class MainActivity : ComponentActivity() {
         ViewModelProvider(this)[TrainViewModel::class.java].openScheduled(intent.getStringExtra("journey_id"))
     }
     override fun onStop() {
-        ViewModelProvider(this)[TrainViewModel::class.java].forgetLocation()
+        ViewModelProvider(this)[TrainViewModel::class.java].apply { forgetLocation(); offlineMaps.foreground(false) }
         super.onStop()
     }
+    override fun onStart() { super.onStart(); ViewModelProvider(this)[TrainViewModel::class.java].offlineMaps.foreground(true) }
 }

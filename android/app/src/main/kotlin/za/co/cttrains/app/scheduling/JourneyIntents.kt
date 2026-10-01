@@ -15,7 +15,5 @@ fun calendarIntent(item: ScheduledJourney): Intent = Intent(Intent.ACTION_INSERT
     putExtra(CalendarContract.Events.DESCRIPTION, journeyShareText(item.query, item.journey) + "\nSaved source: ${item.sourceId}. Calendar reminders are controlled by your calendar app.")
 }
 
-fun googleMapsJourneyUrl(query: SearchQuery): String = "https://www.google.com/maps/dir/".toUri().buildUpon()
-    .appendQueryParameter("api", "1").appendQueryParameter("origin", "${query.from} railway station, Western Cape, South Africa")
-    .appendQueryParameter("destination", "${query.to} railway station, Western Cape, South Africa")
-    .appendQueryParameter("travelmode", "transit").build().toString()
+fun openStreetMapStationUrl(name: String): String = "https://www.openstreetmap.org/search".toUri().buildUpon()
+    .appendQueryParameter("query", "$name railway station, Western Cape, South Africa").build().toString()

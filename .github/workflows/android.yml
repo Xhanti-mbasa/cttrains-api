@@ -93,7 +93,6 @@ jobs:
           CTTRAINS_VERSION_NAME: ${{ steps.metadata.outputs.version }}
           CTTRAINS_VERSION_CODE: ${{ steps.metadata.outputs.version_code }}
           CTTRAINS_USE_DEVELOPMENT_SIGNING: "true"
-          CTTRAINS_MAPS_API_KEY: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_MAPS_API_KEY || '' }}
           CTTRAINS_TRANSIT_BASE_URL: ${{ vars.CTTRAINS_TRANSIT_BASE_URL }}
           CTTRAINS_KEYSTORE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_KEYSTORE_PASSWORD || '' }}
           CTTRAINS_KEY_ALIAS: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_KEY_ALIAS || '' }}

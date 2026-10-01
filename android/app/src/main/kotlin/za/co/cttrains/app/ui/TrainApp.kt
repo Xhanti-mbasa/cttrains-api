@@ -42,7 +42,7 @@ import za.co.cttrains.app.BuildConfig
 import za.co.cttrains.app.TrainViewModel
 import za.co.cttrains.core.*
 import androidx.navigation.compose.*
-import za.co.cttrains.app.scheduling.googleMapsJourneyUrl
+import za.co.cttrains.app.scheduling.openStreetMapStationUrl
 
 private val FullDate = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.ENGLISH)
 private val FetchTime = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLISH).withZone(CapeTownZone)
@@ -50,6 +50,7 @@ private val FetchTime = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLI
 @Composable
 fun TrainApp(state: TrainState, model: TrainViewModel) {
     val navigation = rememberNavController()
+    var toolsOpen by remember { mutableStateOf(false) }
     val backStack by navigation.currentBackStackEntryAsState()
     val screen = backStack?.destination?.route ?: "map"
     val snackbar = remember { SnackbarHostState() }
@@ -62,7 +63,7 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
                 Icon(Icons.Outlined.Train, null, tint = MaterialTheme.colorScheme.primary)
                 Text("CT Trains", fontWeight = FontWeight.Bold)
             }
-        }) },
+        }, actions = { IconButton(onClick = { toolsOpen = true }) { Icon(Icons.Outlined.MoreHoriz, "CT Trains tools and budget") } }) },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = { NavigationBar {
             listOf(Triple("map", "Map", Icons.Outlined.Map), Triple("plan", "Plan", Icons.Outlined.Route),
@@ -80,9 +81,11 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
                 composable("saved") { SavedScreen(state, model) { go("plan") } }
                 composable("upcoming") { UpcomingScreen(state, model) }
                 composable("settings") { AboutScreen(state, model) }
+                composable("budget") { BudgetScreen(state, model) { go("plan") } }
             }
         }
     }
+    if (toolsOpen) TransitToolsSheet({ toolsOpen = false }) { toolsOpen = false; go("budget") }
 }
 
 @Composable
@@ -123,6 +126,7 @@ private fun PlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean, 
                     }
                 }
             }
+            TransitTools { model.openBudget() }
             state.stationNotice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             if (state.error != null) {
                 Notice(state.error, Icons.Outlined.ErrorOutline, error = true)
@@ -249,7 +253,7 @@ private fun JourneyCard(query: SearchQuery, journey: Journey, fastest: Boolean, 
                 FilledTonalButton(onClick = { onMap(journey) }, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.Map, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("View map") }
                 Button(onClick = { schedule = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.EventAvailable, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Schedule") }
             }
-            TextButton(onClick = { uri.openUri(googleMapsJourneyUrl(query)) }) { Text("Compare directions in Google Maps") }
+            TextButton(onClick = { uri.openUri(openStreetMapStationUrl(query.from)) }) { Text("Open departure station in OpenStreetMap") }
             HorizontalDivider()
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { expanded = !expanded }, modifier = Modifier.weight(1f)) {
@@ -372,9 +376,10 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel) {
                 Text("Timetables & privacy", style = MaterialTheme.typography.titleLarge)
                 Text("Your last 12 searches are stored on this device for up to 14 days. If a refresh fails, the same route, date and departure time can use its saved result. Saved routes stay until you remove them.")
                 Text("An anonymous UUID identifies this installation locally. Profile, favourites, timetable queries and journey content are encrypted with Android Keystore in Room. Public station positions and scheduling timestamps remain readable inside the app’s private database. No device IDs, account, analytics or cloud profile.", style = MaterialTheme.typography.bodyMedium)
-                Text("Searches send the route, date, time and IP address to the selected timetable source. Google street maps are optional and load data from Google. Locate me requests one foreground sample through Google Play services; the app stores no GPS history.", style = MaterialTheme.typography.bodyMedium)
+                Text("Searches send the route, date, time and IP address to the selected timetable source. Online maps load from OpenFreeMap and reveal the viewed map area and your IP to that provider. Offline mode disables map network requests. Locate me uses Android’s system location provider; the app stores no GPS history.", style = MaterialTheme.typography.bodyMedium)
                 Text("Calendar handoff opens your calendar app for review. The app cannot read your calendar, health data or background location.", style = MaterialTheme.typography.bodyMedium)
-                if (BuildConfig.MAPS_CONFIGURED) Row(verticalAlignment = Alignment.CenterVertically) { Text("Google street maps", Modifier.weight(1f)); Switch(state.preferences.googleMapsEnabled, model::setGoogleMaps) }
+                Text("Downloaded maps and map-area bounds are public cache data and are not encrypted. Manage and delete them from the Map download button.", style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("online" to "Online", "offline" to "Offline", "stations" to "Stations").forEach { (mode, title) -> FilterChip(state.preferences.mapMode == mode, { model.setMapMode(mode) }, label = { Text(title) }) } }
                 OutlinedButton(onClick = model::forgetLocation) { Text("Forget sampled location") }
                 OutlinedButton(onClick = { confirmProfile = true }) { Icon(Icons.Outlined.DeleteForever, null); Spacer(Modifier.width(8.dp)); Text("Delete all local personal data") }
                 OutlinedButton(onClick = { confirmClear = true }) { Icon(Icons.Outlined.DeleteOutline, null); Spacer(Modifier.width(8.dp)); Text("Clear cached timetables") }
@@ -388,7 +393,7 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel) {
         Text("CT Trains for Android · ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("Clear saved timetables?") }, text = { Text("You’ll need an internet connection for your next search. Your favourite routes will stay saved.") }, confirmButton = { TextButton(onClick = { model.clearCache(); confirmClear = false }) { Text("Clear") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } })
-    if (confirmProfile) AlertDialog(onDismissRequest = { confirmProfile = false }, title = { Text("Delete your local profile?") }, text = { Text("Favourites, scheduled journeys, app reminders and saved timetables will be removed. A new anonymous profile will be created. Events you added to your calendar remain there.") }, confirmButton = { TextButton(onClick = { model.clearPersonalData(); confirmProfile = false }) { Text("Delete local data") } }, dismissButton = { TextButton(onClick = { confirmProfile = false }) { Text("Cancel") } })
+    if (confirmProfile) AlertDialog(onDismissRequest = { confirmProfile = false }, title = { Text("Delete your local profile?") }, text = { Text("Favourites, fare corrections, scheduled journeys, app reminders and saved timetables will be removed. Public offline map downloads are managed separately on Map. A new anonymous profile will be created. Events you added to your calendar remain there.") }, confirmButton = { TextButton(onClick = { model.clearPersonalData(); confirmProfile = false }) { Text("Delete local data") } }, dismissButton = { TextButton(onClick = { confirmProfile = false }) { Text("Cancel") } })
 }
 
 @Composable
@@ -417,6 +422,6 @@ private fun SourceSelector(state: TrainState, model: TrainViewModel) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             model.repository.sources.forEach { source -> FilterChip(selected = state.preferences.sourceId == source.id, onClick = { model.setSource(source.id) }, label = { Text(source.label) }) }
         }
-        Text(if (model.repository.sources.size > 1) "The API and direct source both use CT Trains. Results stay separate; switching clears the current result." else "Community timetable from CT Trains. Google Maps directions open separately and are not merged into these results.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if (model.repository.sources.size > 1) "The API and direct source both use CT Trains. Results stay separate; switching clears the current result." else "Community timetable from CT Trains. Check source and fetch date before travelling.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

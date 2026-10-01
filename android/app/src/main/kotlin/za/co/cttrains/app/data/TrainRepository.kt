@@ -26,7 +26,9 @@ import za.co.cttrains.core.*
 data class Preferences(
     val routes: List<SavedRoute> = emptyList(), val favoriteStations: List<String> = emptyList(),
     val theme: String = "System", val dynamicColor: Boolean = false, val lastQuery: SearchQuery? = null,
-    val profileId: String = "", val googleMapsEnabled: Boolean = false, val sourceId: String = "cttrains-web",
+    val profileId: String = "", val sourceId: String = "cttrains-web", val mapMode: String = "online",
+    val offlineMapId: Long? = null,
+    val fareCorrections: List<FareCorrection> = emptyList(),
 )
 data class SearchResult(val entry: CachedSearch, val offline: Boolean, val restoredPlan: Boolean = false)
 data class TransitSource(val id: String, val label: String, val description: String)

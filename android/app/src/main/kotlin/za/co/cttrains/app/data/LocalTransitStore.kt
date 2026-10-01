@@ -94,6 +94,15 @@ class LocalTransitStore private constructor(private val context: Context) {
         }
     }
     suspend fun journey(id: String): ScheduledJourney? { initialize(); return dao.journey(id)?.let(::decodeJourney) }
+    suspend fun updateJourney(id: String, transform: (ScheduledJourney) -> ScheduledJourney?): ScheduledJourney? {
+        initialize()
+        return lock.withLock {
+            val item = dao.journey(id)?.let(::decodeJourney) ?: return@withLock null
+            val updated = transform(item) ?: return@withLock null
+            dao.journey(JourneyEntity(updated.id, SecureCodec.digest(updated.identity), updated.departureAt, codec.encrypt(json.encodeToString(updated))))
+            updated
+        }
+    }
     suspend fun deleteJourney(id: String) { initialize(); lock.withLock { dao.deleteJourney(id) } }
     suspend fun clearPersonalData() {
         initialize()

@@ -37,22 +37,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.*
-import com.google.maps.android.compose.*
 import kotlin.math.cos
 import kotlin.math.min
-import za.co.cttrains.app.BuildConfig
+import za.co.cttrains.app.maps.StreetMap
 import za.co.cttrains.app.TrainState
 import za.co.cttrains.app.TrainViewModel
 import za.co.cttrains.app.location.CurrentPosition
-import za.co.cttrains.app.scheduling.googleMapsJourneyUrl
 import za.co.cttrains.core.*
 
 @Composable
 fun TransitMapScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Unit) {
     var browser by rememberSaveable { mutableStateOf(false) }
-    var confirmGoogle by remember { mutableStateOf(false) }
+    var downloadsOpen by remember { mutableStateOf(false) }
+    val downloads by model.offlineMaps.state.collectAsState()
+    var failed by remember(state.preferences.mapMode, state.preferences.offlineMapId) { mutableStateOf(false) }
+    var retry by remember { mutableIntStateOf(0) }
+    val savedArea = downloads.regions.firstOrNull { it.id == state.preferences.offlineMapId && it.complete } ?: downloads.regions.firstOrNull { it.complete }
+    val useStreets = state.mapsReady && state.preferences.mapMode != "stations" && !failed && (state.preferences.mapMode == "online" || savedArea != null)
     val uri = LocalUriHandler.current
     val context = LocalContext.current
     val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
@@ -75,18 +76,29 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Uni
         OutlinedButton(onClick = { browser = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
             Icon(Icons.Outlined.Search, null); Spacer(Modifier.width(12.dp)); Text("Search stations"); Spacer(Modifier.weight(1f)); Icon(Icons.Outlined.Tune, null)
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            listOf("online" to "Online", "offline" to "Offline", "stations" to "Stations").forEach { (mode, title) ->
+                FilterChip(state.preferences.mapMode == mode, { model.setMapMode(mode) }, label = { Text(title) })
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { downloadsOpen = true }) { Icon(Icons.Outlined.Download, "Manage offline maps") }
+        }
+        if (failed || (state.preferences.mapMode == "offline" && savedArea == null)) {
+            Text(if (failed) "Street map unavailable. Station map is still usable." else "Download a street map first. Station positions remain available offline.", style = MaterialTheme.typography.bodySmall)
+            if (failed) TextButton(onClick = { failed = false; retry++ }) { Text("Retry street map") }
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                if (BuildConfig.MAPS_CONFIGURED && state.preferences.googleMapsEnabled) GoogleStationMap(state, model::selectStation)
+                if (useStreets) key(state.preferences.mapMode, savedArea?.id, retry) { StreetMap(state, if (state.preferences.mapMode == "offline") model.offlineMaps.definition(savedArea?.id) else null, model::selectStation, { failed = true }, Modifier.fillMaxSize()) }
                 else OfflineStationMap(state.stations, state.selectedJourney, state.currentPosition, state.from, state.to, model::selectStation)
             }
             Surface(Modifier.align(Alignment.TopStart).padding(12.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), tonalElevation = 3.dp) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    Text(if (BuildConfig.MAPS_CONFIGURED && state.preferences.googleMapsEnabled) "Google Maps · station atlas" else "Offline station map", style = MaterialTheme.typography.labelLarge)
+                    Text(if (useStreets) if (state.preferences.mapMode == "offline") "Downloaded street map" else "OpenFreeMap · online" else "Offline station map", style = MaterialTheme.typography.labelLarge)
                     Text("${state.stations.count { it.mapped }} mapped stations · tap to choose", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (BuildConfig.MAPS_CONFIGURED && !state.preferences.googleMapsEnabled) FilledTonalButton(onClick = { confirmGoogle = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp)) { Text("Enable Google street map") }
+
         }
         if (state.selectedJourney != null && state.result != null) {
             val journey = state.selectedJourney
@@ -103,10 +115,12 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Uni
         } else Button(onClick = onPlan, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
             Icon(Icons.Outlined.Route, null); Spacer(Modifier.width(10.dp)); Text("${state.from.ifBlank { "From" }} → ${state.to.ifBlank { "To" }}")
         }
+        if (useStreets) TextButton(onClick = { uri.openUri("https://www.openstreetmap.org/copyright") }, contentPadding = PaddingValues(0.dp)) { Text("© OpenMapTiles · © OpenStreetMap contributors", style = MaterialTheme.typography.labelSmall) }
         Text("Wikidata station positions · connections between stops, not track or walking directions.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
     }
     if (browser) StationBrowser(state, model, onDismiss = { browser = false }) { model.selectStation(it); browser = false }
-    if (confirmGoogle) AlertDialog(onDismissRequest = { confirmGoogle = false }, title = { Text("Use Google street maps?") }, text = { Text("The street map loads data from Google. Your local profile and favourites stay on this device. Location is optional and is sampled only when you tap Locate me.") }, confirmButton = { TextButton(onClick = { model.setGoogleMaps(true); confirmGoogle = false }) { Text("Enable") } }, dismissButton = { TextButton(onClick = { confirmGoogle = false }) { Text("Keep offline map") } })
+    if (downloadsOpen) MapDownloadsSheet(state, model) { downloadsOpen = false }
+
     state.selectedStation?.let { name ->
         ModalBottomSheet(onDismissRequest = { model.selectStation(null) }) {
             Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -122,50 +136,12 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Uni
                     FilledTonalButton(onClick = { model.edit { it.copy(from = name, selectedStation = null) }; onPlan() }, modifier = Modifier.weight(1f)) { Text("Start here") }
                     Button(onClick = { model.edit { it.copy(to = name, selectedStation = null) }; onPlan() }, modifier = Modifier.weight(1f)) { Text("Go here") }
                 }
-                TextButton(onClick = { uri.openUri("https://www.google.com/maps/search/?api=1&query=" + android.net.Uri.encode("$name railway station, Western Cape, South Africa")) }) { Text("Open station in Google Maps") }
+                TextButton(onClick = { val p = state.stations.firstOrNull { it.name == name && it.mapped }; uri.openUri(if (p != null) "https://www.openstreetmap.org/?mlat=${p.latitude}&mlon=${p.longitude}#map=16/${p.latitude}/${p.longitude}" else "https://www.openstreetmap.org/search?query=" + android.net.Uri.encode("$name railway station, Western Cape, South Africa")) }) { Text("Open station in OpenStreetMap") }
             }
         }
     }
 }
 
-@Composable
-private fun GoogleStationMap(state: TrainState, onStation: (String) -> Unit) {
-    val camera = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(LatLng(-33.95, 18.58), 10f) }
-    var loaded by remember { mutableStateOf(false) }
-    LaunchedEffect(state.selectedJourney, loaded) {
-        val journey = state.selectedJourney
-        if (loaded && journey != null) {
-            val names = journey.legs.flatMap { it.stops }.map { stationKey(it.name) }.toSet()
-            val points = state.stations.filter { it.mapped && stationKey(it.name) in names }
-            if (points.size > 1) camera.animate(CameraUpdateFactory.newLatLngBounds(LatLngBounds.builder().apply { points.forEach { include(it.latLng) } }.build(), 96))
-        }
-    }
-    GoogleMap(Modifier.fillMaxSize(), cameraPositionState = camera, onMapLoaded = { loaded = true },
-        properties = MapProperties(isMyLocationEnabled = false), uiSettings = MapUiSettings(mapToolbarEnabled = false, myLocationButtonEnabled = false, zoomControlsEnabled = false)) {
-        state.stations.filter { it.mapped }.forEach { station ->
-            key(station.name) {
-                val hue = when (station.name) { state.from -> BitmapDescriptorFactory.HUE_AZURE; state.to -> BitmapDescriptorFactory.HUE_ORANGE; else -> BitmapDescriptorFactory.HUE_CYAN }
-                Marker(state = rememberTransitMarkerState(station.latLng), title = station.name,
-                    icon = BitmapDescriptorFactory.defaultMarker(hue), onClick = { onStation(station.name); true })
-            }
-        }
-        state.selectedJourney?.legs?.forEachIndexed { index, leg ->
-            JourneyPlanning.mappedSegments(leg, state.stations).forEach { points ->
-                Polyline(points = points.map { it.latLng }, color = legColor(index), width = 10f, pattern = listOf(Dash(20f), Gap(10f)))
-            }
-        }
-        state.currentPosition?.let { point ->
-            Marker(state = rememberTransitMarkerState(LatLng(point.latitude, point.longitude)), title = "Your sampled location", snippet = "Accuracy about ${point.accuracyMeters.toInt()} m", icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE))
-        }
-    }
-}
-@Composable
-private fun rememberTransitMarkerState(position: LatLng): MarkerState {
-    val state = remember { MarkerState(position) }
-    SideEffect { state.position = position }
-    return state
-}
-private val StationPosition.latLng: LatLng get() = LatLng(latitude!!, longitude!!)
 private fun legColor(index: Int): Color = listOf(Color(0xFF1478B8), Color(0xFFD77721), Color(0xFF148777))[index % 3]
 fun sourceLabel(id: String): String = when (id) { "cttrains-api" -> "CT Trains via Transit API"; else -> "CT Trains" }
 

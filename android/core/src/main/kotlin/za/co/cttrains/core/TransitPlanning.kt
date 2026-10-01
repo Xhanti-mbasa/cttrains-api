@@ -11,27 +11,46 @@ data class StationPosition(val name: String, val latitude: Double? = null, val l
 }
 
 @Serializable
+data class BackupReminder(val delayMinutes: Int, val severity: String = "standard")
+@Serializable
 data class ScheduledJourney(
     val id: String, val profileId: String, val query: SearchQuery, val journey: Journey,
     val sourceId: String, val fetchedAt: Long, val createdAt: Long,
     val reminderMinutes: Int? = null, val accessMinutes: Int = 20, val bufferMinutes: Int = 5, val fares: String? = null,
+    val leaveFrom: String = "", val reminderBasis: String = "departure", val reminderSeverity: String = "standard",
+    val backupReminders: List<BackupReminder> = emptyList(), val reminderToken: String = "",
+    val reminderStage: Int = 0, val nextReminderAt: Long? = null, val remindersStopped: Boolean = false,
 ) {
     val departureAt: Long get() = LocalDate.parse(query.date).atTime(LocalTime.parse(journey.departure))
         .atZone(CapeTownZone).toInstant().toEpochMilli()
     val arrivalAt: Long get() = departureAt + journey.durationMinutes * 60_000L
     val leaveAt: Long get() = departureAt - (accessMinutes + bufferMinutes) * 60_000L
-    val reminderAt: Long? get() = reminderMinutes?.let { departureAt - it * 60_000L }
+    val reminderAt: Long? get() = reminderMinutes?.let { (if (reminderBasis == "leave") leaveAt else departureAt) - it * 60_000L }
+    val pendingReminderAt: Long? get() = if (remindersStopped) null else nextReminderAt ?: reminderAt
+    val activeSeverity: String get() = if (reminderStage == 0) reminderSeverity else backupReminders.getOrNull(reminderStage - 1)?.severity ?: "standard"
     val identity: String get() = "$sourceId|${query.from}|${query.to}|${query.date}|${journey.legs.joinToString { "${it.train}:${it.departure.time}" }}"
 }
 
 object JourneyPlanning {
+    val severities = listOf("gentle", "standard", "urgent")
     fun validationError(item: ScheduledJourney, now: Long): String? = when {
         item.journey.legs.isEmpty() || item.journey.legs.any { it.stops.size < 2 } -> "Choose a complete journey."
         item.departureAt <= now -> "This train has already departed. Choose a future journey."
         item.accessMinutes !in 0..360 || item.bufferMinutes !in 0..120 -> "Use 0–360 travel minutes and 0–120 buffer minutes."
-        item.reminderMinutes != null && item.reminderMinutes !in 1..1440 -> "Choose a reminder from 1 to 1440 minutes before departure."
+        item.reminderMinutes != null && item.reminderMinutes !in (if (item.reminderBasis == "leave") 0 else 1)..1440 -> "Choose a valid reminder lead time, up to 1440 minutes."
+        item.reminderBasis !in listOf("leave", "departure") || item.reminderSeverity !in severities -> "Choose a valid reminder style."
+        item.leaveFrom.length > 80 || item.backupReminders.size > 3 || item.backupReminders.any { it.delayMinutes !in 1..60 || it.severity !in severities } -> "Use up to three backups, each 1–60 minutes after dismissal."
         item.reminderAt != null && item.reminderAt!! <= now -> "That reminder time has passed. Choose a shorter reminder or no notification."
         else -> null
+    }
+
+    /** A stale notification must never advance a replaced plan's reminder chain. */
+    fun afterDismiss(item: ScheduledJourney, stage: Int, token: String, now: Long): ScheduledJourney? {
+        if (item.remindersStopped || item.reminderMinutes == null || item.reminderStage != stage || item.reminderToken != token) return null
+        val backup = item.backupReminders.getOrNull(stage)
+        val next = backup?.let { now + it.delayMinutes * 60_000L }
+        return if (next == null || next >= item.departureAt) item.copy(remindersStopped = true)
+        else item.copy(reminderStage = stage + 1, nextReminderAt = next)
     }
 
     /** Splits at unknown positions instead of drawing an invented route over gaps. */

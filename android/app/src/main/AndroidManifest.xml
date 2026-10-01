@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
     <application
         android:allowBackup="false"
         android:fullBackupContent="false"
@@ -13,7 +15,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CTTrains"
         android:usesCleartextTraffic="false">
-        <meta-data android:name="com.google.android.geo.API_KEY" android:value="${mapsApiKey}" />
+        <receiver android:name=".scheduling.ReminderActionReceiver" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

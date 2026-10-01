@@ -16,9 +16,7 @@ val localSecrets = Properties().apply {
     val source = rootProject.file("local.properties")
     if (source.exists()) source.inputStream().use { load(it) }
 }
-val mapsKey = System.getenv("CTTRAINS_MAPS_API_KEY") ?: localSecrets.getProperty("CTTRAINS_MAPS_API_KEY", "")
 val transitUrl = System.getenv("CTTRAINS_TRANSIT_BASE_URL") ?: localSecrets.getProperty("CTTRAINS_TRANSIT_BASE_URL", "")
-require(mapsKey.isBlank() || mapsKey.matches(Regex("[A-Za-z0-9_-]+"))) { "Invalid Maps API key format." }
 if (transitUrl.isNotBlank()) {
     val endpoint = URI(transitUrl)
     require(endpoint.scheme == "https" && endpoint.host != null && endpoint.userInfo == null && endpoint.query == null && endpoint.fragment == null) { "Use an HTTPS transit base URL without credentials, query or fragment." }
@@ -36,8 +34,6 @@ android {
             .toInt().also { require(it > 0) { "versionCode must be positive" } }
         versionName = System.getenv("CTTRAINS_VERSION_NAME") ?: appVersion.getProperty("versionName")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        manifestPlaceholders["mapsApiKey"] = mapsKey
-        buildConfigField("boolean", "MAPS_CONFIGURED", mapsKey.isNotBlank().toString())
         buildConfigField("String", "TRANSIT_BASE_URL", quoted(transitUrl.trimEnd('/')))
     }
     signingConfigs {
@@ -72,8 +68,7 @@ dependencies {
     implementation("androidx.room:room-ktx:2.7.1")
     ksp("androidx.room:room-compiler:2.7.1")
     implementation("androidx.work:work-runtime-ktx:2.10.3")
-    implementation("com.google.maps.android:maps-compose:6.4.1")
-    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("org.maplibre.gl:android-sdk:13.6.1")
     implementation(project(":core"))
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
     implementation("androidx.activity:activity-compose:1.10.1")

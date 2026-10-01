@@ -61,7 +61,7 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
                 }
             }
         }
-        if (upcoming.any { it.reminderMinutes != null } && !notificationsAllowed(context)) item {
+        if (upcoming.any { it.pendingReminderAt != null } && !notificationsAllowed(context)) item {
             Text("App notifications are currently disabled. Your saved journeys are still available.", color = MaterialTheme.colorScheme.error)
             TextButton(onClick = { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)) }) { Text("Notification settings") }
         }
@@ -77,13 +77,16 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
                     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
                         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("Leave by ${JourneyDate.format(Instant.ofEpochMilli(item.leaveAt))}", fontWeight = FontWeight.Bold)
+                            if (item.leaveFrom.isNotBlank()) Text("${item.leaveFrom} → ${item.query.from}", style = MaterialTheme.typography.bodyMedium)
                             Text("Your estimate: ${item.accessMinutes} min to the station + ${item.bufferMinutes} min buffer. No live walking or traffic estimate.", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(if (item.reminderMinutes != null) Icons.Outlined.NotificationsActive else Icons.Outlined.NotificationsOff, null, Modifier.size(18.dp))
-                        Text(item.reminderAt?.let { "App reminder at ${JourneyDate.format(Instant.ofEpochMilli(it))}" } ?: "No app reminder", style = MaterialTheme.typography.bodySmall)
+                        Text(if (item.remindersStopped) "App reminders stopped" else item.pendingReminderAt?.let { "${if (item.reminderStage > 0) "Backup ${item.reminderStage}" else if (item.reminderBasis == "leave") "Leave reminder" else "Train reminder"} at ${JourneyDate.format(Instant.ofEpochMilli(it))} · ${item.activeSeverity}" } ?: "No app reminder", style = MaterialTheme.typography.bodySmall)
                     }
+                    if (item.backupReminders.isNotEmpty()) Text("Dismissal backups: " + item.backupReminders.joinToString { "${it.delayMinutes} min · ${it.severity}" }, style = MaterialTheme.typography.bodySmall)
+                    if (item.pendingReminderAt != null) TextButton(onClick = { model.stopJourneyReminders(item.id) }) { Text("I'm leaving / stop app reminders") }
                     Text("Saved timetable · fetched ${JourneyDate.format(Instant.ofEpochMilli(item.fetchedAt))}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalButton(onClick = { model.openScheduled(item.id, "plan") }) { Text("Details") }
@@ -93,7 +96,7 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
                             catch (_: ActivityNotFoundException) { model.showMessage("Install a calendar app to add this event.") }
                         }) { Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Add to calendar") }
                     }
-                    TextButton(onClick = { uri.openUri(googleMapsJourneyUrl(item.query)) }) { Text("Compare directions in Google Maps") }
+                    TextButton(onClick = { uri.openUri(openStreetMapStationUrl(item.query.from)) }) { Text("Open departure station in OpenStreetMap") }
                 }
             }
         }
@@ -116,11 +119,15 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
 fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewModel, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var reminder by rememberSaveable { mutableStateOf(false) }
-    var lead by rememberSaveable { mutableIntStateOf(15) }
+    var lead by rememberSaveable { mutableIntStateOf(0) }
     var custom by rememberSaveable { mutableStateOf(false) }
     var customMinutes by rememberSaveable { mutableStateOf("30") }
     var access by rememberSaveable { mutableStateOf("20") }
     var buffer by rememberSaveable { mutableStateOf("5") }
+    var leaveFrom by rememberSaveable { mutableStateOf("") }
+    var severity by rememberSaveable { mutableStateOf("standard") }
+    var backupMinutes by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var backupSeverity by rememberSaveable { mutableStateOf(listOf<String>()) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
@@ -133,7 +140,7 @@ fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewM
             Text("${query.from} → ${query.to}\n${query.date} · ${journey.departure}–${journey.arrival}")
             Text("Save locally. Add to your calendar afterwards if you choose.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Text("App reminder", fontWeight = FontWeight.Bold); Text("Optional train notification", style = MaterialTheme.typography.bodySmall) }
+                Column(Modifier.weight(1f)) { Text("Leave reminder", fontWeight = FontWeight.Bold); Text("Based on your building-to-station estimate", style = MaterialTheme.typography.bodySmall) }
                 Switch(checked = reminder, onCheckedChange = { enabled ->
                     error = null
                     if (!enabled) reminder = false
@@ -143,17 +150,33 @@ fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewM
                 })
             }
             if (reminder) {
-                Text("Minutes before departure", style = MaterialTheme.typography.labelLarge)
+                Text("Minutes before you need to leave", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(5, 10, 15, 30, 45, 60).forEach { minutes -> FilterChip(selected = !custom && lead == minutes, onClick = { custom = false; lead = minutes }, label = { Text("$minutes") }) }
+                    listOf(0, 5, 10, 15, 30).forEach { minutes -> FilterChip(selected = !custom && lead == minutes, onClick = { custom = false; lead = minutes }, label = { Text(if (minutes == 0) "At leave time" else "$minutes min") }) }
                     FilterChip(selected = custom, onClick = { custom = true }, label = { Text("Custom") })
                 }
-                if (custom) MinuteField("Reminder minutes (1–1440)", customMinutes, { customMinutes = it })
+                if (custom) MinuteField("Before leave time (0–1440 min)", customMinutes, { customMinutes = it })
+                Text("First notification severity", style = MaterialTheme.typography.labelLarge)
+                ReminderSeverity(severity) { severity = it }
+                Text("Dismiss or swipe away to schedule the next backup. Tap I'm leaving to stop the chain. Backups stop after the train's departure; they do not guarantee you can still catch it.", style = MaterialTheme.typography.bodySmall)
+                backupMinutes.forEachIndexed { index, value ->
+                    Card {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Backup ${index + 1}", style = MaterialTheme.typography.titleSmall)
+                            MinuteField("Minutes after dismissal (1–60)", value, { v -> backupMinutes = backupMinutes.mapIndexed { i, old -> if (i == index) v else old } })
+                            ReminderSeverity(backupSeverity[index]) { v -> backupSeverity = backupSeverity.mapIndexed { i, old -> if (i == index) v else old } }
+                            TextButton(onClick = { backupMinutes = backupMinutes.filterIndexed { i, _ -> i != index }; backupSeverity = backupSeverity.filterIndexed { i, _ -> i != index } }) { Text("Remove backup") }
+                        }
+                    }
+                }
+                if (backupMinutes.size < 3) OutlinedButton(onClick = { backupMinutes = backupMinutes + "5"; backupSeverity = backupSeverity + "standard" }) { Text("Add backup reminder") }
+                Text("Urgent notifications use Android's high-importance channel. Sound, heads-up display and Do Not Disturb follow your device settings.", style = MaterialTheme.typography.bodySmall)
                 Text("Android may delay notifications under battery controls; these are not exact alarms.", style = MaterialTheme.typography.bodySmall)
             }
             HorizontalDivider()
             Text("When should you leave?", style = MaterialTheme.typography.titleMedium)
-            Text("Use your own travel estimate. We won’t guess your walking time or track you in the background.", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(leaveFrom, { if (it.length <= 80) leaveFrom = it }, label = { Text("Building / office / campus (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Text("Enter the time from your building to ${query.from}, plus time for boarding. Leave time = train departure minus these two estimates.", style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MinuteField("To station (min)", access, { access = it }, Modifier.weight(1f))
                 MinuteField("Buffer (min)", buffer, { buffer = it }, Modifier.weight(1f))
@@ -162,10 +185,11 @@ fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewM
             Button(onClick = {
                 val a = access.toIntOrNull(); val b = buffer.toIntOrNull()
                 val r = if (reminder) if (custom) customMinutes.toIntOrNull() else lead else null
+                val backups = if (reminder) backupMinutes.mapIndexed { i, v -> BackupReminder(v.toIntOrNull() ?: 0, backupSeverity[i]) } else emptyList()
                 if (a == null || b == null || (reminder && r == null)) error = "Enter valid whole minutes."
                 else {
                     saving = true; error = null
-                    model.schedule(query, journey, r, a, b) { failure -> saving = false; if (failure == null) onDismiss() else error = failure }
+                    model.schedule(query, journey, r, a, b, leaveFrom, severity, backups) { failure -> saving = false; if (failure == null) onDismiss() else error = failure }
                 }
             }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (saving) "Saving…" else "Save journey") }
         }
@@ -175,4 +199,9 @@ fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewM
 @Composable
 private fun MinuteField(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
     OutlinedTextField(value, { if (it.length <= 4 && it.all(Char::isDigit)) onChange(it) }, modifier = modifier, label = { Text(label) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+}
+
+@Composable
+private fun ReminderSeverity(value: String, onChange: (String) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { JourneyPlanning.severities.forEach { level -> FilterChip(value == level, { onChange(level) }, label = { Text(level.replaceFirstChar(Char::uppercase)) }) } }
 }
