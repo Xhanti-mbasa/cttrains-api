@@ -53,19 +53,23 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
     var toolsOpen by remember { mutableStateOf(false) }
     val backStack by navigation.currentBackStackEntryAsState()
     val screen = backStack?.destination?.route ?: "map"
+    val fullMap = screen == "map/fullscreen"
     val snackbar = remember { SnackbarHostState() }
     fun go(route: String) { navigation.navigate(route) { popUpTo(navigation.graph.startDestinationId) { saveState = true }; launchSingleTop = true; restoreState = true } }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); model.dismissMessage() } }
     LaunchedEffect(state.requestedScreen) { state.requestedScreen?.let { go(it); model.navigationHandled() } }
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = {
+        topBar = { if (!fullMap) CenterAlignedTopAppBar(title = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Outlined.Train, null, tint = MaterialTheme.colorScheme.primary)
                 Text("CT Trains", fontWeight = FontWeight.Bold)
             }
-        }, actions = { IconButton(onClick = { toolsOpen = true }) { Icon(Icons.Outlined.MoreHoriz, "CT Trains tools and budget") } }) },
+        }, actions = {
+            IconButton(onClick = { go("alerts") }) { Icon(Icons.Outlined.NotificationsActive, "Service alerts") }
+            IconButton(onClick = { toolsOpen = true }) { Icon(Icons.Outlined.MoreHoriz, "CT Trains tools and budget") }
+        }) },
         snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = { NavigationBar {
+        bottomBar = { if (!fullMap) NavigationBar {
             listOf(Triple("map", "Map", Icons.Outlined.Map), Triple("plan", "Plan", Icons.Outlined.Route),
                 Triple("saved", "Saved", Icons.Outlined.StarBorder), Triple("upcoming", "Journeys", Icons.AutoMirrored.Outlined.EventNote),
                 Triple("settings", "Settings", Icons.Outlined.Settings)).forEach { (route, title, icon) ->
@@ -76,16 +80,18 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
             val wide = maxWidth >= 840.dp
             NavHost(navigation, startDestination = "map", modifier = Modifier.fillMaxSize()) {
-                composable("map") { TransitMapScreen(state, model) { go("plan") } }
+                composable("map") { TransitMapScreen(state, model, onExpand = { navigation.navigate("map/fullscreen") { launchSingleTop = true } }, onPlan = { go("plan") }) }
+                composable("map/fullscreen") { TransitMapScreen(state, model, fullScreen = true, onClose = { navigation.popBackStack() }, onPlan = { go("plan") }) }
                 composable("plan") { PlanScreen(state, model, wide) { journey -> model.selectJourney(journey); go("map") } }
                 composable("saved") { SavedScreen(state, model) { go("plan") } }
                 composable("upcoming") { UpcomingScreen(state, model) }
                 composable("settings") { AboutScreen(state, model) }
                 composable("budget") { BudgetScreen(state, model) { go("plan") } }
+                composable("alerts") { AlertsScreen(state, model) }
             }
         }
     }
-    if (toolsOpen) TransitToolsSheet({ toolsOpen = false }) { toolsOpen = false; go("budget") }
+    if (toolsOpen) TransitToolsSheet({ toolsOpen = false }, { toolsOpen = false; go("alerts") }, { toolsOpen = false; go("budget") })
 }
 
 @Composable
@@ -126,7 +132,7 @@ private fun PlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean, 
                     }
                 }
             }
-            TransitTools { model.openBudget() }
+            TransitTools(model::openAlerts, model::openBudget)
             state.stationNotice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             if (state.error != null) {
                 Notice(state.error, Icons.Outlined.ErrorOutline, error = true)
@@ -243,7 +249,7 @@ private fun JourneyCard(query: SearchQuery, journey: Journey, fastest: Boolean, 
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
                                 Text(stop.time, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(44.dp))
-                                Text(stop.name, style = MaterialTheme.typography.bodyMedium, fontWeight = if (stopIndex == 0 || stopIndex == leg.stops.lastIndex) FontWeight.Bold else FontWeight.Normal)
+                                Text(stop.name + (stop.platform?.let { " · Platform $it" } ?: ""), style = MaterialTheme.typography.bodyMedium, fontWeight = if (stopIndex == 0 || stopIndex == leg.stops.lastIndex) FontWeight.Bold else FontWeight.Normal)
                             }
                         }
                     }
@@ -387,7 +393,8 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel) {
         }
         SourceSelector(state, model)
         Text("Check before you travel", style = MaterialTheme.typography.titleLarge)
-        Text("Timetables are not live tracking. Delays, cancelled services and platform changes may not appear here. The finder supports today through the end of next month and does not list Sunday or public-holiday services.")
+        Text("Timetables are not live tracking. Open Updates & delays for published service and platform notices; reports may be incomplete or late. The finder supports today through the end of next month and does not list Sunday or public-holiday services.")
+        OutlinedButton(onClick = model::openAlerts) { Text("Updates & delays") }
         OutlinedButton(onClick = { uri.openUri("https://cttrains.co.za/train-form.php") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.AutoMirrored.Outlined.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Visit CT Trains") }
         TextButton(onClick = { uri.openUri("https://github.com/Xhanti-mbasa/cttrains-api") }) { Text("Source code on GitHub") }
         Text("CT Trains for Android · ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

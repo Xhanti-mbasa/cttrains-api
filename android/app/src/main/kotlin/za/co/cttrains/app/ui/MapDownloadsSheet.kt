@@ -21,7 +21,7 @@ fun MapDownloadsSheet(state: TrainState, model: TrainViewModel, onDismiss: () ->
             Text("Download on Wi-Fi if possible. Maps use data and storage. Downloads pause when the app backgrounds; resume here. No account or key needed.")
             Text("Rail overview: zoom 8–12. Selected journey: street detail at zoom 10–14. The download includes map styles, fonts and tiles.", style = MaterialTheme.typography.bodySmall)
             Button(onClick = { model.downloadMap() }, enabled = !downloads.loading && !downloads.creating, modifier = Modifier.fillMaxWidth()) { Text("Download rail overview") }
-            OutlinedButton(onClick = { model.downloadMap(state.selectedJourney) }, enabled = state.selectedJourney != null && !downloads.loading && !downloads.creating, modifier = Modifier.fillMaxWidth()) { Text("Download selected journey") }
+            OutlinedButton(onClick = { model.downloadMap(state.selectedJourney) }, enabled = state.selectedJourney != null && !state.traceLoading && !downloads.loading && !downloads.creating, modifier = Modifier.fillMaxWidth()) { Text("Download selected journey") }
             if (downloads.loading || downloads.creating) LinearProgressIndicator(Modifier.fillMaxWidth())
             downloads.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             downloads.regions.forEach { area ->

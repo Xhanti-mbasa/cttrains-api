@@ -7,9 +7,13 @@ Native **Kotlin, Jetpack Compose and Google Material 3** transit planner. The ap
 - Map-first home with real positions for all 102 bundled stations, tap/search selection, origin/destination controls and favourite stations.
 - Online street maps with MapLibre Native and OpenFreeMap; no Google Maps SDK, Google API key, billing account or login. Online, Offline and Stations modes are selectable on Map and in Settings.
 - Download the rail overview or the selected journey area for offline streets. Downloads show progress, pause/resume, deletion and storage use. The built-in station atlas works without downloading maps.
-- Separate train-leg connections, transfers, expandable stops, departure/arrival times and source-provided fares with source/fetch date. Connections are not railway track geometry or walking directions.
+- Expand the mini map to a full-screen view with a close/back control. Selected journeys fit the view; the station atlas supports clearer labels and up to 16× zoom.
+- Route traces follow bundled OpenStreetMap rail geometry between ordered timetable stops where connected. Solid lines show mapped rail traces; unresolved known-stop links remain dashed. This is approximate visualization, not an official operational path or platform walking route. See [RAIL_DATA.md](docs/RAIL_DATA.md) for provenance and the separate ODbL database licence.
+- Numbered transfer pins show the change station, arriving/next trains, departure and connection time. Tapping a pin or See trains & platforms opens details. Source-provided stop platforms are preserved. Fresh explicit boarding notices can provide a labelled departure-platform report for the matching train/station/date; unknown platforms stay unknown. Train changes remain explicit even on the same line/platform.
+- Expandable stops, departure/arrival times and source fares with source/fetch date.
 - Direct CT Trains access and optional normalized backend source, with source switching and separate query caches.
-- The website's Updates & delays, Fare calculator and Early train reporter controls are available from Plan and the toolbar's tools menu. Updates/reports open the original website; submitting a report remains a user action there.
+- Native Updates & delays from `https://cttrains.co.za/status2.php`, accessible from the alerts toolbar button or Plan/tools. Refresh, line/advisory filters, text search and an optional selected-journey filter show the original messages and source report date/time. A saved snapshot can remain available for up to 48 hours, clearly labelled when refresh fails or the report date differs. HTML advertising/scripts are never executed.
+- Fare calculator and Early train reporter remain accessible from Plan/tools. The fare calculator is native; the early reporter opens the original website and submission remains a user action there.
 - Native trip budget calculator: check source fares for the Plan query, select single/return/weekly/monthly tickets, multiply ticket/pass quantities and travellers, and compare with an optional budget. Missing fares remain unknown. Users can enter or correct a price and remove that local override to restore the source fare.
 - Saved journeys include an optional building/office/campus name, user-entered minutes to the departure station and a boarding buffer. Leave time = departure minus access time minus buffer. Optional reminders run at leave time or a custom number of minutes beforehand.
 - Up to three dismissal-triggered backup reminders, each with a custom delay of 1–60 minutes and Gentle, Standard or Urgent severity. Swipe away or choose Remind again to advance; I'm leaving stops the chain. Backups stop at departure.
@@ -20,13 +24,13 @@ Native **Kotlin, Jetpack Compose and Google Material 3** transit planner. The ap
 
 ## Privacy and limits
 
-No mandatory account, email, analytics, hardware/device identifier or cloud behavioral profile. Profile/preferences (including price corrections), favourites, cached searches and saved journey content are AES-GCM encrypted in Room. Public station positions and indexed scheduling timestamps remain readable inside the private database. Device backup/transfer is disabled. Reinstall or resetting the profile creates a new UUID.
+No mandatory account, email, analytics, hardware/device identifier or cloud behavioral profile. Profile/preferences (including price corrections), favourites, cached searches, alert snapshots and saved journey content are AES-GCM encrypted in Room. Public station positions and indexed scheduling timestamps remain readable inside the private database. Device backup/transfer is disabled. Reinstall or resetting the profile creates a new UUID.
 
 Search queries and IP addresses go to the selected transit source. Online maps send tile/style/font requests to OpenFreeMap; those requests reveal viewed areas and the device's IP to the provider/CDN. Station overlays and the sampled location are rendered locally. Offline and Stations modes block map HTTP requests; timetable searches and browser links are separate online operations. Location uses the device's system location implementation. Calendar export hands event information to the calendar app the user chooses. No location, health, calendar or behavioral profile is uploaded by the app to its transit backend.
 
 Downloaded maps, their geographic bounds and the temporary map cache are public, unencrypted cache data inside app-private storage. Delete downloaded areas and clear temporary tiles from Map's download panel; resetting personal data does not remove map packs. OpenFreeMap has no service-level guarantee. See its [privacy policy](https://openfreemap.org/privacy/) and [terms](https://openfreemap.org/tos/).
 
-Timetables and station positions are not live service availability. Walking/traffic durations are the user's estimates. WorkManager reminders may be delayed by Android battery controls and are not exact alarms; notification severity follows the user's Android channel, sound and Do Not Disturb settings. A missed leave time is displayed honestly, without a catch-train guarantee. Saved plans are not observed journeys and are retained for up to 90 days. Calendar events are managed separately.
+Timetables, mapped railways and station positions do not prove service availability. Alerts are published messages rather than train tracking; missing notices do not mean normal service. Platform notices are matched only to an explicit boarding train/station, the travel date, a report within two hours before boarding and a snapshot fetched within ten minutes. Other trains mentioned in the same message do not inherit its platform. Walking/traffic durations are the user's estimates. WorkManager reminders may be delayed by Android battery controls and are not exact alarms; notification severity follows the user's Android channel, sound and Do Not Disturb settings. A missed leave time is displayed honestly, without a catch-train guarantee. Saved plans are not observed journeys and are retained for up to 90 days. Calendar events are managed separately.
 
 Budget totals use integer cents. Corrections apply only to the exact route direction and ticket type on this device; they do not update CT Trains. Check fare validity and current prices at the ticket office. Quantity counts tickets/passes, not an inferred calendar period. The calculator excludes other transport costs unless included in the manually entered price. Health Connect, geofencing, learned estimates, calendar sync and an LLM remain later stages.
 
@@ -88,19 +92,19 @@ cd android
 
 The release workflow performs these checks with explicit development signing when a private key is not configured, verifies the APK signature/non-debuggable flag, and uploads APK/checksum and test/lint/schema reports. An unsigned local release can be signed through Android Studio or the documented environment variables below. Room's version-1 schema is exported under `app/schemas`; future database changes need explicit migrations.
 
-The bundled geographic dataset and refresh/import instructions are in [STATION_DATA.md](docs/STATION_DATA.md). Parser tests use source HTML captured on 1 October 2026. Build verification does not replace device testing of notification timing, native street rendering, airplane-mode map coverage, foreground location, dismissal/backup notification actions or calendar applications.
+The bundled geographic dataset and refresh/import instructions are in [STATION_DATA.md](docs/STATION_DATA.md). Parser tests use source HTML captured on 1 October 2026. Build verification does not replace device testing of notification timing, native street rendering, full-screen/transfer interactions, airplane-mode map coverage, foreground location, dismissal/backup notification actions or calendar applications.
 
 ## GitHub Releases
 
-After this PR is merged, changes to `android/` on `main` automatically create a GitHub prerelease with the installable APK and checksum in the repository's **Releases** section. Each automatic build gets its own `android-v1.2.0-build.N` tag, pointing at the exact source commit.
+After this PR is merged, changes to `android/` on `main` automatically create a GitHub prerelease with the installable APK and checksum in the repository's **Releases** section. Each automatic build gets its own `android-v1.3.0-build.N` tag, pointing at the exact source commit.
 
-For a named version, push a tag or use **Actions → Android build and release → Run workflow** on `main`, and enter a tag such as `android-v1.2.1`:
+For a named version, push a tag or use **Actions → Android build and release → Run workflow** on `main`, and enter a tag such as `android-v1.3.1`:
 
 ```bash
 git checkout main
 git pull
-git tag android-v1.2.1
-git push origin android-v1.2.1
+git tag android-v1.3.1
+git push origin android-v1.3.1
 ```
 
 `android/version.properties` stores the default app version. Named tags set the APK's version name; the workflow adds its run number to the base version code. The About screen displays the built version. Failed builds never publish a release. Publishing stages a draft until both assets are uploaded, and a rerun leaves an already published release unchanged.
@@ -118,13 +122,13 @@ For stable production signing, add all four repository **Actions secrets** under
 | `CTTRAINS_KEY_ALIAS` | Signing key alias |
 | `CTTRAINS_KEY_PASSWORD` | Signing key password |
 
-Use the same private key for every production version. Keep it backed up privately and outside Git. Partial signing configuration fails explicitly. The decoded key is temporary, never included in artifacts, and removed after the build. A stable tag such as `android-v1.2.1` with all four secrets configured publishes a normal release; development signatures and tags with a suffix remain prereleases. The workflow does not publish to the Play Store.
+Use the same private key for every production version. Keep it backed up privately and outside Git. Partial signing configuration fails explicitly. The decoded key is temporary, never included in artifacts, and removed after the build. A stable tag such as `android-v1.3.1` with all four secrets configured publishes a normal release; development signatures and tags with a suffix remain prereleases. The workflow does not publish to the Play Store.
 
 
 ## Structure
 
 ```text
-app/ui/          Map/downloads, planner, budget, service tools, journeys, settings
+app/ui/          Map/downloads/transfers, alerts, planner, budget, journeys, settings
 app/data/        Normalized transit access, Room, Keystore and migration
 app/maps/        Native rendering and bounded offline downloads
 app/location/    Bounded system-provider location sampling
@@ -133,4 +137,4 @@ core/            Pure Kotlin parsing, models, validation and planning rules
 ../src/transit/  Server normalization and captured-data tests
 ```
 
-Independent community app; not affiliated with CT Trains, PRASA or Metrorail. Code uses the repository licence; Wikidata station coordinates are CC0. Street-map attribution and provider terms remain separate from the code licence.
+Independent community app; not affiliated with CT Trains, PRASA or Metrorail. Code uses the repository licence; Wikidata station coordinates are CC0. Street-map attribution/provider terms and the bundled ODbL railway database remain separate from the code licence.

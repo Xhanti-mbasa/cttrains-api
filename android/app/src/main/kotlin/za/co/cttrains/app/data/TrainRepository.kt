@@ -80,6 +80,17 @@ class TrainRepository(private val context: Context) {
         }
     }
     suspend fun clearCache() = store.clearCache()
+    suspend fun savedAlerts(): AlertSnapshot? = store.alerts()
+    suspend fun refreshAlerts(): AlertSnapshot {
+        val snapshot = withContext(Dispatchers.Default) { ServiceAlerts.parse(get(ServiceAlerts.URL), System.currentTimeMillis()) }
+        store.saveAlerts(snapshot)
+        return snapshot
+    }
+    private var railRouter: RailRouter? = null
+    suspend fun trace(journey: Journey, stations: List<StationPosition>): JourneyTrace = withContext(Dispatchers.Default) {
+        val router = railRouter ?: context.assets.open("rail-network.json").bufferedReader().use { RailRouter(json.decodeFromString<RailNetwork>(it.readText())) }.also { railRouter = it }
+        router.trace(journey, stations)
+    }
     private suspend fun get(url: String): String = suspendCancellableCoroutine { continuation ->
         val request = Request.Builder().url(url)
             .header("User-Agent", "CTTrains-Android/1.0 (https://github.com/Xhanti-mbasa/cttrains-api; unofficial community app)")

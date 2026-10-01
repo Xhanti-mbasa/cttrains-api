@@ -8,7 +8,9 @@ The original product brief is preserved in [SMART_TRANSIT_VISION.md](SMART_TRANS
 | --- | --- |
 | Map-first home | 102 real station positions, station taps/search, pan/zoom, origin/destination selection |
 | Street maps | MapLibre Native/OpenFreeMap without a key or login; online mode, bounded SDK offline regions with progress/pause/delete, and station-atlas fallback |
-| Route visualization | Separate coloured train-leg connections over known stops; no invented track or walking geometry |
+| Route visualization | Bundled OSM rail graph follows mapped connections between ordered stops; dashed fallback for unresolved known-stop pairs, no bridge across unknown positions; full-screen view |
+| Transfers/platforms | Numbered change pins and accessible details with train IDs/times; optional per-stop source platform and narrowly matched fresh boarding notice; unknown remains unknown |
+| Alerts | Native status2.php messages, stable IDs, source date/time, line/search/journey filters, refresh and labelled 48-hour saved snapshot |
 | Timetables and fares | Direct CT Trains source and optional normalized server source; source/fetch date shown; exact-query/source offline cache |
 | Source switching | Available source chips. Both current adapters use CT Trains; source/query caches stay separate |
 | Favourites | Local favourite stations and routes, existing favourite routes migrated |
@@ -16,7 +18,7 @@ The original product brief is preserved in [SMART_TRANSIT_VISION.md](SMART_TRANS
 | Journey planning | Building label, user-entered access/buffer estimate, deterministic leave-by time and custom lead before leaving |
 | Notifications | Permission-gated WorkManager reminders; up to three dismissal-triggered backups with individual delay/severity; acknowledgement stops the chain, expired departures are rejected |
 | Budget | Explicit source fare parsing, exact integer-cent totals, ticket/pass quantities and travellers; encrypted route/ticket-specific local corrections with source restoration |
-| Website tools | Updates/delays and early reporter browser links plus native fare/budget calculator; no automatic reports or invented live delays |
+| Website tools | Native updates/delays and fare/budget calculator; early reporter browser handoff, no automatic submissions |
 | Calendar | User-reviewed insert intent and app chooser, works with an installed calendar app; no background sync/read permission |
 | Location | Optional coarse/fine permission, one bounded foreground sample via Android system providers; forgotten when app backgrounds |
 | Privacy | No account, hardware identifiers, analytics, cloud behavioral profile, health permission or background GPS. Reset deletes local personal data and cancels app reminders |
@@ -36,6 +38,14 @@ Map display does not prove service availability. Timetable snapshots are not liv
 New plans schedule against leave-by time; legacy payloads default to departure-based reminders. `JourneyPlanning.afterDismiss` validates generation/stage and anchors each backup delay to the dismissal time. Atomic encrypted record updates prevent duplicate dismissal actions from advancing twice. Acknowledgement marks the chain stopped and cancels work/notifications. Backup work has distinct stage names and a per-journey tag; startup restoration checks history/generation before recovering missing work. Worker checks prevent stale profiles, generations, stages, stopped plans and past departures from posting. WorkManager and Android notification channels govern actual delivery; urgent does not bypass Do Not Disturb.
 
 `TripBudget` recognizes explicitly labelled rand amounts and never infers absent prices. Corrections use `(from, to, ticketId)` keys and timestamps; direction and pass type remain distinct. Quantity and traveller bounds keep exact-cent arithmetic finite. Native budget refresh uses the same validated query/source path as Plan; saved snapshots and their fetch time remain labelled. Corrections affect only local calculations.
+
+## Alerts, rail traces and platforms
+
+`ServiceAlerts` reads the captured status2 message-row structure and report date, rejects unfamiliar/partial markup and ignores ads/scripts. IDs hash the report date, group, time and message so repeated fetches do not duplicate notices. Room's encrypted local-value table stores a single bounded snapshot, usable for up to 48 hours. Refresh failure is shown separately from published message times; an empty published message list is not confirmation of normal service. The alerts source is CT Trains directly, independent of the selected timetable adapter.
+
+`RailRouter` loads the bundled ODbL graph off the UI thread and computes each consecutive timetable stop pair against shared OSM node IDs. A bounded search from nearby station rail candidates preserves mapped curves and avoids unnecessary loops from a single parallel-track snap; it does not connect grade-separated rails just because their coordinates are near. Missing anchors, disconnected graphs or implausible detours produce an explicit dashed approximation only when both station positions are known. Current journey traces are computed with cancellable state collection; stale results cannot replace another selected journey. Offline-download bounds include the known trace. This is approximate visualization rather than authoritative operational train routing. See [RAIL_DATA.md](RAIL_DATA.md).
+
+`Stop.platform` defaults to null, preserving old cached/scheduled payloads. Direct and normalized parsers accept explicit per-stop platform attributes/classes, never a platform found elsewhere in a journey card. Transfer markers always identify the arriving and next train, even when line colours or known platform numbers are unchanged. A published boarding notice can supply a labelled platform only for the exact train, station and travel date, with a ten-minute snapshot freshness limit and a report no more than two hours before boarding. Connecting trains mentioned elsewhere in the message do not inherit that platform. Missing arrival/departure assignments remain unknown; no platform walking route is fabricated.
 
 ## Normalized server contract
 
@@ -57,9 +67,9 @@ GET /mobile/v1/journeys?from=Unibell&to=Salt%20River&date=2026-10-01&time=07:00
 
 The backend validates station names, real calendar dates, source service restrictions and time intervals. It retains train legs/transfers and rejects unexpected markup rather than returning false empty results. The client verifies query, source, endpoints, stop times, connections and timestamp before storing the response. The existing one-hour server cache retains the original fetch time. A future provider should have a distinct source ID and adapter, with its own capabilities, terms and fresh/stale status. Do not repurpose a source ID or join incompatible schedules.
 
-## Stage 2: context and disruptions
+## Stage 2: context and disruption integration
 
-Add a licensed walking/transit-route provider, verified disruptions, event-driven geofences and explicit activity consent. Collect opt-in observed journeys, immediately aggregate access/transfer durations and expire raw events. Implement median/95th-percentile travel estimates only after sufficient observations. Show uncertainty and distinguish user-entered estimates from measured or provider-supplied estimates. Request background location only for a specific opt-in feature that needs it. Refresh an imminent journey and present alternatives; do not silently replace the user's plan. Integrate weather through a separate provider and avoid guessed rain adjustments.
+Add a licensed walking/transit-route provider, verified disruption-to-journey impact, event-driven geofences and explicit activity consent. Published CT Trains status messages are already shown natively, but do not silently rewrite a timetable or imply a live train position. Collect opt-in observed journeys, immediately aggregate access/transfer durations and expire raw events. Implement median/95th-percentile travel estimates only after sufficient observations. Show uncertainty and distinguish user-entered estimates from measured or provider-supplied estimates. Request background location only for a specific opt-in feature that needs it. Refresh an imminent journey and present alternatives; do not silently replace the user's plan. Integrate weather through a separate provider and avoid guessed rain adjustments.
 
 ## Stage 3: routines and calendar/health context
 
@@ -69,4 +79,4 @@ Add revocable, granular Health Connect and calendar-read consent, local aggregat
 
 The existing MCP transit server can serve schedule tools. Keep device context private behind user-mediated, scoped tool access; do not expose Room or location on an unauthenticated network port. Give a future model structured results from deterministic tools for time, routing and reminders. Validate every proposed action against current data and permission state. Require user confirmation for calendar changes, notifications to contacts and other sensitive actions. Keep the deterministic planner functional without a model.
 
-Benchmark optional Qwen/Gemma/Phi/Llama models on target Android devices before choosing a runtime: model licence, download size, RAM, time to first token, sustained speed, battery and thermal impact, offline behavior and opt-out/deletion. Compare llama.cpp, MediaPipe or ONNX Runtime with the same small retrieval-based task. No large model is bundled or continuously running in this release. Health/sleep context, learned probabilities, live traffic, delays and agentic actions are not implemented or simulated by the MVP.
+Benchmark optional Qwen/Gemma/Phi/Llama models on target Android devices before choosing a runtime: model licence, download size, RAM, time to first token, sustained speed, battery and thermal impact, offline behavior and opt-out/deletion. Compare llama.cpp, MediaPipe or ONNX Runtime with the same small retrieval-based task. No large model is bundled or continuously running in this release. Health/sleep context, learned probabilities, live traffic, verified delay predictions and agentic actions are not implemented or simulated by the MVP.

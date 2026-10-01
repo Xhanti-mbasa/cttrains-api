@@ -25,7 +25,11 @@ function parseJourneys(html, notBefore) {
       const stops = b.find('.station-time').toArray().map(time => {
         const nameElement = $(time).parent().find('.station-name').first();
         const label = nameElement.find('span.font-medium').first();
-        return { name: (label.length ? label : nameElement).text().trim(), time: $(time).text().trim() };
+        const row = $(time).parent();
+        const explicit = row.attr('data-platform')?.trim() || (row.find('.platform, .station-platform').first().text().trim().match(/^(?:Platform\s*)?([0-9]{1,2}[A-Za-z]?)$/i) || [])[1];
+        const platform = /^[0-9]{1,2}[A-Za-z]?$/.test(explicit || '') ? explicit.toUpperCase() : null;
+        const name = label.length ? label.text().trim() : nameElement.clone().find('.platform, .station-platform').remove().end().text().trim();
+        return { name, time: $(time).text().trim(), ...(platform ? { platform } : {}) };
       });
       if (!line || !train || stops.length < 2 || stops.some(stop => !stop.name || !validTime.test(stop.time))) throw new Error('Incomplete train leg.');
       return { line, train, stops };

@@ -70,6 +70,12 @@ class LocalTransitStore private constructor(private val context: Context) {
         return dao.value("catalog")?.let { json.decodeFromString<StationCatalog>(codec.decrypt(it.encryptedValue)) }
     }
     suspend fun saveCatalog(value: StationCatalog) { initialize(); saveValue("catalog", json.encodeToString(value)) }
+    suspend fun alerts(): AlertSnapshot? {
+        initialize()
+        return dao.value("service-alerts")?.let { json.decodeFromString<AlertSnapshot>(codec.decrypt(it.encryptedValue)) }
+            ?.takeIf { ServiceAlerts.usable(it, System.currentTimeMillis()) }
+    }
+    suspend fun saveAlerts(snapshot: AlertSnapshot) { initialize(); lock.withLock { saveValue("service-alerts", json.encodeToString(snapshot)) } }
     suspend fun cached(query: SearchQuery, sourceId: String): CachedSearch? {
         initialize()
         val row = dao.cache(cacheKey(query, sourceId)) ?: return null

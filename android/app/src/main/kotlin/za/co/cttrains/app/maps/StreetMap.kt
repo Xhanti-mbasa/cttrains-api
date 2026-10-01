@@ -26,12 +26,14 @@ import za.co.cttrains.app.TrainState
 import za.co.cttrains.core.*
 
 @Composable
-fun StreetMap(state: TrainState, region: OfflineRegionDefinition?, onStation: (String) -> Unit, onError: () -> Unit, modifier: Modifier = Modifier) {
+fun StreetMap(state: TrainState, region: OfflineRegionDefinition?, viewport: MapViewport, transfers: List<TransferPoint>, onStation: (String) -> Unit, onTransfer: (Int) -> Unit, onError: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val select by rememberUpdatedState(onStation)
+    val transfer by rememberUpdatedState(onTransfer)
     val fail by rememberUpdatedState(onError)
-    val view = remember(context) { TransitStreetView(context, region, { select(it) }, { fail() }) }
+    val modeKey = if (region == null) "online" else "offline:${state.preferences.offlineMapId}:${region.bounds}"
+    val view = remember(context) { TransitStreetView(context, region, viewport, modeKey, { select(it) }, { transfer(it) }, { fail() }) }
     DisposableEffect(view, owner) {
         var started = false; var resumed = false
         fun synchronize() {
@@ -43,24 +45,32 @@ fun StreetMap(state: TrainState, region: OfflineRegionDefinition?, onStation: (S
         }
         val observer = LifecycleEventObserver { _, _ -> synchronize() }
         owner.lifecycle.addObserver(observer); synchronize()
-        onDispose { owner.lifecycle.removeObserver(observer); if (resumed) view.onPause(); if (started) view.onStop(); view.onDestroy() }
+        onDispose { owner.lifecycle.removeObserver(observer); view.captureViewport(); if (resumed) view.onPause(); if (started) view.onStop(); view.onDestroy() }
     }
-    AndroidView(factory = { view }, modifier = modifier, update = { it.render(state) })
+    AndroidView(factory = { view }, modifier = modifier, update = { it.render(state, transfers) })
 }
 
-private class TransitStreetView(context: Context, private val region: OfflineRegionDefinition?, private val select: (String) -> Unit, private val fail: () -> Unit) : MapView(context) {
+private class TransitStreetView(context: Context, private val region: OfflineRegionDefinition?, private val viewport: MapViewport, private val modeKey: String, private val select: (String) -> Unit, private val transfer: (Int) -> Unit, private val fail: () -> Unit) : MapView(context) {
     private var map: MapLibreMap? = null
     private var current: TrainState? = null
+    private var transfers: List<TransferPoint> = emptyList()
     private var fitted: Journey? = null
+    private var fittedTrace: JourneyTrace? = null
+    private var closed = false
     init {
+        if (viewport.modeKey != modeKey) { viewport.modeKey = modeKey; viewport.camera = null; viewport.fittedJourney = null; viewport.fittedTrace = null }
+        fitted = viewport.fittedJourney; fittedTrace = viewport.fittedTrace
+        val initialFit = viewport.camera == null
         onCreate(null)
-        addOnDidFailLoadingMapListener { fail() }
+        addOnDidFailLoadingMapListener { if (!closed) fail() }
         getMapAsync { ready ->
+            if (closed) return@getMapAsync
             map = ready
             ready.uiSettings.isLogoEnabled = false
             ready.uiSettings.isAttributionEnabled = true
             ready.uiSettings.isTiltGesturesEnabled = false
-            ready.cameraPosition = CameraPosition.Builder().target(LatLng(-33.95, 18.58)).zoom(10.0).build()
+            ready.cameraPosition = viewport.camera ?: CameraPosition.Builder().target(LatLng(-33.95, 18.58)).zoom(10.0).build()
+            ready.addOnCameraIdleListener { captureViewport() }
             if (region != null) {
                 ready.setMinZoomPreference(region.minZoom)
                 ready.setMaxZoomPreference(region.maxZoom)
@@ -68,44 +78,68 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
             }
             ready.addOnMapClickListener { point ->
                 val p = ready.projection.toScreenLocation(point)
+                val changes = ready.queryRenderedFeatures(RectF(p.x - 24, p.y - 24, p.x + 24, p.y + 24), "rail-transfers")
+                if (changes.isNotEmpty()) { transfer(changes.first().getNumberProperty("number").toInt()); return@addOnMapClickListener true }
                 val hits = ready.queryRenderedFeatures(RectF(p.x - 20, p.y - 20, p.x + 20, p.y + 20), "rail-stations")
                 hits.firstOrNull()?.getStringProperty("name")?.let { select(it); true } ?: false
             }
             val loaded = Style.OnStyleLoaded { style ->
+                if (closed) return@OnStyleLoaded
                 style.addSource(GeoJsonSource("rail-station-data", FeatureCollection.fromFeatures(emptyArray<Feature>())))
                 style.addSource(GeoJsonSource("rail-route-data", FeatureCollection.fromFeatures(emptyArray<Feature>())))
                 style.addSource(GeoJsonSource("rail-location-data", FeatureCollection.fromFeatures(emptyArray<Feature>())))
-                style.addLayer(LineLayer("rail-route", "rail-route-data").withProperties(lineWidth(4f), lineColor(get("color")), lineDasharray(arrayOf(2f, 1f))))
+                style.addSource(GeoJsonSource("rail-transfer-data", FeatureCollection.fromFeatures(emptyArray<Feature>())))
+                style.addLayer(LineLayer("rail-route", "rail-route-data").withFilter(eq(get("rail"), literal(true))).withProperties(lineWidth(4f), lineColor(get("color"))))
+                style.addLayer(LineLayer("rail-route-gaps", "rail-route-data").withFilter(eq(get("rail"), literal(false))).withProperties(lineWidth(3f), lineColor(get("color")), lineDasharray(arrayOf(2f, 1f))))
                 style.addLayer(CircleLayer("rail-stations", "rail-station-data").withProperties(circleRadius(6f), circleColor(get("color")), circleStrokeColor("#ffffff"), circleStrokeWidth(2f)))
-                style.addLayer(SymbolLayer("rail-labels", "rail-station-data").withProperties(textField(get("name")), textFont(arrayOf("Noto Sans Regular")), textSize(11f), textOffset(arrayOf(0f, 1.3f)), textColor("#0a304b"), textHaloColor("#ffffff"), textHaloWidth(1.5f)))
+                style.addLayer(SymbolLayer("rail-labels", "rail-station-data").withFilter(eq(get("transfer"), literal(false))).withProperties(textField(get("name")), textFont(arrayOf("Noto Sans Regular")), textSize(11f), textOffset(arrayOf(0f, 1.3f)), textColor("#0a304b"), textHaloColor("#ffffff"), textHaloWidth(1.5f)))
                 style.addLayer(CircleLayer("rail-location", "rail-location-data").withProperties(circleRadius(8f), circleColor("#1478B8"), circleStrokeColor("#ffffff"), circleStrokeWidth(3f)))
-                region?.bounds?.let { bounds -> post { if (width > 0 && height > 0) ready.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 24)) } }
-                current?.let(::render)
+                style.addLayer(CircleLayer("rail-transfers", "rail-transfer-data").withProperties(circleRadius(13f), circleColor("#713B00"), circleStrokeColor("#ffffff"), circleStrokeWidth(3f)))
+                style.addLayer(SymbolLayer("rail-transfer-numbers", "rail-transfer-data").withProperties(textField(get("numberText")), textFont(arrayOf("Noto Sans Bold")), textSize(14f), textColor("#ffffff"), textAllowOverlap(true), textIgnorePlacement(true)))
+                style.addLayer(SymbolLayer("rail-transfer-labels", "rail-transfer-data").withProperties(textField(get("label")), textFont(arrayOf("Noto Sans Bold")), textSize(12f), textOffset(arrayOf(0f, 2.3f)), textColor("#713B00"), textHaloColor("#ffffff"), textHaloWidth(2f), textMaxWidth(24f)))
+                if (initialFit) region?.bounds?.let { bounds -> post { if (!closed && current?.selectedJourney == null && width > 0 && height > 0) ready.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 24)) } }
+                current?.let { render(it, transfers) }
             }
             if (region == null) ready.setStyle(Style.Builder().fromUri(MapPlanning.STYLE_URL), loaded)
             else ready.setOfflineRegionDefinition(region, loaded)
         }
-        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> current?.let(::render) }
+        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> current?.let { render(it, transfers) } }
     }
-    fun render(state: TrainState) {
+    fun captureViewport() {
+        if (closed || viewport.modeKey != modeKey) return
+        map?.let { viewport.camera = it.cameraPosition; viewport.fittedJourney = fitted; viewport.fittedTrace = fittedTrace }
+    }
+    override fun onDestroy() { closed = true; super.onDestroy() }
+    fun render(state: TrainState, changes: List<TransferPoint>) {
         current = state
+        transfers = changes
+        if (state.selectedJourney == null) { fitted = null; fittedTrace = null }
         val ready = map ?: return
         val style = ready.style?.takeIf { it.isFullyLoaded } ?: return
         val stations = state.stations.filter { it.mapped }.map { p -> Feature.fromGeometry(Point.fromLngLat(p.longitude!!, p.latitude!!)).apply {
             addStringProperty("name", p.name); addStringProperty("color", if (p.name == state.to) "#d77721" else if (p.name == state.from) "#1478B8" else "#148777")
+            addBooleanProperty("transfer", changes.any { stationKey(it.station) == stationKey(p.name) })
         } }
         style.getSourceAs<GeoJsonSource>("rail-station-data")?.setGeoJson(FeatureCollection.fromFeatures(stations))
-        val routes = state.selectedJourney?.legs?.flatMapIndexed { i, leg -> JourneyPlanning.mappedSegments(leg, state.stations).map { points ->
-            Feature.fromGeometry(LineString.fromLngLats(points.map { Point.fromLngLat(it.longitude!!, it.latitude!!) })).apply { addStringProperty("color", listOf("#1478B8", "#d77721", "#148777")[i % 3]) }
+        val routes = state.selectedJourney?.legs?.flatMapIndexed { i, leg ->
+            val sections = state.routeTrace?.legs?.getOrNull(i) ?: JourneyPlanning.mappedSegments(leg, state.stations).map { points -> RouteSection(points.map { TrackPoint(it.latitude!!, it.longitude!!) }, false) }
+            sections.map { section ->
+            Feature.fromGeometry(LineString.fromLngLats(section.points.map { Point.fromLngLat(it.longitude, it.latitude) })).apply { addStringProperty("color", listOf("#1478B8", "#d77721", "#148777")[i % 3]); addBooleanProperty("rail", section.followsRail) }
         } }.orEmpty()
         style.getSourceAs<GeoJsonSource>("rail-route-data")?.setGeoJson(FeatureCollection.fromFeatures(routes))
         val location = state.currentPosition?.let { listOf(Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))) }.orEmpty()
         style.getSourceAs<GeoJsonSource>("rail-location-data")?.setGeoJson(FeatureCollection.fromFeatures(location))
-        if (state.selectedJourney != null && state.selectedJourney != fitted && width > 0 && height > 0) {
-            MapPlanning.area(state.stations, state.selectedJourney)?.bounds?.let { b ->
+        val pins = changes.mapNotNull { change -> change.position?.let { p -> Feature.fromGeometry(Point.fromLngLat(p.longitude!!, p.latitude!!)).apply {
+            addNumberProperty("number", change.number); addStringProperty("numberText", "${change.number}")
+            addStringProperty("label", "Change ${change.number} · ${change.station}\nTrain ${change.nextTrain} · ${change.boardingLabel}")
+        } } }
+        style.getSourceAs<GeoJsonSource>("rail-transfer-data")?.setGeoJson(FeatureCollection.fromFeatures(pins))
+        if (state.selectedJourney != null && (state.selectedJourney != fitted || state.routeTrace != fittedTrace) && width > 0 && height > 0) {
+            MapPlanning.area(state.stations, state.selectedJourney, state.routeTrace)?.bounds?.let { b ->
                 ready.animateCamera(CameraUpdateFactory.newLatLngBounds(LatLngBounds.from(b.north, b.east, b.south, b.west), 70))
             }
             fitted = state.selectedJourney
+            fittedTrace = state.routeTrace
         }
     }
 }

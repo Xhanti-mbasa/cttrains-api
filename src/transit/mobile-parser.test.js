@@ -31,6 +31,12 @@ test('fares only come from the source', () => {
   assert.equal(parseFares('<p>No fares published</p>'), null);
   assert.equal(parseFares('<p>Fares: Single R12</p>'), 'Fares: Single R12');
 });
+test('platform fields belong to one stop and never leak across a leg', () => {
+  const source = fixture('transfer').replace('class="flex items-center"', 'class="flex items-center" data-platform="2B"');
+  const stops = parseJourneys(source, '07:00')[0].legs.flatMap(leg => leg.stops);
+  assert.equal(stops[0].platform, '2B');
+  assert.ok(stops.slice(1).every(stop => !Object.hasOwn(stop, 'platform')));
+});
 test('query validation rejects invalid dates, unsupported days and time intervals', () => {
   const c = { stations: ['Unibell', 'Salt River'], holidays: ['2026-10-02'] };
   const q = { from: 'Unibell', to: 'Salt River', date: '2026-10-01', time: '07:00' };

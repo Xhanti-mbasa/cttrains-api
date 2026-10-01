@@ -11,18 +11,18 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun TransitTools(onBudget: () -> Unit) {
+fun TransitTools(onAlerts: () -> Unit, onBudget: () -> Unit) {
     val uri = LocalUriHandler.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("CT Trains tools", style = MaterialTheme.typography.titleMedium)
-        OutlinedButton(onClick = { uri.openUri("https://cttrains.co.za/status2.php") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.NotificationsActive, null); Spacer(Modifier.width(8.dp)); Text("Updates & delays · website") }
+        OutlinedButton(onClick = onAlerts, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.NotificationsActive, null); Spacer(Modifier.width(8.dp)); Text("Updates & delays") }
         FilledTonalButton(onClick = onBudget, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Calculate, null); Spacer(Modifier.width(8.dp)); Text("Fare & budget calculator") }
         OutlinedButton(onClick = { uri.openUri("https://cttrains.co.za/earlytrain1.php") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Report, null); Spacer(Modifier.width(8.dp)); Text("Early train reporter · website") }
-        Text("Updates and reports open CT Trains in your browser. Report details are submitted only when you choose to send them there.", style = MaterialTheme.typography.bodySmall)
+        Text("Updates open inside the app. The early train reporter opens CT Trains in your browser; details are submitted only when you choose to send them there.", style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
-fun TransitToolsSheet(onDismiss: () -> Unit, onBudget: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.padding(24.dp).navigationBarsPadding()) { TransitTools(onBudget) } }
+fun TransitToolsSheet(onDismiss: () -> Unit, onAlerts: () -> Unit, onBudget: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.padding(24.dp).navigationBarsPadding()) { TransitTools(onAlerts, onBudget) } }
 }

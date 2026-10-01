@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -25,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -39,19 +42,25 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlin.math.cos
 import kotlin.math.min
+import kotlinx.coroutines.delay
 import za.co.cttrains.app.maps.StreetMap
+import za.co.cttrains.app.maps.MapViewport
 import za.co.cttrains.app.TrainState
 import za.co.cttrains.app.TrainViewModel
 import za.co.cttrains.app.location.CurrentPosition
 import za.co.cttrains.core.*
 
 @Composable
-fun TransitMapScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Unit) {
+fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boolean = false, onExpand: () -> Unit = {}, onClose: () -> Unit = {}, onPlan: () -> Unit) {
     var browser by rememberSaveable { mutableStateOf(false) }
     var downloadsOpen by remember { mutableStateOf(false) }
     val downloads by model.offlineMaps.state.collectAsState()
     var failed by remember(state.preferences.mapMode, state.preferences.offlineMapId) { mutableStateOf(false) }
     var retry by remember { mutableIntStateOf(0) }
+    var allTransfers by remember { mutableStateOf(false) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) { while (true) { delay(60_000); now = System.currentTimeMillis() } }
+    val transfers = state.selectedJourney?.let { TransferGuide.points(state.result?.entry?.query ?: state.query, it, state.stations, state.alerts, now) }.orEmpty()
     val savedArea = downloads.regions.firstOrNull { it.id == state.preferences.offlineMapId && it.complete } ?: downloads.regions.firstOrNull { it.complete }
     val useStreets = state.mapsReady && state.preferences.mapMode != "stations" && !failed && (state.preferences.mapMode == "online" || savedArea != null)
     val uri = LocalUriHandler.current
@@ -59,7 +68,8 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Uni
     val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants.values.any { it }) model.locateOnce() else model.showMessage("Location is optional. You can select stations without it.")
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().then(if (fullScreen) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier).padding(horizontal = if (fullScreen) 8.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!fullScreen) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Where to next?", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -76,11 +86,16 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Uni
         OutlinedButton(onClick = { browser = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
             Icon(Icons.Outlined.Search, null); Spacer(Modifier.width(12.dp)); Text("Search stations"); Spacer(Modifier.weight(1f)); Icon(Icons.Outlined.Tune, null)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClose) { Icon(Icons.Outlined.FullscreenExit, "Close full-screen map") }
+            Text("Journey map", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            IconButton(onClick = { browser = true }) { Icon(Icons.Outlined.Search, "Search stations") }
+            IconButton(onClick = model::openAlerts) { Icon(Icons.Outlined.NotificationsActive, "Service alerts") }
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             listOf("online" to "Online", "offline" to "Offline", "stations" to "Stations").forEach { (mode, title) ->
                 FilterChip(state.preferences.mapMode == mode, { model.setMapMode(mode) }, label = { Text(title) })
             }
-            Spacer(Modifier.weight(1f))
             IconButton(onClick = { downloadsOpen = true }) { Icon(Icons.Outlined.Download, "Manage offline maps") }
         }
         if (failed || (state.preferences.mapMode == "offline" && savedArea == null)) {
@@ -89,16 +104,20 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Uni
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                if (useStreets) key(state.preferences.mapMode, savedArea?.id, retry) { StreetMap(state, if (state.preferences.mapMode == "offline") model.offlineMaps.definition(savedArea?.id) else null, model::selectStation, { failed = true }, Modifier.fillMaxSize()) }
-                else OfflineStationMap(state.stations, state.selectedJourney, state.currentPosition, state.from, state.to, model::selectStation)
+                if (useStreets) key(state.preferences.mapMode, savedArea?.id, retry) { StreetMap(state, if (state.preferences.mapMode == "offline") model.offlineMaps.definition(savedArea?.id) else null, model.mapViewport, transfers, model::selectStation, model::selectTransfer, { failed = true }, Modifier.fillMaxSize()) }
+                else OfflineStationMap(state.stations, state.selectedJourney, state.routeTrace, model.mapViewport, transfers, state.currentPosition, state.from, state.to, model::selectStation, model::selectTransfer)
             }
-            Surface(Modifier.align(Alignment.TopStart).padding(12.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), tonalElevation = 3.dp) {
+            Surface(Modifier.align(Alignment.TopStart).padding(12.dp).fillMaxWidth(if (fullScreen) .82f else .76f), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), tonalElevation = 3.dp) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Text(if (useStreets) if (state.preferences.mapMode == "offline") "Downloaded street map" else "OpenFreeMap · online" else "Offline station map", style = MaterialTheme.typography.labelLarge)
-                    Text("${state.stations.count { it.mapped }} mapped stations · tap to choose", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (state.selectedJourney == null) "${state.stations.count { it.mapped }} mapped stations · tap to choose" else "${transfers.size} train changes · tap numbered pins", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-
+            if (!fullScreen) FilledTonalIconButton(onClick = onExpand, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) { Icon(Icons.Outlined.Fullscreen, "Expand map to full screen") }
+            if (state.traceLoading) LinearProgressIndicator(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp))
+        }
+        if (transfers.isNotEmpty()) FilledTonalButton(onClick = { allTransfers = true }, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Outlined.SyncAlt, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("${transfers.size} train ${if (transfers.size == 1) "change" else "changes"} · see trains & platforms")
         }
         if (state.selectedJourney != null && state.result != null) {
             val journey = state.selectedJourney
@@ -115,11 +134,13 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Uni
         } else Button(onClick = onPlan, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
             Icon(Icons.Outlined.Route, null); Spacer(Modifier.width(10.dp)); Text("${state.from.ifBlank { "From" }} → ${state.to.ifBlank { "To" }}")
         }
-        if (useStreets) TextButton(onClick = { uri.openUri("https://www.openstreetmap.org/copyright") }, contentPadding = PaddingValues(0.dp)) { Text("© OpenMapTiles · © OpenStreetMap contributors", style = MaterialTheme.typography.labelSmall) }
-        Text("Wikidata station positions · connections between stops, not track or walking directions.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+        if (state.selectedJourney != null) Text("Solid: mapped railway trace. Dashed: approximate link. Confirm trains and platforms at the station.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = { uri.openUri("https://www.openstreetmap.org/copyright") }, contentPadding = PaddingValues(0.dp)) { Text("© OpenStreetMap contributors${if (useStreets) " · OpenMapTiles" else ""} · stations: Wikidata", style = MaterialTheme.typography.labelSmall) }
     }
     if (browser) StationBrowser(state, model, onDismiss = { browser = false }) { model.selectStation(it); browser = false }
     if (downloadsOpen) MapDownloadsSheet(state, model) { downloadsOpen = false }
+    val selectedTransfer = transfers.firstOrNull { it.number == state.selectedTransfer }
+    if (allTransfers || selectedTransfer != null) TransferDetailsSheet(if (allTransfers) transfers else listOfNotNull(selectedTransfer), { allTransfers = false; model.selectTransfer(null) }, { allTransfers = false; model.selectTransfer(null); model.openAlerts() })
 
     state.selectedStation?.let { name ->
         ModalBottomSheet(onDismissRequest = { model.selectStation(null) }) {
@@ -131,7 +152,8 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Uni
                     }
                     IconButton(onClick = { model.toggleStation(name) }) { Icon(if (name in state.preferences.favoriteStations) Icons.Outlined.Star else Icons.Outlined.StarBorder, "Toggle favourite station") }
                 }
-                Text("Choose a destination to see the next listed trains. Platform, live delay and closure information are not supplied by this timetable.", style = MaterialTheme.typography.bodyMedium)
+                Text("Choose a destination to see listed trains. Check Updates & delays for published notices; confirm missing platform numbers at the station.", style = MaterialTheme.typography.bodyMedium)
+                transfers.filter { stationKey(it.station) == stationKey(name) }.forEach { point -> OutlinedButton(onClick = { model.selectTransfer(point.number) }) { Text("Change ${point.number} · train ${point.nextTrain} · ${point.boardingLabel}") } }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     FilledTonalButton(onClick = { model.edit { it.copy(from = name, selectedStation = null) }; onPlan() }, modifier = Modifier.weight(1f)) { Text("Start here") }
                     Button(onClick = { model.edit { it.copy(to = name, selectedStation = null) }; onPlan() }, modifier = Modifier.weight(1f)) { Text("Go here") }
@@ -145,8 +167,8 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Uni
 private fun legColor(index: Int): Color = listOf(Color(0xFF1478B8), Color(0xFFD77721), Color(0xFF148777))[index % 3]
 fun sourceLabel(id: String): String = when (id) { "cttrains-api" -> "CT Trains via Transit API"; else -> "CT Trains" }
 
-private class Projection(stations: List<StationPosition>, val size: IntSize) {
-    private val mapped = stations.filter { it.mapped }
+private class Projection(stations: List<StationPosition>, trace: JourneyTrace?, val size: IntSize) {
+    private val mapped = stations.filter { it.mapped } + trace?.legs?.flatten()?.flatMap { it.points }?.map { StationPosition("Track", it.latitude, it.longitude) }.orEmpty()
     private val minLat = mapped.minOfOrNull { it.latitude!! } ?: -34.2
     private val maxLat = mapped.maxOfOrNull { it.latitude!! } ?: -33.6
     private val minLon = mapped.minOfOrNull { it.longitude!! } ?: 18.4
@@ -157,12 +179,15 @@ private class Projection(stations: List<StationPosition>, val size: IntSize) {
 }
 
 @Composable
-private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?, location: CurrentPosition?, from: String, to: String, onStation: (String) -> Unit) {
+private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?, trace: JourneyTrace?, viewport: MapViewport, transfers: List<TransferPoint>, location: CurrentPosition?, from: String, to: String, onStation: (String) -> Unit, onTransfer: (Int) -> Unit) {
     var size by remember { mutableStateOf(IntSize.Zero) }
-    var zoom by remember { mutableFloatStateOf(1f) }
-    var pan by remember { mutableStateOf(Offset.Zero) }
-    val transform = rememberTransformableState { delta, movement, _ -> zoom = (zoom * delta).coerceIn(1f, 6f); pan += movement }
-    val projection = remember(stations, size) { Projection(stations, size) }
+    var zoom by remember(journey) { mutableFloatStateOf(if (viewport.stationJourney == journey) viewport.stationZoom else 1f) }
+    var pan by remember(journey) { mutableStateOf(if (viewport.stationJourney == journey) Offset(viewport.stationPanX, viewport.stationPanY) else Offset.Zero) }
+    SideEffect { viewport.stationJourney = journey; viewport.stationZoom = zoom; viewport.stationPanX = pan.x; viewport.stationPanY = pan.y }
+    val transform = rememberTransformableState { delta, movement, _ -> zoom = (zoom * delta).coerceIn(1f, 16f); pan += Offset(movement.x / size.width.coerceAtLeast(1), movement.y / size.height.coerceAtLeast(1)) }
+    val routeNames = journey?.legs?.flatMap { it.stops }?.map { stationKey(it.name) }?.toSet()
+    val extent = if (routeNames == null) stations else stations.filter { stationKey(it.name) in routeNames }
+    val projection = remember(extent, trace, size) { Projection(extent, trace, size) }
     val density = LocalDensity.current
     val primary = MaterialTheme.colorScheme.primary
     val outline = MaterialTheme.colorScheme.outlineVariant
@@ -172,13 +197,15 @@ private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?
     val paint = remember(labelColor) { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.argb(255, (labelColor.red * 255).toInt(), (labelColor.green * 255).toInt(), (labelColor.blue * 255).toInt()); textSize = with(density) { 11.dp.toPx() } } }
     fun projected(lat: Double, lon: Double): Offset {
         val middle = Offset(size.width / 2f, size.height / 2f)
-        return (projection.point(lat, lon) - middle) * zoom + middle + pan
+        return (projection.point(lat, lon) - middle) * zoom + middle + Offset(pan.x * size.width, pan.y * size.height)
     }
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize().onSizeChanged { size = it }.transformable(transform)
             .semantics { contentDescription = "Rail station map. Use Search stations for an accessible station list." }
-            .pointerInput(stations, size, zoom, pan) {
+            .pointerInput(stations, transfers, journey, trace, size, zoom, pan) {
                 detectTapGestures { tap ->
+                    val transfer = transfers.mapNotNull { t -> t.position?.let { t to projected(it.latitude!!, it.longitude!!) } }.minByOrNull { (it.second - tap).getDistance() }
+                    if (transfer != null && (transfer.second - tap).getDistance() < with(density) { 26.dp.toPx() }) { onTransfer(transfer.first.number); return@detectTapGestures }
                     val closest = stations.filter { it.mapped }.minByOrNull { (projected(it.latitude!!, it.longitude!!) - tap).getDistance() }
                     if (closest != null && (projected(closest.latitude!!, closest.longitude!!) - tap).getDistance() < with(density) { 24.dp.toPx() }) onStation(closest.name)
                 }
@@ -187,23 +214,44 @@ private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?
             var x = 0f; while (x < this.size.width) { drawLine(outline.copy(alpha = .3f), Offset(x, 0f), Offset(x, this.size.height)); x += grid }
             var y = 0f; while (y < this.size.height) { drawLine(outline.copy(alpha = .3f), Offset(0f, y), Offset(this.size.width, y)); y += grid }
             journey?.legs?.forEachIndexed { index, leg ->
-                JourneyPlanning.mappedSegments(leg, stations).forEach { points -> points.zipWithNext().forEach { (a, b) ->
-                    drawLine(legColor(index), projected(a.latitude!!, a.longitude!!), projected(b.latitude!!, b.longitude!!), strokeWidth = 3.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 5.dp.toPx())))
-                } }
+                val sections = trace?.legs?.getOrNull(index) ?: JourneyPlanning.mappedSegments(leg, stations).map { points -> RouteSection(points.map { TrackPoint(it.latitude!!, it.longitude!!) }, false) }
+                sections.forEach { section ->
+                    val path = Path(); section.points.forEachIndexed { n, p -> val point = projected(p.latitude, p.longitude); if (n == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y) }
+                    drawPath(path, legColor(index), style = androidx.compose.ui.graphics.drawscope.Stroke(if (section.followsRail) 4.dp.toPx() else 3.dp.toPx(), pathEffect = if (section.followsRail) null else PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 5.dp.toPx()))))
+                }
             }
-            stations.filter { it.mapped }.forEach { station ->
+            val occupied = mutableListOf<android.graphics.RectF>()
+            val transferNames = transfers.map { stationKey(it.station) }.toSet()
+            stations.filter { it.mapped }.sortedBy { it.name != from && it.name != to }.forEach { station ->
                 val point = projected(station.latitude!!, station.longitude!!)
                 val selected = station.name == from || station.name == to || stationKey(station.name) in selectedNames
                 drawCircle(surface, if (selected) 7.dp.toPx() else 4.5.dp.toPx(), point)
                 drawCircle(if (station.name == to) legColor(1) else primary, if (selected) 5.dp.toPx() else 2.5.dp.toPx(), point)
-                if (selected || station.name in listOf("Cape Town", "Bellville", "Fish Hoek", "Wellington", "Strand")) drawContext.canvas.nativeCanvas.drawText(station.name, point.x + 8.dp.toPx(), point.y - 5.dp.toPx(), paint)
+                if ((selected || station.name in listOf("Cape Town", "Bellville", "Fish Hoek", "Wellington", "Strand")) && stationKey(station.name) !in transferNames) {
+                    val x = point.x + 8.dp.toPx(); val y = point.y - 5.dp.toPx()
+                    val rect = android.graphics.RectF(x - 2, y - paint.textSize, x + paint.measureText(station.name) + 4, y + 4)
+                    if (occupied.none { android.graphics.RectF.intersects(it, rect) }) { occupied.add(rect); drawContext.canvas.nativeCanvas.drawText(station.name, x, y, paint) }
+                }
             }
+            val numberPaint = android.graphics.Paint(paint).apply { color = android.graphics.Color.WHITE; textAlign = android.graphics.Paint.Align.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD; textSize = 14.dp.toPx() }
+            val pinPaint = android.graphics.Paint(paint).apply { typeface = android.graphics.Typeface.DEFAULT_BOLD }
+            transfers.forEach { change -> change.position?.let { p ->
+                val point = projected(p.latitude!!, p.longitude!!)
+                drawCircle(Color.White, 15.dp.toPx(), point); drawCircle(Color(0xFF713B00), 12.dp.toPx(), point)
+                drawContext.canvas.nativeCanvas.drawText("${change.number}", point.x, point.y - (numberPaint.ascent() + numberPaint.descent()) / 2, numberPaint)
+                val labels = listOf("Change ${change.number} · ${change.station}", "Train ${change.nextTrain} · ${change.boardingLabel}")
+                val longest = labels.maxOf { pinPaint.measureText(it) }
+                val x = (point.x + 18.dp.toPx()).coerceAtMost(size.width - longest - 8.dp.toPx()).coerceAtLeast(4.dp.toPx())
+                val y = (point.y - 22.dp.toPx()).coerceAtLeast(28.dp.toPx())
+                drawRoundRect(surface.copy(alpha = .96f), Offset(x - 5.dp.toPx(), y - pinPaint.textSize - 4.dp.toPx()), androidx.compose.ui.geometry.Size(longest + 10.dp.toPx(), 36.dp.toPx()), cornerRadius = androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()))
+                labels.forEachIndexed { n, label -> drawContext.canvas.nativeCanvas.drawText(label, x, y + n * 14.dp.toPx(), pinPaint) }
+            } }
             location?.let { val point = projected(it.latitude, it.longitude); drawCircle(Color(0xFF1478B8).copy(alpha = .15f), 14.dp.toPx(), point); drawCircle(Color(0xFF1478B8), 6.dp.toPx(), point) }
         }
         Column(Modifier.align(Alignment.BottomEnd).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilledTonalIconButton(onClick = { zoom = (zoom + .5f).coerceAtMost(6f) }) { Icon(Icons.Outlined.Add, "Zoom in") }
+            FilledTonalIconButton(onClick = { zoom = (zoom + .5f).coerceAtMost(16f) }) { Icon(Icons.Outlined.Add, "Zoom in") }
             FilledTonalIconButton(onClick = { zoom = (zoom - .5f).coerceAtLeast(1f) }) { Icon(Icons.Outlined.Remove, "Zoom out") }
-            FilledTonalIconButton(onClick = { zoom = 1f; pan = Offset.Zero }) { Icon(Icons.Outlined.CenterFocusStrong, "Show all stations") }
+            FilledTonalIconButton(onClick = { zoom = 1f; pan = Offset.Zero }) { Icon(Icons.Outlined.CenterFocusStrong, if (journey == null) "Show all stations" else "Fit this journey") }
         }
     }
 }

@@ -14,7 +14,7 @@ data class SearchQuery(val from: String, val to: String, val date: String, val t
 }
 
 @Serializable
-data class Stop(val name: String, val time: String)
+data class Stop(val name: String, val time: String, val platform: String? = null)
 
 @Serializable
 data class Leg(val line: String, val train: String, val stops: List<Stop>) {

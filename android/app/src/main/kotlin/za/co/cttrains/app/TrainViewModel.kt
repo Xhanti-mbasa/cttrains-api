@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import za.co.cttrains.app.data.Preferences
 import za.co.cttrains.app.data.SearchResult
@@ -41,6 +44,8 @@ data class TrainState(
     val locating: Boolean = false,
     val requestedScreen: String? = null,
     val mapsReady: Boolean = false,
+    val alerts: AlertSnapshot? = null, val alertsLoading: Boolean = false, val alertsOffline: Boolean = false, val alertsError: String? = null,
+    val routeTrace: JourneyTrace? = null, val traceLoading: Boolean = false, val selectedTransfer: Int? = null,
 ) {
     val query: SearchQuery get() = SearchQuery(from, to, date, time)
     val isSaved: Boolean get() = SavedRoute(from, to) in preferences.routes
@@ -56,7 +61,9 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
     private var locationExpiryJob: Job? = null
     private val reminders = JourneyReminders(application)
     val offlineMaps = OfflineMaps(application)
+    val mapViewport = MapViewport()
     private var requestedMapMode: String? = null
+    private var alertsJob: Job? = null
 
     init {
         viewModelScope.launch(storageErrors) {
@@ -95,6 +102,23 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(storageErrors) { repository.store.stations.collect { stations -> mutableState.update { it.copy(stations = stations) } } }
         viewModelScope.launch(storageErrors) { repository.store.journeys.collect { journeys -> mutableState.update { it.copy(scheduled = journeys) } } }
         viewModelScope.launch(storageErrors) { repository.store.initialize(); reminders.restoreMissing(repository.store.journeys.first()) }
+        viewModelScope.launch(storageErrors) {
+            val saved = runCatching { repository.savedAlerts() }.getOrNull()
+            mutableState.update { it.copy(alerts = saved, alertsOffline = saved != null) }
+            refreshAlerts()
+        }
+        viewModelScope.launch(storageErrors) {
+            state.map { it.selectedJourney to it.stations }.distinctUntilChanged().collectLatest { (journey, stations) ->
+                mutableState.update { it.copy(routeTrace = null, traceLoading = journey != null, selectedTransfer = null) }
+                if (journey != null) {
+                    val trace = runCatching { repository.trace(journey, stations) }.getOrElse { error ->
+                        if (error is kotlinx.coroutines.CancellationException) throw error
+                        null
+                    }
+                    mutableState.update { if (it.selectedJourney == journey) it.copy(routeTrace = trace, traceLoading = false) else it }
+                }
+            }
+        }
     }
 
     fun edit(transform: (TrainState) -> TrainState) {
@@ -141,6 +165,23 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
     fun dismissMessage() = mutableState.update { it.copy(message = null) }
 
     fun selectStation(name: String?) = mutableState.update { it.copy(selectedStation = name) }
+    fun selectTransfer(number: Int?) = mutableState.update { it.copy(selectedTransfer = number, selectedStation = null) }
+    fun openAlerts() = mutableState.update { it.copy(requestedScreen = "alerts") }
+    fun refreshAlerts() {
+        if (alertsJob?.isActive == true) return
+        alertsJob = viewModelScope.launch(storageErrors) {
+            mutableState.update { it.copy(alertsLoading = true, alertsError = null) }
+            try {
+                val snapshot = repository.refreshAlerts()
+                mutableState.update { it.copy(alerts = snapshot, alertsLoading = false, alertsOffline = false) }
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                val saved = state.value.alerts?.takeIf { ServiceAlerts.usable(it, System.currentTimeMillis()) }
+                mutableState.update { it.copy(alerts = saved, alertsLoading = false, alertsOffline = saved != null,
+                    alertsError = if (error is ScheduleFormatException) error.message else "Couldn’t refresh CT Trains alerts. Check your connection or try again later.") }
+            }
+        }
+    }
     fun selectJourney(journey: Journey) = mutableState.update { it.copy(selectedJourney = journey) }
     fun toggleStation(name: String) = viewModelScope.launch(storageErrors) {
         repository.updatePreferences { prefs -> prefs.copy(favoriteStations = if (name in prefs.favoriteStations) prefs.favoriteStations - name else (prefs.favoriteStations + name).takeLast(30)) }
@@ -153,7 +194,8 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
         repository.updatePreferences { it.copy(mapMode = mode) }
     }
     fun downloadMap(journey: Journey? = null) = viewModelScope.launch(storageErrors) {
-        val area = MapPlanning.area(state.value.stations, journey) ?: return@launch showMessage("Choose a mapped journey first.")
+        if (journey != null && state.value.traceLoading) return@launch showMessage("Wait for the route trace to load before downloading this journey.")
+        val area = MapPlanning.area(state.value.stations, journey, if (journey == state.value.selectedJourney) state.value.routeTrace else null) ?: return@launch showMessage("Choose a mapped journey first.")
         requestedMapMode = "online"; MapEngine.mode("online")
         repository.updatePreferences { it.copy(mapMode = "online") }
         if (requestedMapMode != null && requestedMapMode != "online") return@launch
@@ -232,10 +274,11 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun navigationHandled() = mutableState.update { it.copy(requestedScreen = null) }
     fun clearPersonalData() = viewModelScope.launch(storageErrors) {
-        searchJob?.cancel(); forgetLocation()
+        searchJob?.cancel(); alertsJob?.cancel(); forgetLocation()
         try {
             reminders.cancelAll(); repository.store.clearPersonalData()
-            mutableState.update { it.copy(from = "", to = "", result = null, selectedJourney = null, selectedStation = null, loading = false, error = null, message = "Local profile, favourites, journeys and cache deleted. A new anonymous profile was created.") }
+            mapViewport.reset()
+            mutableState.update { it.copy(from = "", to = "", result = null, selectedJourney = null, selectedStation = null, selectedTransfer = null, alerts = null, alertsLoading = false, alertsError = null, alertsOffline = false, loading = false, error = null, message = "Local profile, favourites, journeys and cache deleted. A new anonymous profile was created.") }
         } catch (_: Exception) { showMessage("Couldn’t finish deleting local data. Please try again.") }
     }
 }

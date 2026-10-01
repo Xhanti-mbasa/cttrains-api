@@ -10,9 +10,10 @@ object MapPlanning {
     const val MAX_TILES = 5000L
     const val MAX_OFFLINE_BYTES = 200L * 1024 * 1024
     const val MAX_REGIONS = 3
-    fun area(stations: List<StationPosition>, journey: Journey? = null): MapArea? {
+    fun area(stations: List<StationPosition>, journey: Journey? = null, trace: JourneyTrace? = null): MapArea? {
         val names = journey?.legs?.flatMap { it.stops }?.map { stationKey(it.name) }?.toSet()
-        val points = stations.filter { it.mapped && (names == null || stationKey(it.name) in names) }
+        val points = stations.filter { it.mapped && (names == null || stationKey(it.name) in names) } +
+            (if (journey != null) trace?.legs?.flatten()?.flatMap { it.points }?.map { StationPosition("Track", it.latitude, it.longitude) }.orEmpty() else emptyList())
         if (points.size < 2) return null
         val bounds = MapBounds(points.minOf { it.longitude!! } - .015, points.minOf { it.latitude!! } - .015,
             points.maxOf { it.longitude!! } + .015, points.maxOf { it.latitude!! } + .015)

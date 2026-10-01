@@ -41,7 +41,11 @@ object CtTrainsParser {
                 val train = trainNumber.find(block.text())?.groupValues?.get(1).orEmpty()
                 val stops = block.select(".station-time").map { timeElement ->
                     val nameElement = timeElement.parent()?.selectFirst(".station-name")
-                    Stop(stationName(nameElement), timeElement.text().trim())
+                    val row = timeElement.parent()
+                    val platformText = row?.attr("data-platform")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: row?.selectFirst(".platform, .station-platform")?.text()?.let { Regex("(?:Platform\\s*)?([0-9]{1,2}[A-Za-z]?)", RegexOption.IGNORE_CASE).matchEntire(it.trim())?.groupValues?.get(1) }
+                    val platform = platformText?.takeIf { Regex("[0-9]{1,2}[A-Za-z]?").matches(it) }?.uppercase()
+                    Stop(stationName(nameElement), timeElement.text().trim(), platform)
                 }
                 if (line.isBlank() || train.isBlank() || stops.size < 2 || stops.any { it.name.isBlank() || !validTime.matches(it.time) })
                     throw ScheduleFormatException("A timetable could not be read safely. Check this journey on the website.")
@@ -55,6 +59,6 @@ object CtTrainsParser {
 
     private fun stationName(element: Element?): String {
         if (element == null) return ""
-        return element.selectFirst("span.font-medium")?.text()?.trim() ?: element.text().trim()
+        return element.selectFirst("span.font-medium")?.text()?.trim() ?: element.clone().apply { select(".platform, .station-platform").remove() }.text().trim()
     }
 }

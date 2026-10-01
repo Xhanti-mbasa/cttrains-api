@@ -75,7 +75,7 @@ fun validateTransitEntry(entry: CachedSearch, query: SearchQuery, sourceId: Stri
         throw ScheduleFormatException("The transit API returned a different query or source.")
     val time = Regex("(?:[01]\\d|2[0-3]):[0-5]\\d")
     entry.journeys.forEach { journey ->
-        if (journey.legs.isEmpty() || journey.legs.any { leg -> leg.line.isBlank() || leg.train.isBlank() || leg.stops.size < 2 || leg.stops.any { it.name.isBlank() || !time.matches(it.time) } } ||
+        if (journey.legs.isEmpty() || journey.legs.any { leg -> leg.line.isBlank() || leg.train.isBlank() || leg.stops.size < 2 || leg.stops.any { it.name.isBlank() || !time.matches(it.time) || (it.platform != null && !Regex("[0-9]{1,2}[A-Za-z]?").matches(it.platform)) } } ||
             journey.legs.zipWithNext().any { (a, b) -> stationKey(a.arrival.name) != stationKey(b.departure.name) } ||
             stationKey(journey.legs.first().departure.name) != stationKey(query.from) ||
             stationKey(journey.legs.last().arrival.name) != stationKey(query.to))
