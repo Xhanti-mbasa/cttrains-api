@@ -5,6 +5,10 @@
 
 An unofficial REST API and Model Context Protocol (MCP) server for Cape Town Metrorail train schedules and service updates. Data is scraped live from [cttrains.co.za](https://cttrains.co.za).
 
+## Android app
+
+The [`android/`](android/README.md) directory contains a native **Kotlin + Jetpack Compose + Google Material 3** app with station-to-station search, transfer details, saved routes, offline timetable fallback and dark mode. Open `android/` in Android Studio to run it. The app connects directly to CT Trains and needs no API-server setup.
+
 > **Disclaimer:** This project is a community-built tool and is **not affiliated with or endorsed by Metrorail or PRASA**. 
 
 ---
