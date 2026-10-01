@@ -1,0 +1,410 @@
+[
+  {
+    "name": "Akasia Park",
+    "wikidata": "http://www.wikidata.org/entity/Q124401863"
+  },
+  {
+    "name": "Athlone",
+    "wikidata": "http://www.wikidata.org/entity/Q124395585"
+  },
+  {
+    "name": "Avondale",
+    "wikidata": "http://www.wikidata.org/entity/Q124401866"
+  },
+  {
+    "name": "Belhar",
+    "wikidata": "http://www.wikidata.org/entity/Q124401856"
+  },
+  {
+    "name": "Bellville",
+    "wikidata": "http://www.wikidata.org/entity/Q4884226"
+  },
+  {
+    "name": "Blackheath",
+    "wikidata": "http://www.wikidata.org/entity/Q124395862"
+  },
+  {
+    "name": "Bonteheuwel",
+    "wikidata": "http://www.wikidata.org/entity/Q124395462"
+  },
+  {
+    "name": "Brackenfell",
+    "wikidata": "http://www.wikidata.org/entity/Q124402002"
+  },
+  {
+    "name": "Cape Town",
+    "wikidata": "http://www.wikidata.org/entity/Q1034496"
+  },
+  {
+    "name": "Century City",
+    "wikidata": "http://www.wikidata.org/entity/Q124401861"
+  },
+  {
+    "name": "Chris Hani",
+    "wikidata": "http://www.wikidata.org/entity/Q124395653"
+  },
+  {
+    "name": "Claremont",
+    "wikidata": "http://www.wikidata.org/entity/Q5126343"
+  },
+  {
+    "name": "Crawford",
+    "wikidata": "http://www.wikidata.org/entity/Q5182931"
+  },
+  {
+    "name": "Dal Josafat",
+    "wikidata": "http://www.wikidata.org/entity/Q124401996"
+  },
+  {
+    "name": "De Grendel",
+    "wikidata": "http://www.wikidata.org/entity/Q124401865"
+  },
+  {
+    "name": "Dieprivier",
+    "wikidata": "http://www.wikidata.org/entity/Q124395233"
+  },
+  {
+    "name": "Du Toit",
+    "wikidata": "http://www.wikidata.org/entity/Q124402007"
+  },
+  {
+    "name": "Eerste River",
+    "wikidata": "http://www.wikidata.org/entity/Q124395860"
+  },
+  {
+    "name": "Eikenfontein",
+    "wikidata": "http://www.wikidata.org/entity/Q124402001"
+  },
+  {
+    "name": "Elsies River",
+    "wikidata": "http://www.wikidata.org/entity/Q124395866"
+  },
+  {
+    "name": "Esplanade",
+    "wikidata": "http://www.wikidata.org/entity/Q124401858"
+  },
+  {
+    "name": "False Bay",
+    "wikidata": "http://www.wikidata.org/entity/Q124400005"
+  },
+  {
+    "name": "Faure",
+    "wikidata": "http://www.wikidata.org/entity/Q124395859"
+  },
+  {
+    "name": "Firgrove",
+    "wikidata": "http://www.wikidata.org/entity/Q124395858"
+  },
+  {
+    "name": "Fish Hoek",
+    "wikidata": "http://www.wikidata.org/entity/Q92619860"
+  },
+  {
+    "name": "Glencairn",
+    "wikidata": "http://www.wikidata.org/entity/Q124399351"
+  },
+  {
+    "name": "Goodwood",
+    "wikidata": "http://www.wikidata.org/entity/Q124395868"
+  },
+  {
+    "name": "Harfield Road",
+    "wikidata": "http://www.wikidata.org/entity/Q124395268"
+  },
+  {
+    "name": "Hazendal",
+    "wikidata": "http://www.wikidata.org/entity/Q124395586"
+  },
+  {
+    "name": "Heathfield",
+    "wikidata": "http://www.wikidata.org/entity/Q124395228"
+  },
+  {
+    "name": "Heideveld",
+    "wikidata": "http://www.wikidata.org/entity/Q124395464"
+  },
+  {
+    "name": "Huguenot",
+    "wikidata": "http://www.wikidata.org/entity/Q15226623"
+  },
+  {
+    "name": "Kalk Bay",
+    "wikidata": "http://www.wikidata.org/entity/Q124400000"
+  },
+  {
+    "name": "Kapteinsklip",
+    "wikidata": "http://www.wikidata.org/entity/Q124395469"
+  },
+  {
+    "name": "Kenilworth",
+    "wikidata": "http://www.wikidata.org/entity/Q124395265"
+  },
+  {
+    "name": "Kentemade",
+    "wikidata": "http://www.wikidata.org/entity/Q124401860"
+  },
+  {
+    "name": "Khayelitsha",
+    "wikidata": "http://www.wikidata.org/entity/Q124395651"
+  },
+  {
+    "name": "Klapmuts",
+    "wikidata": "http://www.wikidata.org/entity/Q124401998"
+  },
+  {
+    "name": "Koeberg Road",
+    "wikidata": "http://www.wikidata.org/entity/Q124395470"
+  },
+  {
+    "name": "Kraaifontein",
+    "wikidata": "http://www.wikidata.org/entity/Q124402000"
+  },
+  {
+    "name": "Kuils River",
+    "wikidata": "http://www.wikidata.org/entity/Q124395863"
+  },
+  {
+    "name": "Kuyasa",
+    "wikidata": "http://www.wikidata.org/entity/Q124395652"
+  },
+  {
+    "name": "Lakeside",
+    "wikidata": "http://www.wikidata.org/entity/Q124400045"
+  },
+  {
+    "name": "Langa",
+    "wikidata": "http://www.wikidata.org/entity/Q124395460"
+  },
+  {
+    "name": "Lansdowne",
+    "wikidata": "http://www.wikidata.org/entity/Q124395584"
+  },
+  {
+    "name": "Lavistown",
+    "wikidata": "http://www.wikidata.org/entity/Q124401857"
+  },
+  {
+    "name": "Lentegeur",
+    "wikidata": "http://www.wikidata.org/entity/Q124395467"
+  },
+  {
+    "name": "Lynedoch",
+    "wikidata": "http://www.wikidata.org/entity/Q124402004"
+  },
+  {
+    "name": "Maitland",
+    "wikidata": "http://www.wikidata.org/entity/Q124395458"
+  },
+  {
+    "name": "Mandalay",
+    "wikidata": "http://www.wikidata.org/entity/Q124395647"
+  },
+  {
+    "name": "Mbekweni",
+    "wikidata": "http://www.wikidata.org/entity/Q124401995"
+  },
+  {
+    "name": "Meltonrose",
+    "wikidata": "http://www.wikidata.org/entity/Q124395861"
+  },
+  {
+    "name": "Mitchells Plain",
+    "wikidata": "http://www.wikidata.org/entity/Q124395468"
+  },
+  {
+    "name": "Monte Vista",
+    "wikidata": "http://www.wikidata.org/entity/Q124401864"
+  },
+  {
+    "name": "Mowbray",
+    "wikidata": "http://www.wikidata.org/entity/Q6927255"
+  },
+  {
+    "name": "Muizenberg",
+    "wikidata": "http://www.wikidata.org/entity/Q29454727"
+  },
+  {
+    "name": "Muldersvlei",
+    "wikidata": "http://www.wikidata.org/entity/Q124401999"
+  },
+  {
+    "name": "Mutual",
+    "wikidata": "http://www.wikidata.org/entity/Q15260455"
+  },
+  {
+    "name": "Ndabeni",
+    "wikidata": "http://www.wikidata.org/entity/Q124395459"
+  },
+  {
+    "name": "Netreg",
+    "wikidata": "http://www.wikidata.org/entity/Q124395463"
+  },
+  {
+    "name": "Newlands",
+    "wikidata": "http://www.wikidata.org/entity/Q15262161"
+  },
+  {
+    "name": "Nolungile",
+    "wikidata": "http://www.wikidata.org/entity/Q124395649"
+  },
+  {
+    "name": "Nonkqubela",
+    "wikidata": "http://www.wikidata.org/entity/Q124395650"
+  },
+  {
+    "name": "Nyanga",
+    "wikidata": "http://www.wikidata.org/entity/Q124395465"
+  },
+  {
+    "name": "Observatory",
+    "wikidata": "http://www.wikidata.org/entity/Q7075475"
+  },
+  {
+    "name": "Oosterzee",
+    "wikidata": "http://www.wikidata.org/entity/Q124401867"
+  },
+  {
+    "name": "Ottery",
+    "wikidata": "http://www.wikidata.org/entity/Q124395582"
+  },
+  {
+    "name": "Paarl",
+    "wikidata": "http://www.wikidata.org/entity/Q124401997"
+  },
+  {
+    "name": "Parow",
+    "wikidata": "http://www.wikidata.org/entity/Q124395865"
+  },
+  {
+    "name": "Pentech",
+    "wikidata": "http://www.wikidata.org/entity/Q124401854"
+  },
+  {
+    "name": "Philippi",
+    "wikidata": "http://www.wikidata.org/entity/Q124395466"
+  },
+  {
+    "name": "Pinelands",
+    "wikidata": "http://www.wikidata.org/entity/Q15266465"
+  },
+  {
+    "name": "Plumstead",
+    "wikidata": "http://www.wikidata.org/entity/Q124395239"
+  },
+  {
+    "name": "Retreat",
+    "wikidata": "http://www.wikidata.org/entity/Q7316929"
+  },
+  {
+    "name": "Rondebosch",
+    "wikidata": "http://www.wikidata.org/entity/Q7365536"
+  },
+  {
+    "name": "Rosebank",
+    "wikidata": "http://www.wikidata.org/entity/Q7368068"
+  },
+  {
+    "name": "Salt River",
+    "wikidata": "http://www.wikidata.org/entity/Q7405937"
+  },
+  {
+    "name": "Sarepta",
+    "wikidata": "http://www.wikidata.org/entity/Q124401853"
+  },
+  {
+    "name": "Simonstown",
+    "wikidata": "http://www.wikidata.org/entity/Q7518098"
+  },
+  {
+    "name": "Somerset West",
+    "wikidata": "http://www.wikidata.org/entity/Q124395857"
+  },
+  {
+    "name": "Southfield",
+    "wikidata": "http://www.wikidata.org/entity/Q124395581"
+  },
+  {
+    "name": "St James",
+    "wikidata": "http://www.wikidata.org/entity/Q124400031"
+  },
+  {
+    "name": "Steenberg",
+    "wikidata": "http://www.wikidata.org/entity/Q16900675"
+  },
+  {
+    "name": "Stellenbosch",
+    "wikidata": "http://www.wikidata.org/entity/Q124402006"
+  },
+  {
+    "name": "Steurhof",
+    "wikidata": "http://www.wikidata.org/entity/Q124395245"
+  },
+  {
+    "name": "Stikland",
+    "wikidata": "http://www.wikidata.org/entity/Q124402003"
+  },
+  {
+    "name": "Stock Road",
+    "wikidata": "http://www.wikidata.org/entity/Q124395646"
+  },
+  {
+    "name": "Strand",
+    "wikidata": "http://www.wikidata.org/entity/Q124395855"
+  },
+  {
+    "name": "Sunny Cove",
+    "wikidata": "http://www.wikidata.org/entity/Q124399992"
+  },
+  {
+    "name": "Thornton",
+    "wikidata": "http://www.wikidata.org/entity/Q124395869"
+  },
+  {
+    "name": "Tygerberg",
+    "wikidata": "http://www.wikidata.org/entity/Q124395864"
+  },
+  {
+    "name": "Unibell",
+    "wikidata": "http://www.wikidata.org/entity/Q124401855"
+  },
+  {
+    "name": "Van Der Stel",
+    "wikidata": "http://www.wikidata.org/entity/Q124395856"
+  },
+  {
+    "name": "Vasco",
+    "wikidata": "http://www.wikidata.org/entity/Q124395867"
+  },
+  {
+    "name": "Vlottenburg",
+    "wikidata": "http://www.wikidata.org/entity/Q124402005"
+  },
+  {
+    "name": "Wellington",
+    "wikidata": "http://www.wikidata.org/entity/Q7981562"
+  },
+  {
+    "name": "Wetton",
+    "wikidata": "http://www.wikidata.org/entity/Q124395583"
+  },
+  {
+    "name": "Wittebome",
+    "wikidata": "http://www.wikidata.org/entity/Q124395236"
+  },
+  {
+    "name": "Woltemade",
+    "wikidata": "http://www.wikidata.org/entity/Q124395871"
+  },
+  {
+    "name": "Woodstock",
+    "wikidata": "http://www.wikidata.org/entity/Q8033476"
+  },
+  {
+    "name": "Wynberg",
+    "wikidata": "http://www.wikidata.org/entity/Q97931351"
+  },
+  {
+    "name": "Ysterplaat",
+    "wikidata": "http://www.wikidata.org/entity/Q124401859"
+  }
+]

@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.EventNote
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.*
@@ -40,49 +41,52 @@ import za.co.cttrains.app.TrainState
 import za.co.cttrains.app.BuildConfig
 import za.co.cttrains.app.TrainViewModel
 import za.co.cttrains.core.*
+import androidx.navigation.compose.*
+import za.co.cttrains.app.scheduling.googleMapsJourneyUrl
 
 private val FullDate = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.ENGLISH)
 private val FetchTime = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLISH).withZone(CapeTownZone)
 
 @Composable
 fun TrainApp(state: TrainState, model: TrainViewModel) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val navigation = rememberNavController()
+    val backStack by navigation.currentBackStackEntryAsState()
+    val screen = backStack?.destination?.route ?: "map"
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(state.message) {
-        state.message?.let { snackbar.showSnackbar(it); model.dismissMessage() }
-    }
+    fun go(route: String) { navigation.navigate(route) { popUpTo(navigation.graph.startDestinationId) { saveState = true }; launchSingleTop = true; restoreState = true } }
+    LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); model.dismissMessage() } }
+    LaunchedEffect(state.requestedScreen) { state.requestedScreen?.let { go(it); model.navigationHandled() } }
     Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Outlined.Train, null, tint = MaterialTheme.colorScheme.primary)
-                    Text("CT Trains", fontWeight = FontWeight.Bold)
-                } },
-                actions = { IconButton(onClick = { tab = 2 }) { Icon(Icons.Outlined.Settings, "Settings") } },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = {
-            NavigationBar {
-                listOf("Plan" to Icons.Outlined.Explore, "Saved" to Icons.Outlined.BookmarkBorder, "About" to Icons.Outlined.Info).forEachIndexed { index, (title, icon) ->
-                    NavigationBarItem(selected = tab == index, onClick = { tab = index }, icon = { Icon(icon, null) }, label = { Text(title) })
-                }
+        topBar = { CenterAlignedTopAppBar(title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Outlined.Train, null, tint = MaterialTheme.colorScheme.primary)
+                Text("CT Trains", fontWeight = FontWeight.Bold)
             }
-        },
+        }) },
+        snackbarHost = { SnackbarHost(snackbar) },
+        bottomBar = { NavigationBar {
+            listOf(Triple("map", "Map", Icons.Outlined.Map), Triple("plan", "Plan", Icons.Outlined.Route),
+                Triple("saved", "Saved", Icons.Outlined.StarBorder), Triple("upcoming", "Journeys", Icons.AutoMirrored.Outlined.EventNote),
+                Triple("settings", "Settings", Icons.Outlined.Settings)).forEach { (route, title, icon) ->
+                NavigationBarItem(selected = screen == route, onClick = { go(route) }, icon = { Icon(icon, null) }, label = { Text(title) })
+            }
+        } },
     ) { padding ->
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
             val wide = maxWidth >= 840.dp
-            when (tab) {
-                0 -> PlanScreen(state, model, wide)
-                1 -> SavedScreen(state, model) { tab = 0 }
-                2 -> AboutScreen(state, model)
+            NavHost(navigation, startDestination = "map", modifier = Modifier.fillMaxSize()) {
+                composable("map") { TransitMapScreen(state, model) { go("plan") } }
+                composable("plan") { PlanScreen(state, model, wide) { journey -> model.selectJourney(journey); go("map") } }
+                composable("saved") { SavedScreen(state, model) { go("plan") } }
+                composable("upcoming") { UpcomingScreen(state, model) }
+                composable("settings") { AboutScreen(state, model) }
             }
         }
     }
 }
 
 @Composable
-private fun PlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean) {
+private fun PlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean, onMap: (Journey) -> Unit) {
     var stationPicker by rememberSaveable { mutableStateOf<String?>(null) }
     var datePicker by rememberSaveable { mutableStateOf(false) }
     var timePicker by rememberSaveable { mutableStateOf(false) }
@@ -104,6 +108,7 @@ private fun PlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean) 
                         PickerField("Travel date", LocalDate.parse(state.date).format(FullDate), Icons.Outlined.CalendarMonth, Modifier.weight(1f)) { datePicker = true }
                         PickerField("Depart after", state.time, Icons.Outlined.Schedule, Modifier.weight(1f)) { timePicker = true }
                     }
+                    SourceSelector(state, model)
                     Button(onClick = { model.search() }, enabled = !state.loading && state.catalog.stations.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         if (state.loading) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary) }
                         else Icon(Icons.Outlined.Search, null)
@@ -132,12 +137,12 @@ private fun PlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean) 
     if (wide) {
         Row(Modifier.fillMaxSize().padding(horizontal = 32.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
             Column(Modifier.width(380.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) { form() }
-            Box(Modifier.weight(1f)) { Results(state, model) }
+            Box(Modifier.weight(1f)) { Results(state, model, onMap) }
         }
     } else {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             item { form() }
-            resultItems(state, model)
+            resultItems(state, model, onMap)
         }
     }
     stationPicker?.let { which ->
@@ -164,11 +169,11 @@ private fun PickerField(label: String, value: String, icon: ImageVector, modifie
 }
 
 @Composable
-private fun Results(state: TrainState, model: TrainViewModel) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) { resultItems(state, model) }
+private fun Results(state: TrainState, model: TrainViewModel, onMap: (Journey) -> Unit) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) { resultItems(state, model, onMap) }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.resultItems(state: TrainState, model: TrainViewModel) {
+private fun androidx.compose.foundation.lazy.LazyListScope.resultItems(state: TrainState, model: TrainViewModel, onMap: (Journey) -> Unit) {
     if (state.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
     state.result?.let { result ->
         val entry = result.entry
@@ -179,9 +184,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.resultItems(state: Tr
                     IconButton(onClick = { model.search() }) { Icon(Icons.Outlined.Refresh, "Refresh schedules") }
                 }
                 Text("${entry.query.from} → ${entry.query.to} · ${LocalDate.parse(entry.query.date).format(FullDate)}", style = MaterialTheme.typography.bodyMedium)
-                if (result.offline) Notice("Saved timetable · fetched ${FetchTime.format(Instant.ofEpochMilli(entry.fetchedAt))}. Couldn’t refresh; service may have changed.", Icons.Outlined.CloudOff)
+                if (result.restoredPlan) Notice("Saved journey · fetched ${FetchTime.format(Instant.ofEpochMilli(entry.fetchedAt))}. Refresh to check the current timetable.", Icons.AutoMirrored.Outlined.EventNote)
+                else if (result.offline) Notice("Saved timetable · fetched ${FetchTime.format(Instant.ofEpochMilli(entry.fetchedAt))}. Couldn’t refresh; service may have changed.", Icons.Outlined.CloudOff)
                 else Text("Fetched ${FetchTime.format(Instant.ofEpochMilli(entry.fetchedAt))} · Scheduled times", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                entry.fares?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Text("Source: ${sourceLabel(entry.sourceId)}", style = MaterialTheme.typography.labelMedium)
+                entry.fares?.let { Text(it, style = MaterialTheme.typography.bodySmall); Text("Fare information from ${sourceLabel(entry.sourceId)} · retrieved ${FetchTime.format(Instant.ofEpochMilli(entry.fetchedAt))}", style = MaterialTheme.typography.labelSmall) }
             }
         }
         if (entry.journeys.isEmpty()) item {
@@ -189,16 +196,19 @@ private fun androidx.compose.foundation.lazy.LazyListScope.resultItems(state: Tr
         }
         val fastest = entry.journeys.minOfOrNull { it.durationMinutes }
         items(entry.journeys, key = { journey -> entry.query.toString() + journey.toString() }) { journey ->
-            JourneyCard(entry.query, journey, fastest == journey.durationMinutes)
+            JourneyCard(entry.query, journey, fastest == journey.durationMinutes, model, onMap)
         }
         if (entry.journeys.isNotEmpty()) item { Text("Connection times are included in the total. Confirm your platform at the station; these are timetable results, not live train positions.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
 @Composable
-private fun JourneyCard(query: SearchQuery, journey: Journey, fastest: Boolean) {
+private fun JourneyCard(query: SearchQuery, journey: Journey, fastest: Boolean, model: TrainViewModel, onMap: (Journey) -> Unit) {
     var expanded by rememberSaveable(query, journey) { mutableStateOf(false) }
     val context = LocalContext.current
+    val uri = LocalUriHandler.current
+    var schedule by remember { mutableStateOf(false) }
+    if (schedule) JourneyScheduleSheet(query, journey, model) { schedule = false }
     Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.animateContentSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -235,6 +245,11 @@ private fun JourneyCard(query: SearchQuery, journey: Journey, fastest: Boolean) 
                     }
                 }
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FilledTonalButton(onClick = { onMap(journey) }, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.Map, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("View map") }
+                Button(onClick = { schedule = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.EventAvailable, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Schedule") }
+            }
+            TextButton(onClick = { uri.openUri(googleMapsJourneyUrl(query)) }) { Text("Compare directions in Google Maps") }
             HorizontalDivider()
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { expanded = !expanded }, modifier = Modifier.weight(1f)) {
@@ -313,6 +328,11 @@ private fun TimeDropdown(label: String, values: List<Int>, selected: Int, modifi
 @Composable
 private fun SavedScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().widthIn(max = 700.dp), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item { Text("Favourite stations", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
+        if (state.preferences.favoriteStations.isEmpty()) item { Text("Star a station from the map or station search to keep it here.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        items(state.preferences.favoriteStations, key = { "station-$it" }) { name ->
+            ListItem(headlineContent = { TextButton(onClick = { model.edit { it.copy(from = name) }; onPlan() }) { Text(name) } }, leadingContent = { Icon(Icons.Outlined.Star, null) }, trailingContent = { IconButton(onClick = { model.toggleStation(name) }) { Icon(Icons.Outlined.StarBorder, "Remove favourite $name") } })
+        }
         item { Text("Your regular routes", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold) }
         item { Text("Pick a route, choose your time, and go.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (state.preferences.routes.isEmpty()) item { EmptyState(Icons.Outlined.BookmarkBorder, "A shortcut for your commute", "Save a route from the Plan tab and it will appear here.") }
@@ -331,8 +351,9 @@ private fun SavedScreen(state: TrainState, model: TrainViewModel, onPlan: () -> 
 private fun AboutScreen(state: TrainState, model: TrainViewModel) {
     val uri = LocalUriHandler.current
     var confirmClear by remember { mutableStateOf(false) }
+    var confirmProfile by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp).widthIn(max = 700.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Text("Made for the journey", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("Your app, your data", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Notice("An independent, community app for Cape Town rail commuters. Timetables come from CT Trains. This app is not affiliated with CT Trains, PRASA or Metrorail.", Icons.Outlined.Train)
         Card(shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -350,10 +371,16 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Timetables & privacy", style = MaterialTheme.typography.titleLarge)
                 Text("Your last 12 searches are stored on this device for up to 14 days. If a refresh fails, the same route, date and departure time can use its saved result. Saved routes stay until you remove them.")
-                Text("Searches send your selected stations, date, time and IP address to cttrains.co.za. The app requests no location permission, account or tracking SDK.", style = MaterialTheme.typography.bodyMedium)
+                Text("An anonymous UUID identifies this installation locally. Profile, favourites, timetable queries and journey content are encrypted with Android Keystore in Room. Public station positions and scheduling timestamps remain readable inside the app’s private database. No device IDs, account, analytics or cloud profile.", style = MaterialTheme.typography.bodyMedium)
+                Text("Searches send the route, date, time and IP address to the selected timetable source. Google street maps are optional and load data from Google. Locate me requests one foreground sample through Google Play services; the app stores no GPS history.", style = MaterialTheme.typography.bodyMedium)
+                Text("Calendar handoff opens your calendar app for review. The app cannot read your calendar, health data or background location.", style = MaterialTheme.typography.bodyMedium)
+                if (BuildConfig.MAPS_CONFIGURED) Row(verticalAlignment = Alignment.CenterVertically) { Text("Google street maps", Modifier.weight(1f)); Switch(state.preferences.googleMapsEnabled, model::setGoogleMaps) }
+                OutlinedButton(onClick = model::forgetLocation) { Text("Forget sampled location") }
+                OutlinedButton(onClick = { confirmProfile = true }) { Icon(Icons.Outlined.DeleteForever, null); Spacer(Modifier.width(8.dp)); Text("Delete all local personal data") }
                 OutlinedButton(onClick = { confirmClear = true }) { Icon(Icons.Outlined.DeleteOutline, null); Spacer(Modifier.width(8.dp)); Text("Clear cached timetables") }
             }
         }
+        SourceSelector(state, model)
         Text("Check before you travel", style = MaterialTheme.typography.titleLarge)
         Text("Timetables are not live tracking. Delays, cancelled services and platform changes may not appear here. The finder supports today through the end of next month and does not list Sunday or public-holiday services.")
         OutlinedButton(onClick = { uri.openUri("https://cttrains.co.za/train-form.php") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.AutoMirrored.Outlined.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Visit CT Trains") }
@@ -361,6 +388,7 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel) {
         Text("CT Trains for Android · ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("Clear saved timetables?") }, text = { Text("You’ll need an internet connection for your next search. Your favourite routes will stay saved.") }, confirmButton = { TextButton(onClick = { model.clearCache(); confirmClear = false }) { Text("Clear") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } })
+    if (confirmProfile) AlertDialog(onDismissRequest = { confirmProfile = false }, title = { Text("Delete your local profile?") }, text = { Text("Favourites, scheduled journeys, app reminders and saved timetables will be removed. A new anonymous profile will be created. Events you added to your calendar remain there.") }, confirmButton = { TextButton(onClick = { model.clearPersonalData(); confirmProfile = false }) { Text("Delete local data") } }, dismissButton = { TextButton(onClick = { confirmProfile = false }) { Text("Cancel") } })
 }
 
 @Composable
@@ -379,5 +407,16 @@ private fun EmptyState(icon: ImageVector, title: String, body: String) {
         Icon(icon, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
         Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Text(body, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun SourceSelector(state: TrainState, model: TrainViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Timetable source", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            model.repository.sources.forEach { source -> FilterChip(selected = state.preferences.sourceId == source.id, onClick = { model.setSource(source.id) }, label = { Text(source.label) }) }
+        }
+        Text(if (model.repository.sources.size > 1) "The API and direct source both use CT Trains. Results stay separate; switching clears the current result." else "Community timetable from CT Trains. Google Maps directions open separately and are not merged into these results.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

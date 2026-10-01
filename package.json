@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node src/test.js"
+    "test": "node src/test.js",
+    "test:mobile": "node --test src/transit/*.test.js"
   },
   "repository": {
     "type": "git",

@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
     tags: ["android-v*"]
-    paths: ["android/**", ".github/workflows/android.yml"]
+    paths: ["android/**", "src/transit/**", "src/routes/mobile.js", "src/index.js", "package*.json", ".github/workflows/android.yml"]
   pull_request:
-    paths: ["android/**", ".github/workflows/android.yml"]
+    paths: ["android/**", "src/transit/**", "src/routes/mobile.js", "src/index.js", "package*.json", ".github/workflows/android.yml"]
   workflow_dispatch:
     inputs:
       tag:
@@ -48,6 +48,15 @@ jobs:
           packages: "platform-tools platforms;android-35 build-tools;35.0.0"
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Check the normalized transit API contract
+        working-directory: .
+        run: |
+          npm ci --ignore-scripts
+          npm run test:mobile
       - name: Determine version and source
         id: metadata
         env:
@@ -84,6 +93,8 @@ jobs:
           CTTRAINS_VERSION_NAME: ${{ steps.metadata.outputs.version }}
           CTTRAINS_VERSION_CODE: ${{ steps.metadata.outputs.version_code }}
           CTTRAINS_USE_DEVELOPMENT_SIGNING: "true"
+          CTTRAINS_MAPS_API_KEY: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_MAPS_API_KEY || '' }}
+          CTTRAINS_TRANSIT_BASE_URL: ${{ vars.CTTRAINS_TRANSIT_BASE_URL }}
           CTTRAINS_KEYSTORE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_KEYSTORE_PASSWORD || '' }}
           CTTRAINS_KEY_ALIAS: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_KEY_ALIAS || '' }}
           CTTRAINS_KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_KEY_PASSWORD || '' }}
@@ -118,6 +129,7 @@ jobs:
           path: |
             android/core/build/reports/tests/test/
             android/app/build/reports/lint-results-*.html
+            android/app/schemas/
       - name: Remove signing key
         if: always()
         run: rm -f -- "${RUNNER_TEMP}/cttrains-release.jks"

@@ -45,14 +45,14 @@ data class StationCatalog(val stations: List<String>, val holidays: List<String>
 data class SavedRoute(val from: String, val to: String)
 
 @Serializable
-data class CachedSearch(val query: SearchQuery, val journeys: List<Journey>, val fetchedAt: Long, val fares: String? = null)
+data class CachedSearch(val query: SearchQuery, val journeys: List<Journey>, val fetchedAt: Long, val fares: String? = null, val sourceId: String = "cttrains-web")
 
 object CachePolicy {
     const val MAX_ENTRIES = 12
     const val MAX_AGE_MILLIS = 14L * 24 * 60 * 60 * 1000
     fun prune(entries: List<CachedSearch>, now: Long): List<CachedSearch> = entries
         .filter { it.fetchedAt <= now && now - it.fetchedAt <= MAX_AGE_MILLIS }
-        .sortedByDescending { it.fetchedAt }.distinctBy { it.query }.take(MAX_ENTRIES)
+        .sortedByDescending { it.fetchedAt }.distinctBy { it.sourceId to it.query }.take(MAX_ENTRIES)
 }
 
 object TravelRules {
