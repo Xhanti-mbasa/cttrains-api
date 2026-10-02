@@ -38,7 +38,7 @@ Downloaded maps, their geographic bounds and the temporary map cache are public,
 
 Timetables, mapped railways and station positions do not prove service availability. Alerts are published messages rather than train tracking; missing notices do not mean normal service. Platform notices are matched only to an explicit boarding train/station, the travel date, a report within two hours before boarding and a snapshot fetched within ten minutes. Other trains mentioned in the same message do not inherit its platform. Walking routes can be calculated with explicit consent using the public FOSSGIS foot router, cached offline, and refined using optional observed walking medians; traffic durations remain user estimates. WorkManager reminders may be delayed by Android battery controls and are not exact alarms; notification severity follows the user's Android channel, sound and Do Not Disturb settings. A missed leave time is displayed honestly, without a catch-train guarantee. Saved plans are not observed journeys and are retained for up to 90 days. Calendar events are managed separately.
 
-Budget totals use integer cents. Corrections apply only to the exact route direction and ticket type on this device; they do not update CT Trains. Check fare validity and current prices at the ticket office. Quantity counts tickets/passes, not an inferred calendar period. The calculator excludes other transport costs unless included in the manually entered price. Health Connect, geofencing, learned estimates, calendar sync and an LLM remain later stages.
+Budget totals use integer cents. Corrections apply only to the exact route direction and ticket type on this device; they do not update CT Trains. Check fare validity and current prices at the ticket office. Quantity counts tickets/passes, not an inferred calendar period. The calculator excludes other transport costs unless included in the manually entered price. Optional Health Connect steps annotate completed learned walks locally. Geofencing, calendar sync and an LLM remain later stages.
 
 ## Open and build
 
@@ -146,3 +146,5 @@ core/            Pure Kotlin parsing, models, validation and planning rules
 Independent community app; not affiliated with CT Trains, PRASA or Metrorail. Code uses the repository licence; Wikidata station coordinates are CC0. Street-map attribution/provider terms and the bundled ODbL railway database remain separate from the code licence.
 
 See [the 1.5 quality-of-life notes](docs/QUALITY_OF_LIFE_1_5.md) for map fixes, Golden Arrow source pagination, saved places, walking-route consent and the optional learning/nearby features.
+
+See [the 1.6 final touch-up notes](docs/FINAL_TOUCHUPS_1_6.md) for journey focus, segment labels, address suggestions, operator planning and route steps.

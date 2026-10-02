@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -107,6 +108,22 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
 
 @Composable
 private fun PlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean, feature: za.co.cttrains.app.FeatureState, features: za.co.cttrains.app.FeatureViewModel, onMap: (Journey) -> Unit) {
+    var operator by rememberSaveable { mutableStateOf(TransportService.PRASA) }
+    val operators=TransportService.values().filter { feature.extras.beta.enabled(it) }
+    LaunchedEffect(operators) { if(operator !in operators) operator=TransportService.PRASA }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=20.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            operators.forEach { service->FilterChip(operator==service,{ operator=service },label={ Text(service.title) }) }
+        }
+        Box(Modifier.weight(1f)) {
+            if(operator==TransportService.PRASA) TrainPlanScreen(state,model,wide,feature,features,onMap)
+            else BusPlanner(state,model,feature,features,operator) { model.edit { it.copy(requestedScreen="map") } }
+        }
+    }
+}
+
+@Composable
+private fun TrainPlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean, feature: za.co.cttrains.app.FeatureState, features: za.co.cttrains.app.FeatureViewModel, onMap: (Journey) -> Unit) {
     var stationPicker by rememberSaveable { mutableStateOf<String?>(null) }
     var datePicker by rememberSaveable { mutableStateOf(false) }
     var timePicker by rememberSaveable { mutableStateOf(false) }

@@ -24,7 +24,7 @@ data class FeatureState(val extras: LocalExtras = LocalExtras(),val snapshots: M
     val live: LiveCircle? = null,val watched: List<WatchedFriend> = emptyList(),val mapService: TransportService?=null,val mapRoute: String?=null,
     val ready: Boolean=false,val access: WalkEndpoint?=null,val destination: WalkEndpoint?=null,
     val walks: List<WalkingLeg> = emptyList(),val walkBusy: Boolean=false,val walkError: String?=null,val walksCached: Boolean=false,
-    val chatService: TransportService?=null,val syncing: Boolean=false,val nearby: List<RoomMessage> = emptyList(),val nearbySharing: Boolean=false)
+    val chatService: TransportService?=null,val syncing: Boolean=false,val nearby: List<RoomMessage> = emptyList(),val nearbySharing: Boolean=false,val selectedBus: BusJourney?=null)
 
 @OptIn(kotlinx.coroutines.FlowPreview::class)
 class FeatureViewModel(app: Application): AndroidViewModel(app) {
@@ -33,6 +33,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
     private val buses=BusRepository(app)
     private val matrix=MatrixClient()
     private val walking=WalkingRepository(app)
+    private val places=PlaceSearch()
     private var walkJob: Job?=null
     private var syncJob: Job?=null
     private val mutable=MutableStateFlow(FeatureState())
@@ -49,7 +50,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
             mutable.update { it.copy(extras=extras,ready=true) }
             if(old!=extras.beta) BusRefreshWorker.configure(app,extras.beta)
             listOf(TransportService.GOLDEN_ARROW,TransportService.MYCITI).forEach { service ->
-                if(!extras.beta.enabled(service)) { jobs.remove(service)?.cancel();if(timetableService==service) timetableJob?.cancel() }
+                if(!extras.beta.enabled(service)) { if(state.value.selectedBus?.timetable?.service==service) mutable.update { it.copy(selectedBus=null,mapService=null,mapRoute=null,walks=emptyList()) };jobs.remove(service)?.cancel();if(timetableService==service) timetableJob?.cancel() }
                 else if(!old.enabled(service)) refresh(service)
             }
         } }
@@ -97,7 +98,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
             finally { mutable.update { it.copy(loading=it.loading-service) } }
         }
     }
-    fun chooseBus(service: TransportService) { require(service!=TransportService.PRASA);mutable.update { it.copy(bus=service,timetable=null,error=null) } }
+    fun chooseBus(service: TransportService) { require(service!=TransportService.PRASA);walkJob?.cancel();timetableJob?.cancel();mutable.update { it.copy(bus=service,timetable=null,error=null,selectedBus=null,walks=emptyList(),walkBusy=false) } }
     fun timetable(route: BusRouteDocument,day: String): Job {
         val previous=timetableJob;previous?.cancel();val service=state.value.bus;timetableService=service
         val job=viewModelScope.launch(handler) {
@@ -135,7 +136,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
         beta { if(service==TransportService.GOLDEN_ARROW) it.copy(showGoldenArrow=true) else it.copy(showMyCiti=true) }
     }
     fun allMapStops()=mutable.update { it.copy(mapService=null,mapRoute=null) }
-    fun showTrainMap() { allMapStops();mutable.update { it.copy(focus=null) };beta { it.copy(showTrains=true) } }
+    fun showTrainMap() { clearBusJourney();allMapStops();mutable.update { it.copy(focus=null) };beta { it.copy(showTrains=true) } }
     fun refreshVisible() {
         listOf(TransportService.GOLDEN_ARROW,TransportService.MYCITI).filter { state.value.extras.beta.enabled(it) }.forEach { refresh(it,true) }
         state.value.timetable?.takeIf { state.value.extras.beta.enabled(it.service) }?.let { chooseBus(it.service);timetable(it.route,it.day) }
@@ -162,6 +163,20 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
             } finally { mutable.update { it.copy(walkBusy=false) } }
         }
     }
+    fun refreshRouteSteps()=action("Steps could not be read. Check Health Connect permission and Samsung Health sync.") {
+        require(store.extras().beta.healthSteps)
+        val health=RouteSteps(getApplication());require(health.granted())
+        val now=System.currentTimeMillis()
+        val samples=store.extras().walkSamples.filter { it.startedAt>0 && now-it.recordedAt in 0..30L*24*60*60_000 }.takeLast(20)
+        var count=0
+        for(sample in samples) {
+            if(!store.extras().beta.healthSteps) break
+            val steps=health.read(sample.startedAt,sample.startedAt+sample.seconds*1000L)
+            if(steps!=null) count++
+            store.update { e->e.copy(walkSamples=e.walkSamples.map { if(it.key==sample.key && it.recordedAt==sample.recordedAt) it.copy(steps=steps,stepsCheckedAt=now) else it }) }
+        }
+        message("Updated $count completed walking segments. Missing counts may need watch sync; try again later.")
+    }
     fun selectPin(pin: MapPin?)=mutable.update { it.copy(pin=pin,focus=pin?.point ?: it.focus) }
     fun focus(point: GeoPoint) { require(point.valid);mutable.update { it.copy(focus=point) } }
     fun drop(point: GeoPoint) { require(point.valid);mutable.update { it.copy(pin=MapPin("new","New spot",point,null,"Personal pin"),focus=point) } }
@@ -174,15 +189,27 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
         store.update { it.copy(spots=(it.spots.filterNot { p -> p.id==spot.id }+spot).takeLast(100)) };selectPin(null);message("Spot saved on this device.")
     }
     fun removeSpot(id: String)=viewModelScope.launch(handler) { store.update { it.copy(spots=it.spots.filterNot { s -> s.id==id }) };selectPin(null) }
+    suspend fun placeSuggestions(query: String)=places.suggestions(query)
+    fun selectPlace(place: PlaceSuggestion) { selectPin(MapPin("new",place.label.take(100),place.point,null,"Photon search result · © OpenStreetMap contributors")) }
     fun searchPlace(query: String)=action("Place search unavailable. Use a map pin or search saved stops.") {
-        require(query.trim().length in 3..150)
-        // Explicit search only; no autocomplete. Restrict results to the Cape Town region.
-        delay(1100)
-        val url="https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=za&bounded=1&viewbox=18.1,-33.4,19.2,-34.5&q="+Uri.encode(query.trim())
-        val list=store.json.parseToJsonElement(SourceHttp().get(url,100_000,setOf("nominatim.openstreetmap.org"))).jsonArray
-        val first=list.firstOrNull()?.jsonObject ?: error("No places found")
-        val point=GeoPoint(first.getValue("lat").jsonPrimitive.double,first.getValue("lon").jsonPrimitive.double)
-        require(point.valid);mutable.update { it.copy(focus=point,pin=MapPin("new",first.getValue("display_name").jsonPrimitive.content.take(100),point,null,"Search result · © OpenStreetMap contributors")) }
+        val list=places.suggestions(query);list.firstOrNull()?.let(::selectPlace) ?: message("No published address matched. Try a street/suburb or mark a map point.")
+    }
+    fun selectBus(journey: BusJourney) { beta { if(journey.timetable.service==TransportService.MYCITI) it.copy(showMyCiti=true) else it.copy(showGoldenArrow=true) };mutable.update { it.copy(selectedBus=journey,mapService=journey.timetable.service,mapRoute=if(journey.timetable.service==TransportService.MYCITI) journey.timetable.route.id else null,focus=null) } }
+    fun clearBusJourney()=mutable.update { it.copy(selectedBus=null) }
+    fun busWalks(board: BusStopPoint?,alight: BusStopPoint?) {
+        val s=state.value
+        val pairs=listOfNotNull(s.access?.let { p->board?.let { p to WalkEndpoint("bus:${s.bus.name}:${it.id}",it.name,it.point) } },s.destination?.let { p->alight?.let { WalkEndpoint("bus:${s.bus.name}:${it.id}",it.name,it.point) to p } })
+        calculateWalks(pairs)
+    }
+    private fun calculateWalks(pairs: List<Pair<WalkEndpoint,WalkEndpoint>>) {
+        val previous=walkJob;previous?.cancel()
+        if(pairs.isEmpty()) return message("Choose mapped boarding/alighting stops and a saved place first.")
+        walkJob=viewModelScope.launch(handler) {
+            previous?.join();mutable.update { it.copy(walkBusy=true,walkError=null,walks=emptyList(),walksCached=false) }
+            try { for((from,to) in pairs) { val (leg,cached)=walking.route(from,to);mutable.update { it.copy(walks=it.walks+leg,walksCached=it.walksCached || cached) } } }
+            catch(e: Exception) { if(e is CancellationException) throw e;mutable.update { it.copy(walkError="Walking route unavailable. Walking time is unknown until a saved or online route is available.") } }
+            finally { mutable.update { it.copy(walkBusy=false) } }
+        }
     }
     fun saveTrip(trip: SafetyTrip)=viewModelScope.launch(handler) { TripFiles.validate(trip);store.update { it.copy(trips=(it.trips.filterNot { t->t.id==trip.id }+trip).takeLast(100)) };message("Safety trip saved locally.") }
     fun deleteTrip(id: String)=viewModelScope.launch(handler) { store.update { it.copy(trips=it.trips.filterNot { t->t.id==id }) } }

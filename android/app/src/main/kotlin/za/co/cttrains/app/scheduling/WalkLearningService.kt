@@ -37,7 +37,7 @@ class WalkLearningService: Service() {
                 if(!store.extras().beta.walkLearning) return@launch
                 val first=ForegroundLocation.sample(this@WalkLearningService) ?: return@launch
                 if(first.accuracyMeters>60 || System.currentTimeMillis()-first.capturedAt !in 0..30_000 || NearbySuggestions.distance(GeoPoint(first.latitude,first.longitude),leg.from.point)>100) return@launch
-                val began=SystemClock.elapsedRealtime();var goalAt: Long?=null
+                val beganAt=System.currentTimeMillis();val began=SystemClock.elapsedRealtime();var goalAt: Long?=null
                 while(SystemClock.elapsedRealtime()-began<2*60*60_000L) {
                     delay(20_000)
                     if(!store.extras().beta.walkLearning) break
@@ -49,7 +49,7 @@ class WalkLearningService: Service() {
                     if(goalAt==null) { goalAt=elapsed;continue }
                     if(elapsed-goalAt>=15_000) {
                         val seconds=((goalAt-began)/1000).toInt()
-                        runCatching { WalkingRoutes.sample(leg,seconds,System.currentTimeMillis()) }.getOrNull()?.let { sample ->
+                        runCatching { WalkingRoutes.sample(leg,seconds,System.currentTimeMillis()).copy(startedAt=beganAt) }.getOrNull()?.let { sample ->
                             store.update { e->val old=e.walkSamples.filter { it.key!=sample.key };val same=e.walkSamples.filter { it.key==sample.key }.takeLast(19);e.copy(walkSamples=(old+same+sample).takeLast(200)) }
                         }
                         break

@@ -25,7 +25,7 @@ fun quoted(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 android {
     namespace = "za.co.cttrains.app"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         applicationId = "za.co.cttrains.app"
         minSdk = 26
@@ -69,6 +69,9 @@ dependencies {
     implementation("androidx.room:room-ktx:2.7.1")
     ksp("androidx.room:room-compiler:2.7.1")
     implementation("androidx.work:work-runtime-ktx:2.10.3")
+    implementation("androidx.health.connect:connect-client:1.1.0")
+    // Health Connect supplies Guava at runtime; WorkManager exposes its Future on the compile API.
+    implementation("com.google.guava:guava:33.4.0-android")
     implementation("org.maplibre.gl:android-sdk:13.6.1")
     implementation(project(":core"))
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))

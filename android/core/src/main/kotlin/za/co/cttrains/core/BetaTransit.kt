@@ -16,6 +16,7 @@ import kotlin.math.*
     val showTrains: Boolean = true, val showGoldenArrow: Boolean = true, val showMyCiti: Boolean = true,
     val autoNearby: Boolean = true, val mapStyle: String = "streets", val busRefreshMinutes: Int = 60, val hostedSharing: Boolean = false,
     val walkLearning: Boolean = false,val nearbyUsers: Boolean = false,
+    val journeyFocus: Boolean = false,val healthSteps: Boolean = false,
 ) {
     fun enabled(service: TransportService) = when (service) { TransportService.PRASA -> true; TransportService.GOLDEN_ARROW -> goldenArrow; TransportService.MYCITI -> myCiti }
     fun visible(service: TransportService) = enabled(service) && when (service) { TransportService.PRASA -> showTrains; TransportService.GOLDEN_ARROW -> showGoldenArrow; TransportService.MYCITI -> showMyCiti }

@@ -76,20 +76,36 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
     val useStreets = state.mapsReady && state.preferences.mapMode != "stations" && !failed && (state.preferences.mapMode == "online" || savedArea != null)
     val uri = LocalUriHandler.current
     val context = LocalContext.current
-    val layers by produceState(FeatureLayers(),feature.snapshots,feature.extras.beta,feature.extras.spots,feature.watched,feature.focus,feature.mapRoute,feature.mapService,feature.walks,state.selectedJourney,state.routeTrace,now) {
+    val layers by produceState(FeatureLayers(),feature.snapshots,feature.extras.beta,feature.extras.spots,feature.watched,feature.focus,feature.pin,feature.mapRoute,feature.mapService,feature.walks,feature.selectedBus,feature.access,feature.destination,state.from,state.to,state.selectedJourney,state.routeTrace,now) {
         value=withContext(Dispatchers.Default) {
-            val extra=features.layers(now)
-            if(extra.walks.isEmpty()) extra else {
-                val rail=state.routeTrace?.legs?.flatten()?.flatMap { section->section.points.map { GeoPoint(it.latitude,it.longitude) } }.orEmpty().ifEmpty {
-                    val names=state.selectedJourney?.legs?.flatMap { it.stops }?.map { stationKey(it.name) }.orEmpty().toSet()
-                    state.stations.filter { it.mapped && stationKey(it.name) in names }.map { GeoPoint(it.latitude!!,it.longitude!!) }
-                }
-                extra.copy(fitPoints=extra.fitPoints+rail,fitName="${extra.fitName}:${state.selectedJourney?.departure}")
+            val base=features.layers(now)
+            val bus=feature.selectedBus
+            val railNames=JourneyPresentation.railNames(state.selectedJourney,state.from,state.to)
+            val matchingWalks=base.walks.filter { leg ->
+                if(bus==null) (leg.from==feature.access && leg.to.id=="station:${stationKey(state.from)}") || (leg.to==feature.destination && leg.from.id=="station:${stationKey(state.to)}")
+                else (leg.from==feature.access && leg.to.id=="bus:${bus.timetable.service.name}:${bus.board?.id}") || (leg.to==feature.destination && leg.from.id=="bus:${bus.timetable.service.name}:${bus.alight?.id}")
             }
+            val endpoints=listOfNotNull(feature.access,feature.destination).map { MapPin("endpoint:${it.id}",it.label,it.point,null,"Selected journey endpoint") }
+            val busPins=bus?.let { j->listOfNotNull(j.board,j.alight).map { MapPin("selected-bus:${it.id}",it.name,it.point,j.timetable.service,if(j.userMapped) "Your map association · not verified by operator" else "Published timetable stop") } }.orEmpty()
+            val focused=feature.extras.beta.journeyFocus && (state.selectedJourney!=null || bus!=null || (state.from.isNotBlank() && state.to.isNotBlank()))
+            val shapes=if(focused) base.shapes.filter { bus!=null && it.route==bus.timetable.route.id && it.source.contains("myciti",true) } else base.shapes
+            val rail=if(bus==null) state.routeTrace?.legs?.flatten()?.flatMap { section->section.points.map { GeoPoint(it.latitude,it.longitude) } }.orEmpty().ifEmpty {
+                state.stations.filter { it.mapped && stationKey(it.name) in railNames }.map { GeoPoint(it.latitude!!,it.longitude!!) }
+            } else emptyList()
+            val badges=JourneyPresentation.walking(matchingWalks)+(if(bus==null) JourneyPresentation.rail(state.selectedJourney,state.routeTrace,state.stations) else listOfNotNull(bus.board?.let { a->bus.alight?.let { b->LegBadge("bus:${bus.trip.id}",JourneyPresentation.midpoint(listOf(a.point,b.point)),"${bus.timetable.service.title} · ${bus.minutes} min") } }))
+            base.copy(routeStations=state.stations,pins=((if(focused) emptyList() else base.pins)+endpoints+busPins+listOfNotNull(feature.pin)).distinctBy { it.id },shapes=shapes,walks=matchingWalks,badges=badges,
+                fitPoints=if(bus!=null) busPins.map { it.point }+matchingWalks.flatMap { it.points } else if(matchingWalks.isNotEmpty()) rail+matchingWalks.flatMap { it.points } else base.fitPoints,
+                fitName=if(bus!=null) "bus:${bus.trip.id}:${bus.boardIndex}:${bus.alightIndex}:${matchingWalks.size}" else if(matchingWalks.isNotEmpty()) "rail:${state.selectedJourney?.departure}:${matchingWalks.joinToString { it.key }}" else base.fitName)
         }
     }
-    val renderState=if(feature.extras.beta.showTrains) state else state.copy(stations=emptyList(),selectedJourney=null,routeTrace=null)
-    val visibleTransfers=if(feature.extras.beta.showTrains) transfers else emptyList()
+    val focused=feature.extras.beta.journeyFocus && (state.selectedJourney!=null || feature.selectedBus!=null || (state.from.isNotBlank() && state.to.isNotBlank()))
+    val railNames=JourneyPresentation.railNames(state.selectedJourney,state.from,state.to)
+    val renderState=when {
+        !feature.extras.beta.showTrains || (focused && feature.selectedBus!=null) -> state.copy(stations=emptyList(),selectedJourney=null,routeTrace=null)
+        focused -> state.copy(stations=state.stations.filter { stationKey(it.name) in railNames })
+        else -> state
+    }
+    val visibleTransfers=if(renderState.selectedJourney!=null) transfers else emptyList()
     val closest=state.currentPosition?.let { NearbySuggestions.station(GeoPoint(it.latitude,it.longitude),it.accuracyMeters,state.stations) }
     var lastAuto by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.mapsReady,feature.extras.beta.autoNearby) {
@@ -161,10 +177,10 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
                 if (useStreets) key(state.preferences.mapMode, savedArea?.id, retry,feature.extras.beta.mapStyle) { StreetMap(renderState, if (state.preferences.mapMode == "offline") model.offlineMaps.definition(savedArea?.id) else null, model.mapViewport, visibleTransfers, model::selectStation, model::selectTransfer, { failed = true }, Modifier.fillMaxSize(),feature.extras.beta.mapStyle,layers,{ features.selectPin(it) },features::drop) }
                 else OfflineStationMap(renderState.stations, renderState.selectedJourney, renderState.routeTrace, model.mapViewport, visibleTransfers, state.currentPosition, state.from, state.to, model::selectStation, model::selectTransfer,layers,{ features.selectPin(it) },features::drop)
             }
-            Surface(Modifier.align(Alignment.TopStart).padding(12.dp).fillMaxWidth(if (fullScreen) .82f else .76f), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), tonalElevation = 3.dp) {
+            Surface(modifier=Modifier.align(Alignment.TopStart).padding(12.dp).fillMaxWidth(if (fullScreen) .82f else .76f), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), tonalElevation = 3.dp,onClick={ optionsOpen=true }) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Text(if (useStreets) if (state.preferences.mapMode == "offline") savedArea?.name ?: "Downloaded map" else MapStyles.titles[feature.extras.beta.mapStyle] ?: "Streets" else "Offline stops & stations", style = MaterialTheme.typography.labelLarge)
-                    Text(if (state.selectedJourney == null) "${renderState.stations.count { it.mapped }+layers.pins.size} pins · hold to mark a spot" else "${visibleTransfers.size} train changes · tap numbered pins", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if(feature.selectedBus!=null) "${feature.selectedBus.timetable.service.title} · ${feature.selectedBus.minutes} min" else if (state.selectedJourney == null) "${renderState.stations.count { it.mapped }+layers.pins.size} pins · tap for map options" else "${visibleTransfers.size} train changes · tap for map options", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             if (!fullScreen) FilledTonalIconButton(onClick = { optionsOpen=false;onExpand() }, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) { Icon(Icons.Outlined.Fullscreen, "Expand map to full screen") }
@@ -190,6 +206,9 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
         }
         if(!fullScreen) TextButton(onClick=onPlan) { Text("Add Home, Work or Campus · walking times") }
         if (!fullScreen && state.selectedJourney != null) Text("Solid: mapped railway trace. Dashed: approximate link. Confirm trains and platforms at the station.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if(layers.badges.isNotEmpty()) Text(layers.badges.joinToString("\n") { it.text },style=MaterialTheme.typography.bodySmall)
+        val travelMinutes=feature.selectedBus?.minutes ?: state.selectedJourney?.durationMinutes
+        if(travelMinutes!=null) Text("Travel: ${travelMinutes+layers.walks.sumOf { it.minutes }} min including mapped walks · excludes boarding buffer and unreported delays",style=MaterialTheme.typography.labelSmall)
         TextButton(onClick = { uri.openUri("https://www.openstreetmap.org/copyright") }, contentPadding = PaddingValues(0.dp)) { Text("© OpenStreetMap contributors${if (useStreets) " · OpenMapTiles" else ""} · stations: Wikidata", style = MaterialTheme.typography.labelSmall) }
         if(useStreets && feature.extras.beta.mapStyle=="aerial" && state.preferences.mapMode=="online") Text("© City of Cape Town · January 2025 aerial imagery · non-commercial use",style=MaterialTheme.typography.labelSmall)
     }
@@ -211,6 +230,7 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
             if(feature.extras.beta.goldenArrow || feature.extras.beta.myCiti) TextButton(onClick=onBuses) { Text("Bus schedules") }
             if(feature.mapRoute!=null) TextButton(onClick={ features.allMapStops() }) { Text("All service stops") }
         }
+        Row(verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Focus on selected journey",style=MaterialTheme.typography.titleSmall);Text("Hide unrelated stops and pins. Keep your endpoints and changes.",style=MaterialTheme.typography.bodySmall) };Switch(feature.extras.beta.journeyFocus,{ v->features.beta { it.copy(journeyFocus=v) } }) }
         if(feature.extras.beta.visible(TransportService.GOLDEN_ARROW)) Text("Golden Arrow survey · current operation unverified",style=MaterialTheme.typography.labelSmall)
         if(state.preferences.mapMode=="online") Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
             MapStyles.titles.forEach { (id,title) -> FilterChip(feature.extras.beta.mapStyle==id,{ features.beta { it.copy(mapStyle=id) } },label={ Text(title) }) }
@@ -313,7 +333,7 @@ private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?
             }
             features.pins.forEach { pin -> val point=projected(pin.point.latitude,pin.point.longitude);drawCircle(Color.White,6.dp.toPx(),point);drawCircle(Color(android.graphics.Color.parseColor(pin.service?.color ?: "#8b5bc2")),4.dp.toPx(),point) }
             journey?.legs?.forEachIndexed { index, leg ->
-                val sections = trace?.legs?.getOrNull(index) ?: JourneyPlanning.mappedSegments(leg, stations).map { points -> RouteSection(points.map { TrackPoint(it.latitude!!, it.longitude!!) }, false) }
+                val sections = trace?.legs?.getOrNull(index) ?: JourneyPlanning.mappedSegments(leg,features.routeStations.ifEmpty { stations }).map { points -> RouteSection(points.map { TrackPoint(it.latitude!!, it.longitude!!) }, false) }
                 sections.forEach { section ->
                     val path = Path(); section.points.forEachIndexed { n, p -> val point = projected(p.latitude, p.longitude); if (n == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y) }
                     drawPath(path, legColor(index), style = androidx.compose.ui.graphics.drawscope.Stroke(if (section.followsRail) 4.dp.toPx() else 3.dp.toPx(), pathEffect = if (section.followsRail) null else PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 5.dp.toPx()))))
@@ -345,6 +365,15 @@ private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?
                 drawRoundRect(surface.copy(alpha = .96f), Offset(x - 5.dp.toPx(), y - pinPaint.textSize - 4.dp.toPx()), androidx.compose.ui.geometry.Size(longest + 10.dp.toPx(), 36.dp.toPx()), cornerRadius = androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()))
                 labels.forEachIndexed { n, label -> drawContext.canvas.nativeCanvas.drawText(label, x, y + n * 14.dp.toPx(), pinPaint) }
             } }
+            features.badges.forEach { badge ->
+                val at=projected(badge.point.latitude,badge.point.longitude)
+                val labelPaint=android.graphics.Paint(paint).apply { textSize=11.dp.toPx();typeface=android.graphics.Typeface.DEFAULT_BOLD }
+                val width=labelPaint.measureText(badge.text)+16.dp.toPx()
+                val left=(at.x-width/2).coerceIn(4.dp.toPx(),(size.width-width-4.dp.toPx()).coerceAtLeast(4.dp.toPx()))
+                val top=at.y-24.dp.toPx()
+                drawRoundRect(surface.copy(alpha=.96f),Offset(left,top),androidx.compose.ui.geometry.Size(width,25.dp.toPx()),cornerRadius=androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()))
+                drawContext.canvas.nativeCanvas.drawText(badge.text,left+8.dp.toPx(),top+17.dp.toPx(),labelPaint)
+            }
             location?.let { val point = projected(it.latitude, it.longitude); drawCircle(Color(0xFF1478B8).copy(alpha = .15f), 14.dp.toPx(), point); drawCircle(Color(0xFF1478B8), 6.dp.toPx(), point) }
         }
         Column(Modifier.align(Alignment.BottomEnd).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

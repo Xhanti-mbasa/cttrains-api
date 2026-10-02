@@ -10,7 +10,7 @@ import kotlin.math.*
     val minutes: Int get()=ceil(durationSeconds/60).toInt()
     val key: String get()=WalkingRoutes.key(from,to)
 }
-@Serializable data class WalkSample(val key: String,val distanceMeters: Double,val seconds: Int,val recordedAt: Long)
+@Serializable data class WalkSample(val key: String,val distanceMeters: Double,val seconds: Int,val recordedAt: Long,val startedAt: Long=0,val steps: Long?=null,val stepsCheckedAt: Long=0)
 data class DoorTimes(val leaveAt: Long,val arriveAt: Long)
 
 object WalkingRoutes {

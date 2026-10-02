@@ -66,4 +66,34 @@ class QualityOfLifeUiTest {
         app.onNodeWithText("Enable hosted community").assertDoesNotExist()
         app.runOnUiThread { features.beta { it.copy(hostedSharing=false) } }
     }
+    @Test fun focusedMapPreferencePersistsAndEnabledOperatorsAppearInPlan() {
+        val features=ViewModelProvider(app.activity)[FeatureViewModel::class.java]
+        val train=ViewModelProvider(app.activity)[TrainViewModel::class.java]
+        app.waitUntil(15000) { features.state.value.ready }
+        app.runOnUiThread { train.setMapMode("stations");features.beta { it.copy(journeyFocus=true,myCiti=true,goldenArrow=true) } }
+        app.waitUntil(15000) { features.state.value.extras.beta.run { journeyFocus && myCiti && goldenArrow } }
+        app.onNodeWithText("Map options").performClick()
+        app.onNodeWithText("Focus on selected journey").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Collapse").performClick()
+        app.onNodeWithText("Plan").performClick()
+        app.onNodeWithText("MyCiTi").performClick()
+        app.onNodeWithText("Plan with MyCiTi").assertIsDisplayed()
+        app.onNodeWithText("From: At boarding stop").performClick()
+        app.onNodeWithText("Where do you leave from?").assertIsDisplayed()
+        app.onNodeWithText("Just the bus stop").performClick()
+        app.onNodeWithText("Golden Arrow").performClick()
+        app.onNodeWithText("Plan with Golden Arrow").assertIsDisplayed()
+        app.onNodeWithText("Trains").performClick()
+        app.onNodeWithText("Find trains").performScrollTo().assertIsDisplayed()
+        app.runOnUiThread { features.beta { it.copy(journeyFocus=false,myCiti=false,goldenArrow=false) } }
+    }
+    @Test fun healthAccessIsReadOnlyAndBluetoothIsNotRequestedForMatrixPresence() {
+        val info=app.activity.packageManager.getPackageInfo(app.activity.packageName,android.content.pm.PackageManager.GET_PERMISSIONS)
+        val permissions=info.requestedPermissions.orEmpty().toSet()
+        assertTrue("android.permission.health.READ_STEPS" in permissions)
+        assertFalse(permissions.any { it.startsWith("android.permission.health.WRITE_") })
+        assertFalse("android.permission.BLUETOOTH_SCAN" in permissions)
+        assertFalse("android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" in permissions)
+    }
+
 }

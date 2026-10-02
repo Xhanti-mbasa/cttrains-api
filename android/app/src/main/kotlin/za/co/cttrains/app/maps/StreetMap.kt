@@ -51,11 +51,11 @@ fun StreetMap(state: TrainState, region: OfflineRegionDefinition?, viewport: Map
         owner.lifecycle.addObserver(observer); synchronize()
         onDispose { owner.lifecycle.removeObserver(observer); view.captureViewport(); if (resumed) view.onPause(); if (started) view.onStop(); view.onDestroy() }
     }
-    val extra by produceState<ExtraFrame?>(null,features.pins,features.shapes,features.walks) {
+    val extra by produceState<ExtraFrame?>(null,features.pins,features.shapes,features.walks,features.badges) {
         value=withContext(Dispatchers.Default) { prepareExtra(features) }
     }
-    val rail by produceState<RailFrame?>(null,state.stations,state.selectedJourney,state.routeTrace,state.currentPosition,state.from,state.to,transfers) {
-        value=withContext(Dispatchers.Default) { prepareRail(state,transfers) }
+    val rail by produceState<RailFrame?>(null,state.stations,state.selectedJourney,state.routeTrace,state.currentPosition,state.from,state.to,transfers,features.routeStations) {
+        value=withContext(Dispatchers.Default) { prepareRail(state,transfers,features.routeStations) }
     }
     AndroidView(factory = { view }, modifier = modifier, update = { it.features=features;it.extraFrame=extra;it.railFrame=rail;it.render(state, transfers) })
 }
@@ -112,6 +112,7 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
                 style.addSource(GeoJsonSource("extra-pin-data",FeatureCollection.fromFeatures(emptyArray<Feature>())))
                 style.addSource(GeoJsonSource("extra-shape-data",FeatureCollection.fromFeatures(emptyArray<Feature>())))
                 style.addSource(GeoJsonSource("walk-data",FeatureCollection.fromFeatures(emptyArray<Feature>())))
+                style.addSource(GeoJsonSource("leg-label-data",FeatureCollection.fromFeatures(emptyArray<Feature>())))
                 style.addLayer(LineLayer("walking-route","walk-data").withProperties(lineWidth(4f),lineColor("#8b5bc2"),lineDasharray(arrayOf(1f,1.5f))))
                 style.addLayer(LineLayer("extra-shapes","extra-shape-data").withProperties(lineWidth(2f),lineColor(get("color")),lineOpacity(.65f)))
                 style.addLayer(CircleLayer("extra-pins","extra-pin-data").withProperties(circleRadius(6f),circleColor(get("color")),circleStrokeColor("#ffffff"),circleStrokeWidth(2f)))
@@ -124,6 +125,9 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
                 style.addLayer(CircleLayer("rail-transfers", "rail-transfer-data").withProperties(circleRadius(13f), circleColor("#713B00"), circleStrokeColor("#ffffff"), circleStrokeWidth(3f)))
                 style.addLayer(SymbolLayer("rail-transfer-numbers", "rail-transfer-data").withProperties(textField(get("numberText")), textFont(arrayOf("Noto Sans Bold")), textSize(14f), textColor("#ffffff"), textAllowOverlap(true), textIgnorePlacement(true)))
                 style.addLayer(SymbolLayer("rail-transfer-labels", "rail-transfer-data").withProperties(textField(get("label")), textFont(arrayOf("Noto Sans Bold")), textSize(12f), textOffset(arrayOf(0f, 2.3f)), textColor("#713B00"), textHaloColor("#ffffff"), textHaloWidth(2f), textMaxWidth(24f)))
+                val bubble=android.graphics.Bitmap.createBitmap(16,16,android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.WHITE) }
+                style.addImage("leg-bubble",bubble)
+                style.addLayer(SymbolLayer("journey-leg-labels","leg-label-data").withProperties(iconImage("leg-bubble"),iconTextFit(Property.ICON_TEXT_FIT_BOTH),iconTextFitPadding(arrayOf(6f,8f,6f,8f)),textField(get("label")),textFont(arrayOf("Noto Sans Bold")),textSize(12f),textColor("#172724"),textMaxWidth(22f),textAllowOverlap(true),iconAllowOverlap(true)))
                 if (initialFit) region?.bounds?.let { bounds -> post { if (!closed && current?.selectedJourney == null && width > 0 && height > 0) ready.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 24)) } }
                 current?.let { render(it, transfers) }
             }
@@ -147,6 +151,7 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
             style.getSourceAs<GeoJsonSource>("extra-pin-data")?.setGeoJson(frame.pins)
             style.getSourceAs<GeoJsonSource>("extra-shape-data")?.setGeoJson(frame.shapes)
             style.getSourceAs<GeoJsonSource>("walk-data")?.setGeoJson(frame.walks)
+            style.getSourceAs<GeoJsonSource>("leg-label-data")?.setGeoJson(frame.badges)
             renderedExtra=frame
         } }
         railFrame?.let { frame -> if(frame!==renderedRail) {
@@ -173,21 +178,22 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
     }
 }
 
-private data class ExtraFrame(val pins: String,val shapes: String,val walks: String)
+private data class ExtraFrame(val pins: String,val shapes: String,val walks: String,val badges: String)
 private data class RailFrame(val stations: String,val routes: String,val location: String,val transfers: String)
 private fun prepareExtra(features: FeatureLayers): ExtraFrame {
     val pins=features.pins.map { p -> Feature.fromGeometry(Point.fromLngLat(p.point.longitude,p.point.latitude)).apply { addStringProperty("id",p.id);addStringProperty("name",p.name);addStringProperty("color",p.service?.color ?: "#8b5bc2") } }
     val shapes=features.shapes.filter { it.points.size>=2 }.map { shape -> Feature.fromGeometry(LineString.fromLngLats(shape.points.map { Point.fromLngLat(it.longitude,it.latitude) })).apply { addStringProperty("color",if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color) } }
     val walks=features.walks.map { leg -> Feature.fromGeometry(LineString.fromLngLats(leg.points.map { Point.fromLngLat(it.longitude,it.latitude) })) }
-    return ExtraFrame(FeatureCollection.fromFeatures(pins).toJson(),FeatureCollection.fromFeatures(shapes).toJson(),FeatureCollection.fromFeatures(walks).toJson())
+    val badges=features.badges.map { b -> Feature.fromGeometry(Point.fromLngLat(b.point.longitude,b.point.latitude)).apply { addStringProperty("label",b.text) } }
+    return ExtraFrame(FeatureCollection.fromFeatures(pins).toJson(),FeatureCollection.fromFeatures(shapes).toJson(),FeatureCollection.fromFeatures(walks).toJson(),FeatureCollection.fromFeatures(badges).toJson())
 }
-private fun prepareRail(state: TrainState,changes: List<TransferPoint>): RailFrame {
+private fun prepareRail(state: TrainState,changes: List<TransferPoint>,routeStations: List<StationPosition>): RailFrame {
         val stations = state.stations.filter { it.mapped }.map { p -> Feature.fromGeometry(Point.fromLngLat(p.longitude!!, p.latitude!!)).apply {
             addStringProperty("name", p.name); addStringProperty("color", if (p.name == state.to) "#d77721" else if (p.name == state.from) "#1478B8" else "#148777")
             addBooleanProperty("transfer", changes.any { stationKey(it.station) == stationKey(p.name) })
         } }
         val routes = state.selectedJourney?.legs?.flatMapIndexed { i, leg ->
-            val sections = state.routeTrace?.legs?.getOrNull(i) ?: JourneyPlanning.mappedSegments(leg, state.stations).map { points -> RouteSection(points.map { TrackPoint(it.latitude!!, it.longitude!!) }, false) }
+            val sections = state.routeTrace?.legs?.getOrNull(i) ?: JourneyPlanning.mappedSegments(leg, routeStations.ifEmpty { state.stations }).map { points -> RouteSection(points.map { TrackPoint(it.latitude!!, it.longitude!!) }, false) }
             sections.map { section ->
             Feature.fromGeometry(LineString.fromLngLats(section.points.map { Point.fromLngLat(it.longitude, it.latitude) })).apply { addStringProperty("color", listOf("#1478B8", "#d77721", "#148777")[i % 3]); addBooleanProperty("rail", section.followsRail) }
         } }.orEmpty()

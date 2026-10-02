@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,10 +66,12 @@ internal fun shareText(context: android.content.Context,text: String) { context.
         Text("Bus refresh interval · ${s.extras.beta.busRefreshMinutes} minutes")
         FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf(15,30,60,120,240).forEach { minutes -> FilterChip(s.extras.beta.busRefreshMinutes==minutes,{ m.beta { it.copy(busRefreshMinutes=minutes) } },label={ Text("${minutes}m") }) } }
         Text("Android schedules checks when a connection is available. Last checked dates remain visible; a failed refresh keeps the saved version.",style=MaterialTheme.typography.bodySmall)
+        Toggle("Focus on selected journey","Show only selected endpoints, changes and walking legs. Hide unrelated stops and pins until you turn focus off.",s.extras.beta.journeyFocus) { v->m.beta { it.copy(journeyFocus=v) } }
+        HealthStepsSettings(s,m)
         Toggle("Nearby station suggestions","Use location while the map is open. Approximate location may be too broad for a station recommendation.",s.extras.beta.autoNearby) { v->m.beta { it.copy(autoNearby=v) } }
         Toggle("Hosted community & live trips","Optional Matrix account. Public reports are unverified; location sharing requires a separate start action.",s.extras.beta.hostedSharing) { v->m.beta { it.copy(hostedSharing=v) } }
         Toggle("Learn walking times","Start an individual walk to measure its duration in the background. No raw location history is saved.",s.extras.beta.walkLearning) { v->m.beta { it.copy(walkLearning=v) } }
-        Toggle("Nearby users","Optional approximate presence in your selected Matrix service room. Requires a separate sharing start action.",s.extras.beta.nearbyUsers) { v->m.beta { it.copy(nearbyUsers=v) } }
+        Toggle("Nearby users","Optional approximate presence in your selected Matrix service room. Uses location permission, not Bluetooth. Requires a Matrix account, room and a separate sharing start action.",s.extras.beta.nearbyUsers) { v->m.beta { it.copy(nearbyUsers=v) } }
         OutlinedButton(onClick=onTrips) { Text("Safety trip files") }
         OutlinedButton(onClick=onCommunity) { Text("Community reports & friends") }
     } }
@@ -101,17 +104,43 @@ internal fun shareText(context: android.content.Context,text: String) { context.
 
 @Composable fun MapSearchSheet(train: TrainState,layers: FeatureLayers,m: FeatureViewModel,onDismiss: ()->Unit,onStation: (String)->Unit) {
     var q by rememberSaveable { mutableStateOf("") }
+    val searchState by m.state.collectAsStateWithLifecycle()
+    val localPins by produceState<List<MapPin>>(emptyList(),searchState.snapshots,searchState.extras.spots,searchState.extras.beta) {
+        value=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            searchState.snapshots.filterKeys(searchState.extras.beta::enabled).flatMap { (service,data)->data.stops.map { MapPin("${service.name}:${it.id}",it.name,it.point,service,it.source) } }+
+            searchState.extras.spots.map { MapPin("spot:${it.id}",it.name,it.point,it.service,"Personal pin",it.id) }
+        }
+    }
+    var online by rememberSaveable { mutableStateOf(false) }
+    var consent by remember { mutableStateOf(false) }
+    var results by remember { mutableStateOf<List<PlaceSuggestion>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var issue by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(q,online) {
+        results=emptyList();issue=null;loading=false
+        if(online && q.trim().length>=3) {
+            loading=true
+            try { kotlinx.coroutines.delay(850);results=m.placeSuggestions(q) }
+            catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException) throw e;issue="Online suggestions unavailable. Search saved stops or mark a map point." }
+            finally { loading=false }
+        }
+    }
     ModalBottomSheet(onDismissRequest=onDismiss,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
-        Column(Modifier.padding(20.dp).imePadding()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal=20.dp).imePadding()) {
             Text("Find a stop or place",style=MaterialTheme.typography.headlineSmall)
-            OutlinedTextField(q,{ q=it.take(150) },label={ Text("Stations, bus stops and saved spots") },modifier=Modifier.fillMaxWidth())
-            TextButton(onClick={ m.searchPlace(q);onDismiss() },enabled=q.trim().length>=3) { Text("Search places online · OpenStreetMap") }
-            LazyColumn(Modifier.heightIn(max=420.dp)) {
-                items(train.catalog.stations.filter { it.contains(q,true) }.take(100),key={ "rail:$it" }) { name->ListItem(headlineContent={ Text(name) },supportingContent={ Text("Train station") },modifier=Modifier.clickable { onStation(name) }) }
-                items(layers.pins.filter { it.name.contains(q,true) }.take(100),key={ it.id }) { pin->ListItem(headlineContent={ Text(pin.name) },supportingContent={ Text(pin.service?.title ?: "Personal pin") },modifier=Modifier.clickable { m.selectPin(pin);onDismiss() }) }
+            OutlinedTextField(q,{ q=it.take(150) },label={ Text("Address, station, bus stop or saved place") },singleLine=true,modifier=Modifier.fillMaxWidth())
+            TextButton(onClick={ if(online) online=false else consent=true }) { Text(if(online) "Online suggestions on · turn off" else "Enable online address suggestions") }
+            if(loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            issue?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error) }
+            LazyColumn(Modifier.weight(1f,false).heightIn(max=420.dp),contentPadding=PaddingValues(bottom=24.dp)) {
+                items(results,key={ "place:${it.id}" }) { place->ListItem(headlineContent={ Text(place.label) },supportingContent={ Text("Address result · Photon / OpenStreetMap") },modifier=Modifier.clickable { m.selectPlace(place);onDismiss() }) }
+                if(online && !loading && issue==null && q.length>=3 && results.isEmpty()) item { Text("No matching mapped address yet. Try the street and suburb.",style=MaterialTheme.typography.bodySmall) }
+                items(train.catalog.stations.filter { it.contains(q,true) }.take(30),key={ "rail:$it" }) { name->ListItem(headlineContent={ Text(name) },supportingContent={ Text("Train station") },modifier=Modifier.clickable { onStation(name) }) }
+                items(localPins.filter { it.name.contains(q,true) }.take(30),key={ it.id }) { pin->ListItem(headlineContent={ Text(pin.name) },supportingContent={ Text(pin.service?.title ?: "Personal pin") },modifier=Modifier.clickable { m.selectPin(pin);onDismiss() }) }
             }
         }
     }
+    if(consent) AlertDialog(onDismissRequest={ consent=false },title={ Text("Search addresses as you type?") },text={ Text("Photon / komoot receives the text you type, restricted to the Cape Town region. Requests are delayed and limited; address coverage and availability vary. Saved places remain available offline. © OpenStreetMap contributors.") },confirmButton={ TextButton(onClick={ consent=false;online=true }) { Text("Enable for this search") } },dismissButton={ TextButton(onClick={ consent=false }) { Text("Cancel") } })
 }
 
 @Composable fun PinSheet(pin: MapPin,s: FeatureState,m: FeatureViewModel,onBus: (TransportService)->Unit) {
@@ -168,8 +197,9 @@ internal fun shareText(context: android.content.Context,text: String) { context.
         FeatureStatus(s)
         FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf("Routes","Fares").forEach { v->FilterChip(tab==v,{ tab=v },label={ Text(v) }) };TextButton(onClick={ m.refresh(s.bus) },enabled=s.bus !in s.loading) { Text("Check source") } }
         Text("Catalog: ${checked(source?.catalogueCheckedAt ?: 0)} · Fares: ${checked(source?.faresCheckedAt ?: 0)}",style=MaterialTheme.typography.labelSmall)
-        if(source!=null) { Text(source.mapNote,style=MaterialTheme.typography.bodySmall);if(source.notes.isNotEmpty()) Text(source.notes.joinToString("\n"),color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall) }
-        if(tab=="Fares") BusFares(s,m,source) else {
+        var details by rememberSaveable { mutableStateOf(false) }
+        if(source!=null) { TextButton(onClick={ details=!details }) { Text(if(details) "Hide source details" else "Source details & warnings") };if(details) Text((listOf(source.mapNote)+source.notes).joinToString("\n"),style=MaterialTheme.typography.bodySmall,modifier=Modifier.heightIn(max=100.dp).verticalScroll(rememberScrollState())) }
+        if(tab=="Fares") Box(Modifier.weight(1f).fillMaxWidth()) { key(s.bus) { BusFares(s,m,source) } } else {
             OutlinedTextField(q,{ q=it },label={ Text("Search route or stop name") },singleLine=true,modifier=Modifier.fillMaxWidth())
             FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)) { java.time.DayOfWeek.values().forEach { v->val title=v.name.lowercase().replaceFirstChar(Char::uppercase);FilterChip(day==title,{ day=title },label={ Text(title.take(3)) }) } }
             s.timetable?.let { t -> TextButton(onClick=onTrip) { Text("Save/share this bus trip") };Text(if(s.timetableCached) "Using saved ${t.day} timetable · ${checked(t.fetchedAt)}" else "Published ${t.day} pattern · checked ${checked(t.fetchedAt)}",style=MaterialTheme.typography.bodySmall) }
@@ -207,6 +237,11 @@ internal fun shareText(context: android.content.Context,text: String) { context.
             val correction=s.extras.priceCorrections.firstOrNull { it.service==s.bus && it.fareId==row.id && it.product==name }
             TextButton(onClick={ chosen=row;product=name;price=((correction?.cents ?: cents)/100.0).toString() }) { Text("$name · ${money(cents)}${correction?.let { " · Your price ${money(it.cents)}" }.orEmpty()}") }
         };if(row.rules.isNotBlank()) Text(row.rules,style=MaterialTheme.typography.labelSmall) } } }
+        if(s.bus==TransportService.GOLDEN_ARROW) {
+            Text("Daily / cash single fares",style=MaterialTheme.typography.titleMedium)
+            Text("Cash singles depend on boarding, alighting and time. Where no cash price is published in this table, ask Golden Arrow for that trip. Weekly and monthly prices cannot determine a single fare.")
+            TextButton(onClick={ chosen=null;product="Cash single (personal quote)";price="" }) { Text("Add my confirmed cash fare") }
+        }
         Text("Your budget",style=MaterialTheme.typography.titleLarge)
         OutlinedTextField(chosen?.title ?: "Personal route/product",{ chosen=BusFareRow("personal:"+it.take(100),it.take(100),emptyMap()) },label={ Text("Route or fare band") },modifier=Modifier.fillMaxWidth())
         OutlinedTextField(product,{ product=it.take(100) },label={ Text("Product · single, weekly…") },modifier=Modifier.fillMaxWidth())

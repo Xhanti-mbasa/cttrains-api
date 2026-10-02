@@ -39,6 +39,7 @@ import za.co.cttrains.core.*
         if(sharing && p!=null && p.accuracyMeters<=1000 && System.currentTimeMillis()-p.capturedAt in 0..60_000) m.nearby(service,GeoPoint(p.latitude,p.longitude))
     }
     Text("Nearby users · beta",style=MaterialTheme.typography.titleLarge)
+    Text("Uses Android location permission and consenting Matrix accounts. It does not scan Bluetooth devices, so no Nearby devices permission is required. Enable the feature, connect a room, then choose Share nearby presence to request location access.",style=MaterialTheme.typography.bodySmall)
     if(!s.extras.beta.nearbyUsers) {
         Text("Enable Nearby users in Settings → Beta features.")
         TextButton(onClick=onSettings) { Text("Open settings") }
