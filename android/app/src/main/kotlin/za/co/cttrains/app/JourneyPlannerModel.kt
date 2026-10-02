@@ -111,7 +111,7 @@ class JourneyPlannerModel(app: Application): AndroidViewModel(app) {
                 val first=trips.first()
                 fun endpoint(stop: BusStopPoint)=WalkEndpoint("bus:${service.name}:${stop.id}",stop.name,stop.point)
                 val walk=walks(r,endpoint(first.board!!),endpoint(first.alight!!))
-                val fares=JourneyComparison.singleFares(snapshot.fares,route)
+                val fares=JourneyComparison.singleFares(snapshot.fares,route,extras.priceCorrections.filter { it.service==service }.associate { (it.fareId to it.product) to it.cents })
                 for(j in trips) {
                     val estimate=JourneyComparison.estimate(requestAt,r.date,j.departure.time,j.minutes,walk.second.first,walk.second.second)
                     if(estimate.canCatch!=false) options+=PlannerOption("${service.name}:${route.id}:${j.trip.id}:${j.boardIndex}:${j.alightIndex}",service,null,null,j,walk.first.toList(),estimate,fares,pair.first.fetchedAt,pair.second || walk.third,

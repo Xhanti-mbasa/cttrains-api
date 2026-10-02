@@ -23,11 +23,11 @@ object JourneyComparison {
             if(access!=null && egress!=null) access+egress else null,wait?.takeIf { it>=0 },catch)
     }
     /** Cash / one-way fares only. Weekly passes are not silently divided into daily fares. */
-    fun singleFares(rows: List<BusFareRow>,route: BusRouteDocument): List<RouteFare> {
+    fun singleFares(rows: List<BusFareRow>,route: BusRouteDocument,corrections: Map<Pair<String,String>,Long> = emptyMap()): List<RouteFare> {
         val key=stationKey(route.title)
         return rows.filter { stationKey(it.title)==key || stationKey(it.title.substringAfter("→").trim())==key }.flatMap { row ->
             row.products.filterKeys { Regex("\\b(cash|single|one[ -]way)\\b",RegexOption.IGNORE_CASE).containsMatchIn(it) && !Regex("weekly|monthly|ride",RegexOption.IGNORE_CASE).containsMatchIn(it) }
-                .map { RouteFare(it.value,"${row.title} · ${it.key}") }
+                .map { product -> val correction=corrections[row.id to product.key];RouteFare(correction ?: product.value,"${if(correction!=null) "Your correction · " else ""}${row.title} · ${product.key}",correction!=null) }
         }
     }
 }

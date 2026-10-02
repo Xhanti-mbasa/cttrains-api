@@ -52,6 +52,11 @@ class JourneyComparisonTest {
         val t=timetable(s.service).let { it.copy(trips=it.trips.map { t->t.copy(validFrom="2026-10-03") }) }
         assertTrue(BusDiscovery.journeys(t,s,a,b,date,"07:00",emptyList()).isEmpty())
     }
+    @Test fun comparisonRespectsOnlyTheMatchingPersonalFareCorrection() {
+        val rows=listOf(BusFareRow("route-fare",route.title,mapOf("Single" to 2500L,"Weekly" to 24000L)))
+        val quote=JourneyComparison.singleFares(rows,route,mapOf(("route-fare" to "Single") to 2800L,("another-route" to "Single") to 1200L)).single()
+        assertEquals(2800L,quote.cents);assertTrue(quote.personal);assertTrue(quote.label.contains("Your correction"))
+    }
     @Test fun weeklyAndMonthlyPricesCannotBecomeCashFare() {
         val rows=listOf(BusFareRow("one",route.title,mapOf("Weekly" to 24000L,"Monthly" to 90000L,"Single" to 3000L,"10 ride" to 27000L),""),
             BusFareRow("other","Different route",mapOf("Single" to 1500L),""))

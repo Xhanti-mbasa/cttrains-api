@@ -57,7 +57,7 @@ class QualityOfLifeUiTest {
         app.onNodeWithText("Choose your start").performScrollTo().performClick()
         app.onNodeWithText("Where do you leave from?").assertIsDisplayed()
         app.onNodeWithText("Search places, stations or stops").performTextInput("Unibell")
-        app.onNodeWithText("Unibell").performClick()
+        app.onNode(hasText("Unibell") and hasClickAction() and !hasSetTextAction()).performClick()
         app.onNodeWithText("Tools").performClick()
         app.onNodeWithText("Community reports, chat & friends").performClick()
         app.onNodeWithText("Chat").performClick()

@@ -202,7 +202,11 @@ import za.co.cttrains.core.*
             item { Text("Confirm the fare for this journey",style=MaterialTheme.typography.titleLarge);Text("Choose the actual distance band, payment product and travel period. A pass price is not a single trip fare.",style=MaterialTheme.typography.bodySmall);OutlinedTextField(filter,{ filter=it },label={ Text("Find route / fare band") },modifier=Modifier.fillMaxWidth()) }
             items(rows.filter { it.title.contains(filter,true) }.take(50)) { row ->
                 Text(row.title,style=MaterialTheme.typography.titleMedium)
-                row.products.filterKeys { !Regex("weekly|monthly|[0-9]+.?ride",RegexOption.IGNORE_CASE).containsMatchIn(it) }.forEach { (name,cents) -> TextButton(onClick={ fare=RouteFare(cents,"Selected product · ${row.title} · $name");selectFare=false }) { Text("$name · ${money(cents)}") } }
+                row.products.filterKeys { !Regex("weekly|monthly|[0-9]+.?ride",RegexOption.IGNORE_CASE).containsMatchIn(it) }.forEach { (name,published) ->
+                    val correction=s.extras.priceCorrections.lastOrNull { it.service==option.service && it.fareId==row.id && it.product==name }
+                    val cents=correction?.cents ?: published
+                    TextButton(onClick={ fare=RouteFare(cents,"${if(correction!=null) "Your correction" else "Selected product"} · ${row.title} · $name",correction!=null);selectFare=false }) { Text("$name · ${money(cents)}${if(correction!=null) " · Your price" else ""}") }
+                }
             }
             items(s.extras.priceCorrections.filter { it.service==option.service && Regex("cash|single",RegexOption.IGNORE_CASE).containsMatchIn(it.product) }) { c -> TextButton(onClick={ fare=RouteFare(c.cents,"Your confirmed quote · ${c.fareId.substringAfter("personal:")}",true);selectFare=false }) { Text("${c.product} · ${money(c.cents)}") } }
             if(rows.isEmpty()) item { Text("No published fare products are cached. Add your confirmed single price in Bus schedules → Fares.") }
