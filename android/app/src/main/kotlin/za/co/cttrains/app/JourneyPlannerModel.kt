@@ -100,7 +100,7 @@ class JourneyPlannerModel(app: Application): AndroidViewModel(app) {
         val routes=withContext(Dispatchers.Default) { BusDiscovery.routes(snapshot,r.from.point,r.to.point,date,extras.busStopLinks,r.maxWalkMeters.toDouble()) }
         if(routes.isEmpty()) {
             if(service==TransportService.GOLDEN_ARROW) {
-                val candidates=withContext(Dispatchers.Default) { BusDiscovery.goldenCandidates(snapshot,r.from.point,r.to.point,date,r.maxWalkMeters.toDouble().coerceAtMost(1500.0)) }
+                val candidates=withContext(Dispatchers.Default) { BusDiscovery.goldenCandidates(snapshot,r.from.point,r.to.point,date,r.maxWalkMeters.toDouble()) }
                 val checked=mutableListOf<GoldenTimetableCandidate>()
                 for(route in candidates) {
                     currentCoroutineContext().ensureActive()

@@ -111,7 +111,9 @@ class QualityOfLifeUiTest {
         app.onNodeWithText("How to set this up").performScrollTo().performClick()
         app.onNodeWithText("Set up WhatsApp updates").assertIsDisplayed()
         UiScreenshots.save("whatsapp-setup-guide")
-        app.onNodeWithText("5 · Connect in CT Trains").performScrollTo().assertIsDisplayed()
+        app.onNode(hasScrollToIndexAction() and hasAnyDescendant(hasText("Set up WhatsApp updates")))
+            .performScrollToNode(hasText("5 · Connect in CT Trains"))
+        app.onNodeWithText("5 · Connect in CT Trains").assertIsDisplayed()
     }
     @Test fun calendarTimeSelectorAndSwapPreserveCustomEndpoints() {
         val train=ViewModelProvider(app.activity)[TrainViewModel::class.java]
