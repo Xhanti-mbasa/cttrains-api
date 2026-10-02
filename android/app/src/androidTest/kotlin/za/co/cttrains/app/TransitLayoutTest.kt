@@ -41,6 +41,7 @@ class TransitLayoutTest {
     }
     private fun list()=app.onNode(hasScrollToIndexAction())
     private fun screenshot(name: String) {
+        UiScreenshots.save(name)
         val file=File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),"ui-screenshots/$name.png").apply { parentFile!!.mkdirs() }
         file.outputStream().use { app.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it) }
     }

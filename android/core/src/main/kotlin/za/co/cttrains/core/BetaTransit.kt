@@ -143,7 +143,7 @@ object BusSources {
         return rows to date
     }
     fun validate(snapshot: BusSnapshot): BusSnapshot {
-        require(snapshot.service != TransportService.PRASA && snapshot.routes.size <= 2000 && (snapshot.routes.isNotEmpty() || snapshot.stops.isNotEmpty()) && snapshot.stops.size <= 20000 && snapshot.shapes.size <= 5000)
+        require(snapshot.service != TransportService.PRASA && snapshot.routes.size <= 5000 && (snapshot.routes.isNotEmpty() || snapshot.stops.isNotEmpty()) && snapshot.stops.size <= 20000 && snapshot.shapes.size <= 5000)
         require(snapshot.routes.all { it.title.isNotBlank() && it.title.length <= 240 && officialUrl(it.url,snapshot.service) })
         require(snapshot.stops.all { it.id.isNotBlank() && it.name.length in 1..180 && it.point.valid && it.routes.size <= 300 })
         require(snapshot.shapes.sumOf { it.points.size } <= 300000 && snapshot.shapes.all { it.points.size >= 2 && it.points.all(GeoPoint::valid) })

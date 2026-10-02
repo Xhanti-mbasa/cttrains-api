@@ -50,10 +50,22 @@ class GoldenArrowProvider(context: Context): BusProvider {
         val doc=Jsoup.parse(html)
         val fields=doc.select("input[type=hidden][name]").associate { it.attr("name") to it.attr("value") }
         if(fields["__VIEWSTATE"].isNullOrBlank()) throw ScheduleFormatException("Golden Arrow's search format changed.")
-        val form=FormBody.Builder();fields.forEach { (name,value) -> form.add(name,if(name=="__EVENTTARGET") letter else if(name=="__EVENTARGUMENT") "" else value) }
-        form.add("select_from","")
-        val response=http.bytes(Request.Builder().url(BusSources.GABS).post(form.build()).build(),8*1024*1024,hosts).toString(Charsets.UTF_8)
-        BusSources.goldenCatalogue(response)
+        suspend fun page(target: String): List<BusRouteDocument> {
+            val form=FormBody.Builder()
+            fields.filterKeys { it !in setOf("__EVENTTARGET","__EVENTARGUMENT","select_from") }.forEach { (name,value)->form.add(name,value) }
+            // Initial HTML does not render these hidden inputs; add them explicitly.
+            form.add("__EVENTTARGET",target).add("__EVENTARGUMENT","").add("select_from","")
+            val response=http.bytes(Request.Builder().url(BusSources.GABS).post(form.build()).build(),8*1024*1024,hosts).toString(Charsets.UTF_8)
+            return BusSources.goldenCatalogue(response)
+        }
+        if(letter!="All") return@withContext page(letter)
+        val first=page("All")
+        val letters=doc.select("button.letters[id]").map { it.id() }.filter { Regex("[A-Z]").matches(it) }.distinct()
+        // Some publisher versions answer All with only A; load the remaining letter pages.
+        if(first.map { it.title.firstOrNull() }.distinct().size>1 || letters.size<2) return@withContext first
+        val result=first.toMutableList()
+        for(target in letters.filter { it!=first.first().title.firstOrNull()?.toString() }) result+=page(target)
+        result.distinctBy { it.url }
     }
     // The stop layer contains 100k+ route memberships. Group first, then request one
     // WGS84 geometry per surveyed stop; the sampled route code is not route membership.

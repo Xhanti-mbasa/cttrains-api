@@ -29,4 +29,14 @@ class WhatsAppUpdatesTest {
         assertTrue(runCatching { WhatsAppUpdates.validate(c.copy(key="a\nb")) }.isFailure)
         assertTrue(runCatching { WhatsAppUpdates.validate(c.copy(feeds=listOf(channel,channel))) }.isFailure)
     }
+    @Test fun setupNormalizesOnlyWebsiteOriginsAndReadsAccountUuids() {
+        assertEquals("https://gateway.example/api",WhatsAppUpdates.apiBase(" https://gateway.example/ "))
+        assertEquals("https://gateway.example/proxy/api",WhatsAppUpdates.apiBase("https://gateway.example/proxy/api/"))
+        assertTrue(runCatching { WhatsAppUpdates.apiBase("http://gateway.example") }.isFailure)
+        assertTrue(runCatching { WhatsAppUpdates.apiBase("https://user:secret@gateway.example") }.isFailure)
+        val uuid="550e8400-e29b-41d4-a716-446655440000"
+        val raw="""[{"id":"$uuid","name":"Transit","status":"ready"},{"id":"not-a-uuid","name":"Bad"}]"""
+        val account=WhatsAppUpdates.sessions(raw).single()
+        assertEquals(uuid,account.id);assertEquals("Transit",account.name);assertEquals("ready",account.status)
+    }
 }

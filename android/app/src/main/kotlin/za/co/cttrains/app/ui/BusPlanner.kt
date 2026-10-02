@@ -34,6 +34,8 @@ import za.co.cttrains.core.*
     var boardPin by remember(service,timetable?.route?.id,fromId) { mutableStateOf<BusStopPoint?>(null) }
     var alightPin by remember(service,timetable?.route?.id,toId) { mutableStateOf<BusStopPoint?>(null) }
     var consent by remember { mutableStateOf(false) }
+    var datePicker by remember { mutableStateOf(false) }
+    var timePicker by remember { mutableStateOf(false) }
     val uri=LocalUriHandler.current
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { model.locateOnce() }
     val day=runCatching { LocalDate.parse(dateText).dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase) }.getOrNull()
@@ -52,9 +54,10 @@ import za.co.cttrains.core.*
         item { Text("Plan with ${service.title}",style=MaterialTheme.typography.headlineSmall);Text("Choose a published route and actual timed boarding / alighting stops. Bus transfers are not automatically verified.",style=MaterialTheme.typography.bodySmall);FeatureStatus(s) }
         item {
             OutlinedButton(onClick={ picker="start" },modifier=Modifier.fillMaxWidth()) { Text("From: ${s.access?.label ?: "At boarding stop"}") }
+            TextButton(onClick={ m.swapPlaces();model.edit { it.copy(from=it.to,to=it.from) };val old=fromId;fromId=toId;toId=old;val pin=boardPin;boardPin=alightPin;alightPin=pin }) { Text("Swap From and To") }
             OutlinedButton(onClick={ picker="finish" },modifier=Modifier.fillMaxWidth()) { Text("To: ${s.destination?.label ?: "At alighting stop"}") }
-            OutlinedTextField(dateText,{ v->dateText=v.take(10);if(runCatching { LocalDate.parse(dateText) }.isSuccess) model.edit { it.copy(date=dateText) } },label={ Text("Travel date · YYYY-MM-DD") },singleLine=true,modifier=Modifier.fillMaxWidth())
-            OutlinedTextField(timeText,{ v->timeText=v.take(5);if(runCatching { LocalTime.parse(timeText) }.isSuccess) model.edit { it.copy(time=timeText) } },label={ Text("Bus departs after · HH:mm") },singleLine=true,modifier=Modifier.fillMaxWidth())
+            OutlinedButton(onClick={ datePicker=true },modifier=Modifier.fillMaxWidth()) { Text("Travel date · $dateText") }
+            OutlinedButton(onClick={ timePicker=true },modifier=Modifier.fillMaxWidth()) { Text("Bus departs after · $timeText") }
             if(date==null || after==null) Text("Enter a valid date and 24-hour time.",color=MaterialTheme.colorScheme.error)
             TextButton(onClick={ m.refresh(service,true) },enabled=service !in s.loading) { Text("Refresh ${service.title} data") }
             Text(check.message,style=MaterialTheme.typography.bodySmall)
@@ -105,6 +108,8 @@ import za.co.cttrains.core.*
         }
         item { TextButton(onClick={ uri.openUri(if(service==TransportService.MYCITI) BusSources.MYCITI_DOWNLOADS else BusSources.GABS) }) { Text("Open ${service.title} source") } }
     }
+    if(datePicker) TravelDatePicker(dateText,emptyList(),{ datePicker=false },trainOnly=false) { value->dateText=value;model.edit { it.copy(date=value) };datePicker=false }
+    if(timePicker) DepartureTimePicker(timeText,{ timePicker=false },trainOnly=false) { value->timeText=value;model.edit { it.copy(time=value) };timePicker=false }
     picker?.let { which -> ModalBottomSheet(onDismissRequest={ picker=null },sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         Column(Modifier.padding(20.dp)) {
             Text(when(which) { "start"->"Where do you leave from?";"finish"->"Where do you go after the bus?";"board"->"Timed boarding stop";"alight"->"Timed alighting stop";else->"Choose surveyed map stop · unverified association" },style=MaterialTheme.typography.titleLarge)

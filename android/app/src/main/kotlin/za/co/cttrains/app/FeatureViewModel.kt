@@ -145,6 +145,10 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
         walkJob?.cancel()
         mutable.update { if(start) it.copy(access=endpoint,walks=emptyList(),walkError=null,walkBusy=false) else it.copy(destination=endpoint,walks=emptyList(),walkError=null,walkBusy=false) }
     }
+    fun swapPlaces() {
+        walkJob?.cancel()
+        mutable.update { it.copy(access=it.destination,destination=it.access,walks=emptyList(),walkError=null,walkBusy=false,selectedBus=null) }
+    }
     fun walks(train: TrainState) {
         val previous=walkJob;previous?.cancel()
         val s=state.value

@@ -35,6 +35,9 @@ import za.co.cttrains.core.*
     var onlineWalks by rememberSaveable { mutableStateOf(false) }
     var advanced by rememberSaveable { mutableStateOf(false) }
     var maxWalk by rememberSaveable { mutableStateOf(1500) }
+    var autoWalk by rememberSaveable { mutableStateOf(true) }
+    var datePicker by remember { mutableStateOf(false) }
+    var timePicker by remember { mutableStateOf(false) }
     var manual by rememberSaveable { mutableStateOf(false) }
     var scheduled by remember { mutableStateOf<PlannerOption?>(null) }
     var date by rememberSaveable(train.date) { mutableStateOf(train.date) }
@@ -42,8 +45,8 @@ import za.co.cttrains.core.*
     val from=s.access ?: train.stations.firstOrNull { it.mapped && stationKey(it.name)==stationKey(train.from) }?.let(WalkingRoutes::endpoint)
     val to=s.destination ?: train.stations.firstOrNull { it.mapped && stationKey(it.name)==stationKey(train.to) }?.let(WalkingRoutes::endpoint)
     val services=if(mode=="compare") TransportService.values().filter { it.name in selected }.toSet() else setOf(TransportService.valueOf(mode))
-    LaunchedEffect(from,to,date,time,mode,selected,onlineWalks,maxWalk,train.preferences.sourceId,s.extras.beta.goldenArrow,s.extras.beta.myCiti) { planner.clear() }
-    fun runSearch() { if(from!=null && to!=null) planner.find(PlannerRequest(from,to,date,time,services,onlineWalks,maxWalk),train) }
+    LaunchedEffect(from,to,date,time,mode,selected,onlineWalks,maxWalk,autoWalk,train.preferences.sourceId,s.extras.beta.goldenArrow,s.extras.beta.myCiti) { planner.clear() }
+    fun runSearch() { if(from!=null && to!=null) planner.find(PlannerRequest(from,to,date,time,services,onlineWalks,if(autoWalk) 5000 else maxWalk),train) }
     if(manual && mode!="compare" && mode!="PRASA") {
         Column(Modifier.fillMaxSize()) {
             TextButton(onClick={ manual=false }) { Text("Back to journey planner") }
@@ -59,21 +62,26 @@ import za.co.cttrains.core.*
         }
         item {
             JourneyPlaceField("From",from?.label ?: "Choose your start") { picker=true }
+            TextButton(onClick={ m.swapPlaces();model.edit { it.copy(from=it.to,to=it.from) } },enabled=from!=null && to!=null,modifier=Modifier.fillMaxWidth()) { Text("Swap From and To") }
             JourneyPlaceField("To",to?.label ?: "Choose your destination") { picker=false }
         }
         item {
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(date,{ date=it.take(10);if(runCatching { LocalDate.parse(date) }.isSuccess) model.edit { it.copy(date=date) } },label={ Text("Travel date") },singleLine=true,modifier=Modifier.weight(1f))
-                OutlinedTextField(time,{ time=it.take(5);if(runCatching { LocalTime.parse(time) }.isSuccess) model.edit { it.copy(time=time) } },label={ Text("Leave after") },singleLine=true,modifier=Modifier.weight(1f))
+                OutlinedButton(onClick={ datePicker=true },modifier=Modifier.weight(1f)) { Column { Text("Travel date",style=MaterialTheme.typography.labelSmall);Text(date) } }
+                OutlinedButton(onClick={ timePicker=true },modifier=Modifier.weight(1f)) { Column { Text("Leave after",style=MaterialTheme.typography.labelSmall);Text(time) } }
             }
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                 TextButton(onClick={ if(onlineWalks) onlineWalks=false else consent=true }) { Text(if(onlineWalks) "Walking estimates: on" else "Enable walking estimates") }
                 TextButton(onClick={ advanced=!advanced }) { Text(if(advanced) "Less" else "Options") }
             }
             if(advanced) {
-                Text("Maximum walking distance per leg",style=MaterialTheme.typography.labelLarge)
-                FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf(500,1000,1500,3000,5000).forEach { distance -> FilterChip(maxWalk==distance,{ maxWalk=distance },label={ Text("${distance} m") }) } }
-                SourceSelector(train,model)
+                Text("How far are you willing to walk to a stop?",style=MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    FilterChip(autoWalk,{ autoWalk=true },label={ Text("Auto estimate") })
+                    listOf(500,1000,1500,3000,5000).forEach { distance -> FilterChip(!autoWalk && maxWalk==distance,{ autoWalk=false;maxWalk=distance },label={ Text("${distance} m") }) }
+                }
+                Text(if(autoWalk) "We look for nearby usable stops within 5 km, calculate each mapped walk and rank the journeys. You can set a shorter limit." else "This limit applies separately to the walk before boarding and after getting off.",style=MaterialTheme.typography.bodySmall)
+                if(TransportService.PRASA in services) SourceSelector(train,model)
                 Text("Comparison starts at the same leave-after time and includes walks, waiting and a five-minute boarding buffer. Without a mapped walk, the door-to-door time stays unknown.",style=MaterialTheme.typography.bodySmall)
             }
             val valid=from!=null && to!=null && from!=to && runCatching { LocalDate.parse(date);LocalTime.parse(time) }.isSuccess && services.isNotEmpty()
@@ -96,6 +104,20 @@ import za.co.cttrains.core.*
                     Text(section.issue ?: "No supported journey found.",style=MaterialTheme.typography.bodyMedium)
                     if(service!=TransportService.PRASA) TextButton(onClick={ mode=service.name;manual=true;m.chooseBus(service) }) { Text("Manual bus setup") }
                 }
+                items(section.candidates,key={ "candidate:${it.timetable.route.id}" }) { candidate ->
+                    val timetable=candidate.timetable
+                    val uri=LocalUriHandler.current
+                    OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                        Text(timetable.route.title,style=MaterialTheme.typography.titleMedium)
+                        Text("Possible route · surveyed corridor near both places",style=MaterialTheme.typography.labelMedium)
+                        Text("${timetable.day} · ${if(candidate.cached) "Saved timetable" else "Checked"} ${checked(timetable.fetchedAt)}",style=MaterialTheme.typography.labelSmall)
+                        Text("${timetable.trips.count { trip->trip.calls.lastOrNull()?.time.orEmpty()>=time }} published trips remaining in this timetable. Your roadside boarding time is not supplied.",style=MaterialTheme.typography.bodySmall)
+                        FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                            TextButton(onClick={ mode=service.name;manual=true;m.chooseBus(service);m.timetable(timetable.route,timetable.day) }) { Text("Choose published timed stops") }
+                            TextButton(onClick={ uri.openUri(timetable.route.url) }) { Text("View operator PDF") }
+                        }
+                    } }
+                }
                 items(section.options.take(if(mode=="compare") 3 else 12),key={ it.id }) { option ->
                     PlannerJourneyCard(option,option.id==fastest,s,model,m,onSchedule={
                         model.presentPlannedJourney(option.query!!,option.rail!!,option.fetchedAt,option.cached,option.fares.firstOrNull()?.let { "Single ${money(it.cents)}" },option.sourceId,false);scheduled=option
@@ -115,7 +137,9 @@ import za.co.cttrains.core.*
         else { m.place(endpoint,start);WalkingRoutes.nearest(endpoint.point,train.stations)?.let { station -> model.edit { if(start) it.copy(from=station.name) else it.copy(to=station.name) } } }
         picker=null
     } }
-    scheduled?.let { option -> JourneyScheduleSheet(option.query!!,option.rail!!,model,initialAccess=option.walks.firstOrNull { it.from==from }?.minutes ?: if(from?.id?.startsWith("station:")==true) 0 else 20,initialLeaveFrom=from?.label.orEmpty()) { scheduled=null } }
+    scheduled?.let { option -> JourneyScheduleSheet(option.query!!,option.rail!!,model,initialAccess=option.walks.firstOrNull { it.from==from }?.minutes ?: if(from?.id?.startsWith("station:")==true) 0 else 20,initialLeaveFrom=from?.label.orEmpty(),accessEndpoint=from,initialWalk=option.walks.firstOrNull { it.from==from }) { scheduled=null } }
+    if(datePicker) TravelDatePicker(date,train.catalog.holidays,{ datePicker=false },trainOnly=mode=="PRASA") { date=it;model.edit { state->state.copy(date=it) };datePicker=false }
+    if(timePicker) DepartureTimePicker(time,{ timePicker=false },trainOnly=mode=="PRASA") { time=it;model.edit { state->state.copy(time=it) };timePicker=false }
     if(consent) AlertDialog(onDismissRequest={ consent=false },title={ Text("Calculate mapped walking routes?") },text={ Text("FOSSGIS / OSRM receives the selected start, destination and candidate stop coordinates. This checks foot paths and caches them locally. Published transit times remain scheduled estimates.") },confirmButton={ TextButton(onClick={ onlineWalks=true;consent=false }) { Text("Enable estimates") } },dismissButton={ TextButton(onClick={ consent=false }) { Text("Keep timetable only") } })
 }
 
@@ -159,8 +183,8 @@ import za.co.cttrains.core.*
                 OutlinedTextField(query,{ query=it.take(120) },label={ Text("Search places, stations or stops") },singleLine=true,modifier=Modifier.fillMaxWidth())
                 TextButton(onClick={ online=!online }) { Text(if(online) "Online suggestions on · Photon" else "Enable online address suggestions") }
                 if(online) Text("Typed searches are sent to Photon. Results use OpenStreetMap data.",style=MaterialTheme.typography.labelSmall)
-                if(start) train.currentPosition?.let { p -> TextButton(onClick={ onSelect(WalkEndpoint("current","Current location",GeoPoint(p.latitude,p.longitude))) }) { Text("Current location · accuracy ${p.accuracyMeters.toInt()} m") } }
-                if(start) TextButton(onClick={ permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION)) }) { Text("Refresh my location") }
+                train.currentPosition?.let { p -> TextButton(onClick={ onSelect(WalkEndpoint("current","Current location",GeoPoint(p.latitude,p.longitude))) }) { Text("Current location · accuracy ${p.accuracyMeters.toInt()} m") } }
+                TextButton(onClick={ permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION)) }) { Text("Refresh my location") }
                 issue?.let { Text(it,style=MaterialTheme.typography.bodySmall) }
             }
             items(suggestions,key={ "place:${it.id}" }) { p -> ListItem(headlineContent={ Text(p.label) },supportingContent={ Text("Online place") },modifier=Modifier.clickable { onSelect(WalkEndpoint("place:${p.id}",p.label.take(100),p.point)) }) }

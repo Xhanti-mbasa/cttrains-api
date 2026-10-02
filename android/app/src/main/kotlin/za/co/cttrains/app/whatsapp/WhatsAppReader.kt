@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.*
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.util.UUID
@@ -31,6 +31,15 @@ class WhatsAppReader(context: Context) {
         return http.bytes(Request.Builder().url(url.build()).header("X-API-Key",c.key).get().build(),512*1024,setOf(c.server.toHttpUrl().host)).toString(Charsets.UTF_8)
     }
     suspend fun channels(): List<WhatsAppFeed> { val c=config() ?: error("Configure OpenWA first");return WhatsAppUpdates.channels(get(c,listOf("sessions",c.session,"channels"))) }
+    suspend fun sessions(server: String,key: String): List<WhatsAppSession> {
+        val c=WhatsAppUpdates.validate(WhatsAppConnection(WhatsAppUpdates.apiBase(server),"setup",key.trim()))
+        return WhatsAppUpdates.sessions(get(c,listOf("sessions"),mapOf("limit" to "100","offset" to "0")))
+    }
+    suspend fun check(c: WhatsAppConnection) {
+        val row=Json.parseToJsonElement(get(c,listOf("sessions",c.session))).jsonObject
+        require(row["id"]?.jsonPrimitive?.content==c.session) { "Unexpected linked account" }
+        require(row["status"]?.jsonPrimitive?.content.equals("ready",true)) { "Start and link this account in the OpenWA dashboard first." }
+    }
     suspend fun refresh()=gate.withLock {
         val c=config()?.takeIf { it.enabled && it.feeds.isNotEmpty() } ?: return@withLock
         val old=saved();val now=System.currentTimeMillis()

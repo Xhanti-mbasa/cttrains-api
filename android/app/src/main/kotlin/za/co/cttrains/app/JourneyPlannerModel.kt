@@ -16,7 +16,8 @@ data class PlannerOption(val id: String,val service: TransportService,val query:
     val alight get()=rail?.legs?.last()?.arrival?.name ?: bus!!.arrival.name
     val rideMinutes get()=rail?.durationMinutes ?: bus!!.minutes
 }
-data class PlannerSection(val service: TransportService,val options: List<PlannerOption> = emptyList(),val issue: String?=null,val searchedRoutes: Int=0)
+data class GoldenTimetableCandidate(val timetable: BusTimetable,val cached: Boolean)
+data class PlannerSection(val service: TransportService,val options: List<PlannerOption> = emptyList(),val issue: String?=null,val searchedRoutes: Int=0,val candidates: List<GoldenTimetableCandidate> = emptyList())
 data class PlannerState(val request: PlannerRequest?=null,val loading: Boolean=false,val progress: String="",val sections: Map<TransportService,PlannerSection> = emptyMap(),val error: String?=null)
 
 /** Own request state. Comparing one provider never changes another provider's selected timetable. */
@@ -92,12 +93,26 @@ class JourneyPlannerModel(app: Application): AndroidViewModel(app) {
     private suspend fun bus(r: PlannerRequest,service: TransportService): PlannerSection {
         val extras=buses.store.extras()
         if(!extras.beta.enabled(service)) return PlannerSection(service,issue="Enable ${service.title} independently in Settings → Beta features.")
-        val snapshot=buses.store.snapshot(service) ?: buses.refresh(service)
+        val saved=buses.store.snapshot(service)
+        val needsCatalogue=service==TransportService.GOLDEN_ARROW && (saved==null || saved.routes.map { it.title.firstOrNull() }.distinct().size<2)
+        val snapshot=if(saved==null || needsCatalogue) buses.refresh(service) else saved
         val date=LocalDate.parse(r.date);val day=date.dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase)
         val routes=withContext(Dispatchers.Default) { BusDiscovery.routes(snapshot,r.from.point,r.to.point,date,extras.busStopLinks,r.maxWalkMeters.toDouble()) }
-        if(routes.isEmpty()) return PlannerSection(service,issue=if(service==TransportService.GOLDEN_ARROW)
-            "No confirmed Golden Arrow boarding/alighting pair is linked to a published timetable here. Choose the timed stops once in Manual bus setup; surveyed pins alone cannot verify a scheduled bus connection."
-            else "No published direct MyCiTi route joins stops within ${r.maxWalkMeters} m of both places. This does not prove there is no service; transfers or missing stop data may require the operator planner.")
+        if(routes.isEmpty()) {
+            if(service==TransportService.GOLDEN_ARROW) {
+                val candidates=withContext(Dispatchers.Default) { BusDiscovery.goldenCandidates(snapshot,r.from.point,r.to.point,date,r.maxWalkMeters.toDouble().coerceAtMost(1500.0)) }
+                val checked=mutableListOf<GoldenTimetableCandidate>()
+                for(route in candidates) {
+                    currentCoroutineContext().ensureActive()
+                    mutable.update { it.copy(progress="Checking published timetable · ${route.title}") }
+                    try { val (t,cached)=buses.timetable(service,route,day);checked+=GoldenTimetableCandidate(t,cached) }
+                    catch(e: Exception) { if(e is CancellationException) throw e }
+                }
+                return PlannerSection(service,issue=if(checked.isNotEmpty()) "Published timetables match surveyed corridors near both places. Exact boarding and drop-off times need confirmation: the PDFs time major points, not every roadside stop. These candidates are not verified door-to-door journeys."
+                    else "We could not verify a current Golden Arrow journey here. This does not mean no bus exists. The survey and published PDFs do not supply a complete stop-to-timetable join. Search the full catalogue or check with Golden Arrow; no stop times have been guessed.",searchedRoutes=candidates.size,candidates=checked)
+            }
+            return PlannerSection(service,issue="No published direct MyCiTi route joins stops within ${r.maxWalkMeters} m of both places. This does not prove there is no service; transfers or missing stop data may require the operator planner.")
+        }
         val requestAt=JourneyComparison.requestedAt(r.date,r.time)
         val options=mutableListOf<PlannerOption>();var failed=0
         for(route in routes.take(6)) {

@@ -71,5 +71,16 @@ class NativeDataFeaturesTest {
         assertNotEquals(photo,restored.spots.first().photo)
         assertEquals(64,files.bitmap(restored.spots.first().photo!!)!!.width)
     }
+    @Test fun belharPdfContinuationPagesAndFridayTripsRemainReadable() {
+        val encoded=InstrumentationRegistry.getInstrumentation().context.assets.open("belhar-golden-pdf.base64").bufferedReader().use { it.readText() }
+        val bytes=android.util.Base64.decode(encoded,android.util.Base64.DEFAULT)
+        PDFBoxResourceLoader.init(context)
+        val text=PDDocument.load(bytes).use { d->PDFTextStripper().apply { sortByPosition=true;pageEnd="\u000c" }.getText(d) }
+        val document=BusRouteDocument("003001","BELHAR-CAPE TOWN","https://www.gabs.co.za/Pdf/Bpdf/BELHAR___CAPE_TOWN_from_20260928_to_20261004_003001.pdf","2026-09-28","2026-10-04",true)
+        val friday=GoldenTimetables.parse(text,document,"Friday",1)
+        assertTrue(friday.trips.size>30)
+        assertTrue(friday.trips.any { it.calls.first().name=="CAPE TOWN" && it.calls.first().time=="11:00" && it.calls.last().time=="12:25" })
+        assertTrue(friday.trips.all { it.calls.zipWithNext().all { (a,b)->a.time<=b.time } })
+        assertTrue(friday.trips.none { trip->trip.calls.any { it.name=="ROBERT SOBUKWE RD" } })
+    }
 }
-

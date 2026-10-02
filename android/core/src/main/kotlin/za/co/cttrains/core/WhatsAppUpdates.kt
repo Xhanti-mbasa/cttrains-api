@@ -11,8 +11,22 @@ import java.net.URI
 }
 @Serializable data class WhatsAppPost(val id: String,val feed: WhatsAppFeed,val body: String,val postedAt: Long?,val fetchedAt: Long)
 @Serializable data class WhatsAppInbox(val posts: List<WhatsAppPost> = emptyList(),val checkedAt: Long=0,val issue: String?=null,val retryAt: Long=0)
+data class WhatsAppSession(val id: String,val name: String,val status: String)
 
 object WhatsAppUpdates {
+    fun apiBase(value: String): String {
+        val text=value.trim().trimEnd('/');val uri=URI(text)
+        require(uri.scheme=="https" && uri.host!=null && uri.userInfo==null && uri.query==null && uri.fragment==null && text.length<=495)
+        return if(uri.path.isNullOrEmpty()) "$text/api" else text
+    }
+    fun sessions(raw: String): List<WhatsAppSession> {
+        require(raw.toByteArray().size<=512*1024)
+        return Json.parseToJsonElement(raw).jsonArray.take(100).mapNotNull { row -> runCatching {
+            val o=row.jsonObject;val id=o.getValue("id").jsonPrimitive.content
+            require(Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}").matches(id))
+            WhatsAppSession(id,o["name"]?.jsonPrimitive?.contentOrNull.orEmpty().take(100),o["status"]?.jsonPrimitive?.contentOrNull.orEmpty().take(30))
+        }.getOrNull() }.distinctBy { it.id }
+    }
     fun validate(c: WhatsAppConnection): WhatsAppConnection {
         val u=URI(c.server)
         require(u.scheme=="https" && u.host!=null && u.userInfo==null && u.query==null && u.fragment==null && c.server.length<=500)

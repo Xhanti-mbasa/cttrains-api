@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class,androidx.compose.material3.ExperimentalMaterial3Api::class)
 package za.co.cttrains.app.whatsapp
 
 import androidx.compose.foundation.layout.*
@@ -39,6 +39,8 @@ import za.co.cttrains.core.*
     var service by rememberSaveable { mutableStateOf(TransportService.PRASA) }
     var review by remember { mutableStateOf<WhatsAppPost?>(null) }
     var backgroundConsent by remember { mutableStateOf(false) }
+    var guide by rememberSaveable { mutableStateOf(false) }
+    var manualSession by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(c?.identity,c?.enabled,c?.feeds,owner) {
         if(c?.run { enabled && feeds.isNotEmpty() }==true) owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while(true) { model.refresh();delay(60_000) }
@@ -48,6 +50,7 @@ import za.co.cttrains.core.*
         item {
             Text("WhatsApp updates · alpha",style=MaterialTheme.typography.titleLarge)
             Text("Read selected transit channels or groups through your OpenWA gateway. The inbox is separate from official schedules and community chat.",style=MaterialTheme.typography.bodySmall)
+            TextButton(onClick={ guide=true }) { Text("How to set this up") }
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick=onReports) { Text("Share a delay report") }
                 OutlinedButton(onClick=onTrips) { Text("Share a safety trip") }
@@ -57,11 +60,15 @@ import za.co.cttrains.core.*
             Text("Connect an OpenWA gateway",style=MaterialTheme.typography.titleMedium)
             Text("OpenWA runs on a separate computer/server with a linked WhatsApp account. This Android app does not include that server or read the installed WhatsApp app. Channel reading requires the whatsapp-web.js engine.",style=MaterialTheme.typography.bodySmall)
             Text("Use a dedicated account and a restricted Reader API key. OpenWA is unofficial; its maintainers warn that WhatsApp may restrict automated accounts.",style=MaterialTheme.typography.bodySmall)
-            OutlinedTextField(server,{ server=it.take(500) },label={ Text("HTTPS API base URL · including /api if required") },singleLine=true,modifier=Modifier.fillMaxWidth())
-            OutlinedTextField(session,{ session=it.take(100) },label={ Text("OpenWA session ID") },singleLine=true,modifier=Modifier.fillMaxWidth())
-            OutlinedTextField(key,{ key=it.take(500) },label={ Text("Reader API key") },visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
-            Button(onClick={ model.connect(server,session,key);key="" },enabled=server.isNotBlank() && session.isNotBlank() && key.isNotBlank() && !s.busy) { Text("Enable optional reader") }
-            TextButton(onClick={ uri.openUri("https://github.com/rmyndharis/OpenWA") }) { Text("OpenWA setup documentation") }
+            OutlinedTextField(server,{ server=it.take(500);session="";model.clearSessions() },label={ Text("Gateway website · HTTPS") },supportingText={ Text("For example https://your-host. We add /api for a website address; a custom API path is kept.") },singleLine=true,modifier=Modifier.fillMaxWidth())
+            OutlinedTextField(key,{ key=it.take(500);session="";model.clearSessions() },label={ Text("Reader API key") },supportingText={ Text("OpenWA calls this the viewer role. Keep admin keys in the gateway dashboard.") },visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth())
+            OutlinedButton(onClick={ model.discover(server,key) },enabled=server.isNotBlank() && key.isNotBlank() && !s.busy) { Text("Find linked accounts") }
+            s.sessions.forEach { linked ->
+                FilterChip(session==linked.id,{ session=linked.id },label={ Text("${linked.name.ifBlank { "Linked account" }} · ${linked.status}") })
+            }
+            TextButton(onClick={ manualSession=!manualSession }) { Text(if(manualSession) "Hide account ID" else "Enter account ID manually") }
+            if(manualSession) OutlinedTextField(session,{ session=it.take(100) },label={ Text("OpenWA session ID · UUID") },supportingText={ Text("Copy the account's UUID from OpenWA Sessions, not its display name.") },singleLine=true,modifier=Modifier.fillMaxWidth())
+            Button(onClick={ model.connect(server,session,key) },enabled=server.isNotBlank() && session.isNotBlank() && key.isNotBlank() && !s.busy) { Text("Test & connect reader") }
         } else {
             item {
                 Text(if(c.enabled) "Reader enabled" else "Reader paused",style=MaterialTheme.typography.titleMedium)
@@ -118,6 +125,8 @@ import za.co.cttrains.core.*
         }
         item { if(s.busy) LinearProgressIndicator(Modifier.fillMaxWidth());s.issue?.let { Text(it,color=MaterialTheme.colorScheme.error) } }
     }
+    LaunchedEffect(c?.identity) { if(c!=null) key="" }
+    if(guide) WhatsAppSetupGuide { guide=false }
     review?.let { post -> AlertDialog(onDismissRequest={ review=null },title={ Text("Review WhatsApp observation") },text={ Text(WhatsAppUpdates.shareText(post),Modifier.verticalScroll(rememberScrollState())) },confirmButton={ TextButton(onClick={ shareText(context,WhatsAppUpdates.shareText(post));review=null }) { Text("Open share sheet") } },dismissButton={ TextButton(onClick={ review=null }) { Text("Cancel") } }) }
     if(backgroundConsent) AlertDialog(onDismissRequest={ backgroundConsent=false },title={ Text("Allow background feed checks?") },text={ Text("The optional reader will contact your OpenWA gateway about every 15 minutes when Android permits it. Only selected feeds are cached locally; there is no automatic message sending or timetable rewriting.") },confirmButton={ TextButton(onClick={ model.background(true);backgroundConsent=false }) { Text("Enable") } },dismissButton={ TextButton(onClick={ backgroundConsent=false }) { Text("Cancel") } })
 }

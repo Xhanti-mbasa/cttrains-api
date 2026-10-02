@@ -33,6 +33,25 @@ object JourneyComparison {
 }
 
 object BusDiscovery {
+    /** Candidate documents, not a stop/time join: survey geometry can locate corridors but cannot verify today's operation. */
+    fun goldenCandidates(snapshot: BusSnapshot,from: GeoPoint,to: GeoPoint,date: LocalDate,radius: Double=1500.0): List<BusRouteDocument> {
+        if(snapshot.service!=TransportService.GOLDEN_ARROW) return emptyList()
+        fun terminal(value: String): String {
+            val name=value.trim().uppercase()
+            return if(name=="CITY" || name.startsWith("CITY GOLDEN ACRE")) "capetown" else stationKey(name)
+        }
+        val corridors=snapshot.shapes.mapNotNull { shape ->
+            val names=shape.name.substringAfter(":",shape.name).split(Regex("\\s+to\\s+",RegexOption.IGNORE_CASE))
+            if(names.size!=2 || shape.points.isEmpty()) return@mapNotNull null
+            val a=shape.points.minOf { NearbySuggestions.distance(from,it) };val b=shape.points.minOf { NearbySuggestions.distance(to,it) }
+            if(a>radius || b>radius) null else Triple(terminal(names[0]),terminal(names[1]),a+b)
+        }
+        return snapshot.routes.filter { it.validFor(date) }.mapNotNull { route ->
+            val title=stationKey(route.title)
+            val match=corridors.filter { it.first.isNotBlank() && it.second.isNotBlank() && title.contains(it.first) && title.contains(it.second) }.minOfOrNull { it.third }
+            match?.let { route to it }
+        }.sortedBy { it.second }.map { it.first }.distinctBy { "${it.id.substringBefore(':')}:${it.validFrom}:${it.validUntil}" }.take(8)
+    }
     fun routes(snapshot: BusSnapshot,from: GeoPoint,to: GeoPoint,date: LocalDate,links: List<BusStopLink>,radius: Double=1500.0): List<BusRouteDocument> {
         val a=snapshot.stops.filter { NearbySuggestions.distance(from,it.point)<=radius }.map { it.id }.toSet()
         val b=snapshot.stops.filter { NearbySuggestions.distance(to,it.point)<=radius }.map { it.id }.toSet()

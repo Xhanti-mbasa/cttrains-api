@@ -30,6 +30,11 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import za.co.cttrains.app.FeatureViewModel
+import za.co.cttrains.app.data.WalkingRepository
 import za.co.cttrains.app.TrainState
 import za.co.cttrains.app.TrainViewModel
 import za.co.cttrains.app.scheduling.*
@@ -116,13 +121,24 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
 }
 
 @Composable
-fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewModel, initialAccess: Int=20, initialLeaveFrom: String="", onDismiss: () -> Unit) {
+fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewModel, initialAccess: Int=20, initialLeaveFrom: String="", accessEndpoint: WalkEndpoint?=null, initialWalk: WalkingLeg?=null, onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val features: FeatureViewModel=androidx.lifecycle.viewmodel.compose.viewModel()
+    val feature by features.state.collectAsStateWithLifecycle()
+    val trains by model.state.collectAsStateWithLifecycle()
+    val scope=rememberCoroutineScope()
+    val walker=remember(context) { WalkingRepository(context) }
+    val boarding=trains.stations.firstOrNull { it.mapped && stationKey(it.name)==stationKey(query.from) }?.let(WalkingRoutes::endpoint)
+    val origin=accessEndpoint ?: feature.access ?: boarding
+    val known=initialWalk?.takeIf { it.from==origin && it.to==boarding } ?: feature.walks.firstOrNull { it.from==origin && it.to==boarding }
+    var estimateConsent by remember { mutableStateOf(false) }
+    var estimating by remember { mutableStateOf(false) }
+    var estimateNote by remember { mutableStateOf<String?>(null) }
     var reminder by rememberSaveable { mutableStateOf(false) }
     var lead by rememberSaveable { mutableIntStateOf(0) }
     var custom by rememberSaveable { mutableStateOf(false) }
     var customMinutes by rememberSaveable { mutableStateOf("30") }
-    var access by rememberSaveable { mutableStateOf(initialAccess.toString()) }
+    var access by rememberSaveable { mutableStateOf((known?.minutes ?: if(origin==boarding && boarding!=null) 0 else initialAccess).toString()) }
     var buffer by rememberSaveable { mutableStateOf("5") }
     var leaveFrom by rememberSaveable { mutableStateOf(initialLeaveFrom) }
     var severity by rememberSaveable { mutableStateOf("standard") }
@@ -176,11 +192,23 @@ fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewM
             HorizontalDivider()
             Text("When should you leave?", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(leaveFrom, { if (it.length <= 80) leaveFrom = it }, label = { Text("Building / office / campus (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            Text("Enter the time from your building to ${query.from}, plus time for boarding. Leave time = train departure minus these two estimates.", style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick={
+                error=null
+                when {
+                    origin==null || boarding==null -> error="Choose a mapped start place in Plan first. A name alone does not give us its coordinates."
+                    origin==boarding -> { access="0";estimateNote="Your start is the boarding station." }
+                    known!=null -> { access=known.minutes.toString();leaveFrom=origin.label;estimateNote="Mapped walk · ${known.distanceMeters.toInt()} m · checked ${checked(known.fetchedAt)}" }
+                    else -> estimateConsent=true
+                }
+            },enabled=!estimating) { Text(if(estimating) "Estimating walk…" else "Auto estimate leave time") }
+            Text("Use your mapped start place to calculate the walk to ${query.from}. We subtract the walk and your boarding buffer from the train's departure. You can adjust either estimate.", style = MaterialTheme.typography.bodySmall)
+            estimateNote?.let { Text(it,style=MaterialTheme.typography.labelSmall) }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MinuteField("To station (min)", access, { access = it }, Modifier.weight(1f))
                 MinuteField("Buffer (min)", buffer, { buffer = it }, Modifier.weight(1f))
             }
+            val accessMinutes=access.toIntOrNull();val bufferMinutes=buffer.toIntOrNull()
+            if(accessMinutes in 0..480 && bufferMinutes in 0..120) Text("Leave by ${Clock.format(Instant.ofEpochMilli(WalkingRoutes.times(query,journey,accessMinutes!!,0,bufferMinutes!!).leaveAt))}",style=MaterialTheme.typography.titleMedium)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Button(onClick = {
                 val a = access.toIntOrNull(); val b = buffer.toIntOrNull()
@@ -194,6 +222,14 @@ fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewM
             }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (saving) "Saving…" else "Save journey") }
         }
     }
+    if(estimateConsent) AlertDialog(onDismissRequest={ estimateConsent=false },title={ Text("Estimate the walk to your station?") },text={ Text("Your selected start and station coordinates go to FOSSGIS / OSRM. A saved route is used when available. Walking and boarding times are estimates.") },confirmButton={ TextButton(onClick={
+        estimateConsent=false;estimating=true
+        scope.launch {
+            try { val (leg,cached)=walker.route(origin!!,boarding!!);access=leg.minutes.toString();leaveFrom=origin.label;estimateNote="${if(cached) "Saved" else "Mapped"} walk · ${leg.distanceMeters.toInt()} m · checked ${checked(leg.fetchedAt)}" }
+            catch(e: Exception) { if(e is CancellationException) throw e;error="Could not calculate this walk. Retry or enter your own minutes; the app has not guessed a walking time." }
+            finally { estimating=false }
+        }
+    }) { Text("Estimate walk") } },dismissButton={ TextButton(onClick={ estimateConsent=false }) { Text("Cancel") } })
 }
 
 @Composable
@@ -205,4 +241,3 @@ private fun MinuteField(label: String, value: String, onChange: (String) -> Unit
 private fun ReminderSeverity(value: String, onChange: (String) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { JourneyPlanning.severities.forEach { level -> FilterChip(value == level, { onChange(level) }, label = { Text(level.replaceFirstChar(Char::uppercase)) }) } }
 }
-

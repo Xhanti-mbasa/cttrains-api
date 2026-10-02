@@ -315,28 +315,28 @@ private fun StationSheet(label: String, stations: List<String>, other: String, o
 }
 
 @Composable
-private fun TravelDatePicker(date: String, holidays: List<String>, onDismiss: () -> Unit, onSelected: (String) -> Unit) {
+internal fun TravelDatePicker(date: String, holidays: List<String>, onDismiss: () -> Unit, trainOnly: Boolean=true, onSelected: (String) -> Unit) {
     val today = LocalDate.now(CapeTownZone)
     val picker = rememberDatePickerState(initialSelectedDateMillis = LocalDate.parse(date).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(), yearRange = today.year..TravelRules.lastAllowedDate(today).year, selectableDates = object : SelectableDates {
         override fun isSelectableDate(utcTimeMillis: Long): Boolean {
             val selected = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneOffset.UTC).toLocalDate()
-            return selected >= today && selected <= TravelRules.lastAllowedDate(today) && selected.dayOfWeek.value != 7 && selected.toString() !in holidays
+            return selected >= today && selected <= TravelRules.lastAllowedDate(today) && (!trainOnly || (selected.dayOfWeek.value != 7 && selected.toString() !in holidays))
         }
     })
     DatePickerDialog(onDismissRequest = onDismiss, confirmButton = { TextButton(onClick = {
         picker.selectedDateMillis?.let { onSelected(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toString()) }
-    }, enabled = picker.selectedDateMillis != null) { Text("Choose date") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }) { DatePicker(state = picker) }
+    }, enabled = picker.selectedDateMillis?.let { picker.selectableDates.isSelectableDate(it) }==true) { Text("Choose date") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }) { DatePicker(state = picker,showModeToggle=false) }
 }
 
 @Composable
-private fun DepartureTimePicker(time: String, onDismiss: () -> Unit, onSelected: (String) -> Unit) {
-    var hour by rememberSaveable { mutableIntStateOf(time.substringBefore(":").toInt()) }
-    var minute by rememberSaveable { mutableIntStateOf(time.substringAfter(":").toInt()) }
+internal fun DepartureTimePicker(time: String, onDismiss: () -> Unit, trainOnly: Boolean=true, onSelected: (String) -> Unit) {
+    var hour by rememberSaveable { mutableIntStateOf(time.substringBefore(":").toInt().coerceIn(if(trainOnly) 3 else 0,23)) }
+    var minute by rememberSaveable { mutableIntStateOf(time.substringAfter(":").toInt()/15*15) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Depart after") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("24-hour time · 15-minute intervals", style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TimeDropdown("Hour", (3..23).toList(), hour, Modifier.weight(1f)) { hour = it }
+                TimeDropdown("Hour", (if(trainOnly) 3..23 else 0..23).toList(), hour, Modifier.weight(1f)) { hour = it }
                 TimeDropdown("Minute", listOf(0, 15, 30, 45), minute, Modifier.weight(1f)) { minute = it }
             }
         }
@@ -456,4 +456,3 @@ internal fun SourceSelector(state: TrainState, model: TrainViewModel) {
         Text(if (model.repository.sources.size > 1) "The API and direct source both use CT Trains. Results stay separate; switching clears the current result." else "Community timetable from CT Trains. Check source and fetch date before travelling.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
-

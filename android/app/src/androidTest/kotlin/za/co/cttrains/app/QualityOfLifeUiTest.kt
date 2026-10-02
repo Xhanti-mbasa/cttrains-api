@@ -93,6 +93,7 @@ class QualityOfLifeUiTest {
         app.onNodeWithText("Compare").performClick()
         app.onNodeWithText("Compare routes").performScrollTo().assertIsDisplayed()
         app.onNodeWithText("Mode of transport · Compare").performScrollTo()
+        UiScreenshots.save("planner-compare")
         val image=app.onRoot().captureToImage()
         val file=java.io.File(app.activity.getExternalFilesDir(null),"ui-screenshots/planner-compare.png").apply { parentFile!!.mkdirs() }
         file.outputStream().use { image.asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
@@ -104,8 +105,35 @@ class QualityOfLifeUiTest {
         app.onNodeWithText("Tools").performClick()
         app.onNodeWithText("WhatsApp updates · alpha").performScrollTo().performClick()
         app.onNodeWithText("WhatsApp updates · alpha").assertIsDisplayed()
-        app.onNodeWithText("HTTPS API base URL · including /api if required").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Gateway website · HTTPS").performScrollTo().assertIsDisplayed()
         app.onNodeWithText("Reader API key").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Find linked accounts").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("How to set this up").performScrollTo().performClick()
+        app.onNodeWithText("Set up WhatsApp updates").assertIsDisplayed()
+        UiScreenshots.save("whatsapp-setup-guide")
+        app.onNodeWithText("5 · Connect in CT Trains").performScrollTo().assertIsDisplayed()
+    }
+    @Test fun calendarTimeSelectorAndSwapPreserveCustomEndpoints() {
+        val train=ViewModelProvider(app.activity)[TrainViewModel::class.java]
+        val features=ViewModelProvider(app.activity)[FeatureViewModel::class.java]
+        app.waitUntil(15000) { features.state.value.ready }
+        val home=za.co.cttrains.core.WalkEndpoint("spot:home","Home",za.co.cttrains.core.GeoPoint(-33.94,18.63))
+        val campus=za.co.cttrains.core.WalkEndpoint("spot:campus","Campus",za.co.cttrains.core.GeoPoint(-33.93,18.46))
+        app.runOnUiThread { train.edit { it.copy(from="Unibell",to="Salt River") };features.place(home,true);features.place(campus,false) }
+        app.onNodeWithText("Plan").performClick()
+        app.onNodeWithText("Swap From and To").performScrollTo().performClick()
+        app.runOnIdle { assertEquals(campus,features.state.value.access);assertEquals(home,features.state.value.destination);assertEquals("Salt River",train.state.value.from);assertEquals("Unibell",train.state.value.to) }
+        app.onNodeWithText("Travel date").performScrollTo().performClick()
+        app.onNodeWithText("Choose date").assertIsDisplayed()
+        UiScreenshots.save("journey-calendar")
+        app.onNodeWithText("Cancel").performClick()
+        app.onNodeWithText("Leave after").performScrollTo().performClick()
+        app.onNodeWithText("24-hour time · 15-minute intervals").assertIsDisplayed()
+        UiScreenshots.save("journey-time-picker")
+        app.onNodeWithText("Choose time").performClick()
+        app.onNodeWithText("Options").performScrollTo().performClick()
+        app.onNodeWithText("Auto estimate").performScrollTo().assertIsDisplayed()
+        app.runOnUiThread { features.place(null,true);features.place(null,false) }
     }
     @Test fun healthAccessIsReadOnlyAndBluetoothIsNotRequestedForMatrixPresence() {
         val info=app.activity.packageManager.getPackageInfo(app.activity.packageName,android.content.pm.PackageManager.GET_PERMISSIONS)
@@ -117,4 +145,3 @@ class QualityOfLifeUiTest {
     }
 
 }
-
