@@ -4,7 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
@@ -55,6 +55,19 @@ class TransitLayoutTest {
         screenshot("golden-arrow-large-text-routes")
         list().performScrollToNode(hasText("Friday"));app.onNodeWithText("Friday").performClick();app.onNodeWithText("Tuesday").performClick()
         list().performScrollToNode(hasText("Load Tuesday times"));app.onNodeWithText("Load Tuesday times").assertIsDisplayed()
+    }
+    @Test fun changingDayReloadsTheSelectedRoute() {
+        var requested: String?=null
+        val calls=listOf(BusCall("a","Airport boarding stop","08:00"),BusCall("b","Destination","08:30"))
+        val initial=BusTimetable(source.service,route,"Monday",1,listOf(BusTrip("trip",route.id,"Outbound","Monday",calls)))
+        app.setContent {
+            var state by remember { mutableStateOf(FeatureState(extras=LocalExtras(beta=BetaPreferences(goldenArrow=true)),snapshots=mapOf(source.service to source),timetable=initial)) }
+            MaterialTheme { BusBrowser(state,{}, {},{ selected,day -> requested=day;state=state.copy(timetable=initial.copy(route=selected,day=day)) },{ _,_-> },{ _,_,_,_-> }, {},{ _,_-> }) }
+        }
+        val today=java.time.LocalDate.now(CapeTownZone).dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase)
+        list().performScrollToNode(hasText(today));app.onNodeWithText(today).performClick();app.onNodeWithText("Tuesday").performClick()
+        app.runOnIdle { assertEquals("Tuesday",requested) }
+        list().performScrollToNode(hasText("08:00 → 08:30"));app.onNodeWithText("08:00 → 08:30").assertIsDisplayed()
     }
     @Test fun fareProductsAndBudgetRemainReachableInOneScrollArea() {
         show()

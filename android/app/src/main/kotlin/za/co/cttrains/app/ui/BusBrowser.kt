@@ -56,7 +56,10 @@ import za.co.cttrains.core.*
             }
             item {
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    if(tab=="Routes") DayPicker(day) { day=it }
+                    if(tab=="Routes") DayPicker(day) { chosen ->
+                        day=chosen
+                        s.timetable?.takeIf { it.service==s.bus }?.let { onTimetable(it.route,chosen) }
+                    }
                     TextButton(onClick={ filters=!filters }) { Text(if(filters) "Hide filters" else "Filters") }
                     TextButton(onClick={ details=!details }) { Text(if(details) "Hide source details" else "Source details") }
                 }

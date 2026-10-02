@@ -115,7 +115,7 @@ import za.co.cttrains.core.*
         else { m.place(endpoint,start);WalkingRoutes.nearest(endpoint.point,train.stations)?.let { station -> model.edit { if(start) it.copy(from=station.name) else it.copy(to=station.name) } } }
         picker=null
     } }
-    scheduled?.let { option -> JourneyScheduleSheet(option.query!!,option.rail!!,model,initialAccess=option.walks.firstOrNull { it.from==from }?.minutes ?: 0,initialLeaveFrom=from?.label.orEmpty()) { scheduled=null } }
+    scheduled?.let { option -> JourneyScheduleSheet(option.query!!,option.rail!!,model,initialAccess=option.walks.firstOrNull { it.from==from }?.minutes ?: if(from?.id?.startsWith("station:")==true) 0 else 20,initialLeaveFrom=from?.label.orEmpty()) { scheduled=null } }
     if(consent) AlertDialog(onDismissRequest={ consent=false },title={ Text("Calculate mapped walking routes?") },text={ Text("FOSSGIS / OSRM receives the selected start, destination and candidate stop coordinates. This checks foot paths and caches them locally. Published transit times remain scheduled estimates.") },confirmButton={ TextButton(onClick={ onlineWalks=true;consent=false }) { Text("Enable estimates") } },dismissButton={ TextButton(onClick={ consent=false }) { Text("Keep timetable only") } })
 }
 
@@ -141,12 +141,13 @@ import za.co.cttrains.core.*
     var suggestions by remember { mutableStateOf<List<PlaceSuggestion>>(emptyList()) }
     var issue by remember { mutableStateOf<String?>(null) }
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants -> if(grants.values.any { it }) model.locateOnce() }
-    val local=remember(train.stations,s.extras.spots,s.snapshots,query) {
+    val places=remember(train.stations,s.extras.spots,s.snapshots,s.extras.beta.goldenArrow,s.extras.beta.myCiti) {
         val saved=s.extras.spots.map { WalkEndpoint("spot:${it.id}",it.name,it.point) }
         val rail=train.stations.filter { it.mapped }.map(WalkingRoutes::endpoint)
         val bus=s.snapshots.filterKeys(s.extras.beta::enabled).flatMap { (service,source) -> source.stops.map { WalkEndpoint("bus:${service.name}:${it.id}",it.name,it.point) } }
-        (saved+rail+bus).filter { it.label.contains(query,true) }.take(40)
+        saved+rail+bus
     }
+    val local=remember(places,query) { places.asSequence().filter { it.label.contains(query,true) }.take(40).toList() }
     LaunchedEffect(query,online) {
         suggestions=emptyList();issue=null
         if(online && query.trim().length>=3) { delay(850);try { suggestions=m.placeSuggestions(query) } catch(e: Exception) { if(e is CancellationException) throw e;issue="Online suggestions unavailable. Saved stops and places are still searchable." } }
