@@ -21,17 +21,16 @@ class QualityOfLifeUiTest {
         app.onNodeWithText("Online").assertIsDisplayed()
         app.onNodeWithText("Collapse").performClick()
         app.onNodeWithText("Online").assertDoesNotExist()
-        app.onNodeWithText("Map options").performClick()
-        app.onNodeWithContentDescription("Manage offline maps").performClick()
-        app.onNodeWithText("Collapse").assertDoesNotExist()
-        app.runOnUiThread { app.activity.onBackPressedDispatcher.onBackPressed() }
-        app.waitForIdle()
         app.onNodeWithContentDescription("Expand map to full screen").performClick()
         app.onNodeWithContentDescription("Close full-screen map").assertIsDisplayed()
         app.onNodeWithText("Online").assertDoesNotExist()
         app.onNodeWithText("Open in Google").assertIsDisplayed()
         app.onNodeWithContentDescription("Close full-screen map").performClick()
         app.onNodeWithContentDescription("Refresh map and schedules").assertIsDisplayed()
+        app.onNodeWithText("Map options").performClick()
+        app.onNodeWithContentDescription("Manage offline maps").performClick()
+        app.onNodeWithText("Collapse").assertDoesNotExist()
+        app.onNodeWithText("Offline street maps").assertIsDisplayed()
     }
     @Test fun rapidFeatureChangesDoNotOverwriteEachOtherAndTrainViewClearsBusFilter() {
         val features=ViewModelProvider(app.activity)[FeatureViewModel::class.java]
