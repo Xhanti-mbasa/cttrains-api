@@ -10,7 +10,8 @@ import za.co.cttrains.core.*
 import java.time.LocalDate
 import java.time.LocalTime
 
-data class PlannerRequest(val from: WalkEndpoint,val to: WalkEndpoint,val date: String,val time: String,val services: Set<TransportService>,val walking: Boolean,val maxWalkMeters: Int=1500)
+data class PlannerRequest(val from: WalkEndpoint,val to: WalkEndpoint,val date: String,val time: String,val services: Set<TransportService>,val walking: Boolean,val maxWalkMeters: Int=1500,
+    val boardingStation: String?=null,val arrivalStation: String?=null)
 data class PlannerOption(val id: String,val service: TransportService,val query: SearchQuery?,val rail: Journey?,val bus: BusJourney?,val walks: List<WalkingLeg>,val estimate: TripEstimate,val fares: List<RouteFare>,val fetchedAt: Long,val cached: Boolean,val notice: String="",val sourceId: String="cttrains-web") {
     val board get()=rail?.legs?.first()?.departure?.name ?: bus!!.departure.name
     val alight get()=rail?.legs?.last()?.arrival?.name ?: bus!!.arrival.name
@@ -63,11 +64,13 @@ class JourneyPlannerModel(app: Application): AndroidViewModel(app) {
         return Triple(legs,leg(request.from,a) to leg(b,request.to),cached)
     }
     private suspend fun rail(r: PlannerRequest,train: TrainState): PlannerSection {
-        fun stations(p: WalkEndpoint)=train.stations.filter { it.mapped && it.name in train.catalog.stations &&
-            (p.id=="station:${stationKey(it.name)}" || NearbySuggestions.distance(p.point,GeoPoint(it.latitude!!,it.longitude!!))<=r.maxWalkMeters) }
-            .sortedBy { NearbySuggestions.distance(p.point,GeoPoint(it.latitude!!,it.longitude!!)) }.take(if(p.id.startsWith("station:")) 1 else 2)
-        val origins=stations(r.from);val destinations=stations(r.to)
-        if(origins.isEmpty() || destinations.isEmpty()) return PlannerSection(TransportService.PRASA,issue="No mapped train station within ${r.maxWalkMeters} m of ${if(origins.isEmpty()) "your start" else "your destination"}. Choose another stop or increase the walking limit.")
+        val origins=StationChoices.candidates(r.from,train.stations,train.catalog.stations,r.maxWalkMeters,r.boardingStation)
+        val destinations=StationChoices.candidates(r.to,train.stations,train.catalog.stations,r.maxWalkMeters,r.arrivalStation)
+        if(origins.isEmpty() || destinations.isEmpty()) {
+            val preferred=if(origins.isEmpty()) r.boardingStation else r.arrivalStation
+            return PlannerSection(TransportService.PRASA,issue=if(preferred!=null) "Your selected station, $preferred, is unavailable in this timetable or outside your ${r.maxWalkMeters} m walking limit. Choose another station or increase the limit. Your choice has been kept."
+                else "No mapped train station within ${r.maxWalkMeters} m of ${if(origins.isEmpty()) "your start" else "your destination"}. Choose another stop or increase the walking limit.")
+        }
         val requested=JourneyComparison.requestedAt(r.date,r.time)
         val options=mutableListOf<PlannerOption>();var checked=0;var failed=0;var ruleIssue: String?=null
         for(a in origins) for(b in destinations) {

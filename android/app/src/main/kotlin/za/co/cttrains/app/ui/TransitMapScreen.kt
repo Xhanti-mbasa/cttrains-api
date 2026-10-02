@@ -114,7 +114,7 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
     }
     LaunchedEffect(state.currentPosition?.capturedAt,feature.extras.beta.autoNearby) {
         if(feature.extras.beta.autoNearby) state.currentPosition?.let { features.focus(GeoPoint(it.latitude,it.longitude)) }
-        if(feature.extras.beta.autoNearby && closest!=null && state.selectedJourney==null && (state.from.isBlank() || lastAuto==null || state.from==lastAuto)) { model.nearbyOrigin(closest.name);lastAuto=closest.name }
+        if(feature.extras.beta.autoNearby && feature.access==null && feature.boardingStation==null && closest!=null && state.selectedJourney==null && (state.from.isBlank() || state.from==lastAuto)) { model.nearbyOrigin(closest.name);lastAuto=closest.name }
     }
     val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants.values.any { it }) model.locateOnce() else model.showMessage("Location is optional. You can select stations without it.")

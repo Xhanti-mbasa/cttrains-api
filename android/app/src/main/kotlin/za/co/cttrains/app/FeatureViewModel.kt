@@ -24,7 +24,8 @@ data class FeatureState(val extras: LocalExtras = LocalExtras(),val snapshots: M
     val live: LiveCircle? = null,val watched: List<WatchedFriend> = emptyList(),val mapService: TransportService?=null,val mapRoute: String?=null,
     val ready: Boolean=false,val access: WalkEndpoint?=null,val destination: WalkEndpoint?=null,
     val walks: List<WalkingLeg> = emptyList(),val walkBusy: Boolean=false,val walkError: String?=null,val walksCached: Boolean=false,
-    val chatService: TransportService?=null,val syncing: Boolean=false,val nearby: List<RoomMessage> = emptyList(),val nearbySharing: Boolean=false,val selectedBus: BusJourney?=null)
+    val chatService: TransportService?=null,val syncing: Boolean=false,val nearby: List<RoomMessage> = emptyList(),val nearbySharing: Boolean=false,val selectedBus: BusJourney?=null,
+    val boardingStation: String?=null,val arrivalStation: String?=null)
 
 @OptIn(kotlinx.coroutines.FlowPreview::class)
 class FeatureViewModel(app: Application): AndroidViewModel(app) {
@@ -141,13 +142,34 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
         listOf(TransportService.GOLDEN_ARROW,TransportService.MYCITI).filter { state.value.extras.beta.enabled(it) }.forEach { refresh(it,true) }
         state.value.timetable?.takeIf { state.value.extras.beta.enabled(it.service) }?.let { chooseBus(it.service);timetable(it.route,it.day) }
     }
-    fun place(endpoint: WalkEndpoint?,start: Boolean) {
+    fun place(endpoint: WalkEndpoint?,start: Boolean,station: String?=null) {
         walkJob?.cancel()
-        mutable.update { if(start) it.copy(access=endpoint,walks=emptyList(),walkError=null,walkBusy=false) else it.copy(destination=endpoint,walks=emptyList(),walkError=null,walkBusy=false) }
+        val preferred=station ?: state.value.extras.spots.firstOrNull { endpoint?.id=="spot:${it.id}" }?.preferredStation
+        mutable.update { if(start) it.copy(access=endpoint,boardingStation=preferred,walks=emptyList(),walkError=null,walkBusy=false) else it.copy(destination=endpoint,arrivalStation=preferred,walks=emptyList(),walkError=null,walkBusy=false) }
+    }
+    fun chooseStation(name: String?,start: Boolean,rememberForSpot: Boolean=false) {
+        require(name==null || name.length in 1..180)
+        walkJob?.cancel()
+        val endpoint=if(start) state.value.access else state.value.destination
+        mutable.update { if(start) it.copy(boardingStation=name,walks=emptyList(),walkError=null,walkBusy=false) else it.copy(arrivalStation=name,walks=emptyList(),walkError=null,walkBusy=false) }
+        if(rememberForSpot && endpoint?.id?.startsWith("spot:")==true) viewModelScope.launch(handler) {
+            val id=endpoint.id.removePrefix("spot:")
+            store.update { e->e.copy(spots=e.spots.map { if(it.id==id) it.copy(preferredStation=name) else it }) }
+        }
+    }
+    fun saveJourneyPlace(endpoint: WalkEndpoint,start: Boolean,name: String,tag: String)=action("Couldn’t save this place.") {
+        require(endpoint.point.valid && name.trim().length in 1..100 && tag.length<=80)
+        val current=state.value
+        val preferred=if(start) current.boardingStation else current.arrivalStation
+        val spot=MarkedSpot(UUID.randomUUID().toString(),name.trim(),null,endpoint.point,tag,endpoint.label.take(500),createdAt=System.currentTimeMillis(),preferredStation=preferred)
+        store.update { it.copy(spots=(it.spots+spot).takeLast(100)) }
+        val active=if(start) state.value.access else state.value.destination
+        if(active==endpoint) place(WalkEndpoint("spot:${spot.id}",spot.name,spot.point),start,preferred)
+        message("${spot.name} saved on this device.")
     }
     fun swapPlaces() {
         walkJob?.cancel()
-        mutable.update { it.copy(access=it.destination,destination=it.access,walks=emptyList(),walkError=null,walkBusy=false,selectedBus=null) }
+        mutable.update { it.copy(access=it.destination,destination=it.access,boardingStation=it.arrivalStation,arrivalStation=it.boardingStation,walks=emptyList(),walkError=null,walkBusy=false,selectedBus=null) }
     }
     fun walks(train: TrainState) {
         val previous=walkJob;previous?.cancel()
@@ -189,7 +211,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
         val pin=state.value.pin ?: error("Choose a point")
         val old=store.extras().spots.firstOrNull { it.id==pin.spotId }
         val photo=photoUri?.let { files.addPhoto(it) } ?: old?.photo
-        val spot=MarkedSpot(old?.id ?: UUID.randomUUID().toString(),name.trim(),service,pin.point,tag.trim(),note.trim(),photo,old?.createdAt ?: System.currentTimeMillis())
+        val spot=MarkedSpot(old?.id ?: UUID.randomUUID().toString(),name.trim(),service,pin.point,tag.trim(),note.trim(),photo,old?.createdAt ?: System.currentTimeMillis(),old?.preferredStation)
         store.update { it.copy(spots=(it.spots.filterNot { p -> p.id==spot.id }+spot).takeLast(100)) };selectPin(null);message("Spot saved on this device.")
     }
     fun removeSpot(id: String)=viewModelScope.launch(handler) { store.update { it.copy(spots=it.spots.filterNot { s -> s.id==id }) };selectPin(null) }

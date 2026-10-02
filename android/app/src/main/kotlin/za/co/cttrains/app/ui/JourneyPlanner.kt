@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,6 +32,9 @@ import za.co.cttrains.core.*
     var mode by rememberSaveable { mutableStateOf("PRASA") }
     var selected by rememberSaveable { mutableStateOf(TransportService.values().map { it.name }) }
     var picker by remember { mutableStateOf<Boolean?>(null) }
+    var stationPicker by remember { mutableStateOf<Boolean?>(null) }
+    var savePlace by remember { mutableStateOf<Boolean?>(null) }
+    var finalStation by remember { mutableStateOf<String?>(null) }
     var consent by remember { mutableStateOf(false) }
     var onlineWalks by rememberSaveable { mutableStateOf(false) }
     var advanced by rememberSaveable { mutableStateOf(false) }
@@ -45,14 +49,17 @@ import za.co.cttrains.core.*
     val from=s.access ?: train.stations.firstOrNull { it.mapped && stationKey(it.name)==stationKey(train.from) }?.let(WalkingRoutes::endpoint)
     val to=s.destination ?: train.stations.firstOrNull { it.mapped && stationKey(it.name)==stationKey(train.to) }?.let(WalkingRoutes::endpoint)
     val services=if(mode=="compare") TransportService.values().filter { it.name in selected }.toSet() else setOf(TransportService.valueOf(mode))
-    LaunchedEffect(from,to,date,time,mode,selected,onlineWalks,maxWalk,autoWalk,train.preferences.sourceId,s.extras.beta.goldenArrow,s.extras.beta.myCiti) { planner.clear() }
-    fun runSearch() { if(from!=null && to!=null) planner.find(PlannerRequest(from,to,date,time,services,onlineWalks,if(autoWalk) 5000 else maxWalk),train) }
+    val rail=TransportService.PRASA in services
+    val board=if(s.access==null) train.from else s.boardingStation
+    val arrive=if(s.destination==null) train.to else s.arrivalStation
+    LaunchedEffect(from,to,board,arrive,date,time,mode,selected,onlineWalks,maxWalk,autoWalk,train.preferences.sourceId,s.extras.beta.goldenArrow,s.extras.beta.myCiti) { planner.clear() }
+    fun runSearch() { if(from!=null && to!=null) planner.find(PlannerRequest(from,to,date,time,services,onlineWalks,if(autoWalk) 5000 else maxWalk,board,arrive),train) }
     if(manual && mode!="compare" && mode!="PRASA") {
         Column(Modifier.fillMaxSize()) {
             TextButton(onClick={ manual=false }) { Text("Back to journey planner") }
             BusPlanner(train,model,s,m,TransportService.valueOf(mode)) { model.openMap() }
         }
-    } else LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+    } else LazyColumn(Modifier.fillMaxSize().testTag("journey-planner"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
             Text("Plan your journey",style=MaterialTheme.typography.titleLarge)
             ModeOfTransport(mode) { mode=it;manual=false }
@@ -62,8 +69,28 @@ import za.co.cttrains.core.*
         }
         item {
             JourneyPlaceField("From",from?.label ?: "Choose your start") { picker=true }
+            if(rail && s.access!=null) JourneyStationField(true,board,from,train,{ stationPicker=true },{ m.place(null,true) })
+            if(s.access!=null && !s.access.id.startsWith("spot:")) TextButton(onClick={ savePlace=true }) { Text("Save start as Home, Work or another place") }
+        }
+        item {
             TextButton(onClick={ m.swapPlaces();model.edit { it.copy(from=it.to,to=it.from) } },enabled=from!=null && to!=null,modifier=Modifier.fillMaxWidth()) { Text("Swap From and To") }
+        }
+        item {
             JourneyPlaceField("To",to?.label ?: "Choose your destination") { picker=false }
+            if(rail && s.destination!=null) JourneyStationField(false,arrive,to,train,{ stationPicker=false },{ m.place(null,false) })
+            if(s.destination!=null && !s.destination.id.startsWith("spot:")) TextButton(onClick={ savePlace=false }) { Text("Save destination as Home, Work or another place") }
+            if(rail && s.destination==null) train.stations.firstOrNull { it.mapped && stationKey(it.name)==arrive?.let(::stationKey) }?.let { station ->
+                val nearby=remember(station,s.extras.spots) { StationChoices.nearbyPlaces(station,s.extras.spots) }
+                Text("After ${station.name}",style=MaterialTheme.typography.labelLarge,modifier=Modifier.padding(top=8.dp))
+                if(nearby.isNotEmpty()) {
+                    Text("Walk to a saved place",style=MaterialTheme.typography.bodySmall)
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { nearby.take(3).forEach { spot ->
+                        AssistChip(onClick={ m.place(WalkEndpoint("spot:${spot.id}",spot.name,spot.point),false,station.name) },label={ Text("${spot.name} · ${stationDistance(station,spot.point)}") },modifier=Modifier.testTag("final-spot:${spot.id}"))
+                    } }
+                }
+                TextButton(onClick={ finalStation=station.name;picker=false }) { Text("Choose final address or saved place") }
+                if(nearby.isNotEmpty()) Text("Distances above are straight-line proximity. Walking estimates use mapped paths.",style=MaterialTheme.typography.labelSmall)
+            }
         }
         item {
             Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -132,10 +159,30 @@ import za.co.cttrains.core.*
         if(result.sections.isNotEmpty()) item { Text("Fastest found applies only to complete, timed routes checked here. Bus transfers and unconfirmed survey points are excluded from that claim.",style=MaterialTheme.typography.bodySmall) }
         if(mode!="compare" && mode!="PRASA" && s.extras.beta.enabled(TransportService.valueOf(mode))) item { TextButton(onClick={ manual=true;m.chooseBus(TransportService.valueOf(mode)) }) { Text("Manual bus setup · boarding & drop-off stops") } }
     }
-    picker?.let { start -> JourneyPlacePicker(train,model,s,m,start,{ picker=null }) { endpoint ->
+    picker?.let { start -> JourneyPlacePicker(train,model,s,m,start,{ picker=null;finalStation=null }) { endpoint ->
         if(endpoint.id.startsWith("station:")) { m.place(null,start);model.edit { if(start) it.copy(from=endpoint.label) else it.copy(to=endpoint.label) } }
-        else { m.place(endpoint,start);WalkingRoutes.nearest(endpoint.point,train.stations)?.let { station -> model.edit { if(start) it.copy(from=station.name) else it.copy(to=station.name) } } }
+        else {
+            val explicit=if(!start) finalStation else null
+            m.place(endpoint,start,explicit)
+            val chosen=if(start) m.state.value.boardingStation else m.state.value.arrivalStation
+            val suggestion=chosen ?: StationChoices.ranked(endpoint.point,train.stations,train.catalog.stations).firstOrNull()?.name
+            suggestion?.let { name -> model.edit { if(start) it.copy(from=name) else it.copy(to=name) } }
+            if(rail && chosen==null) stationPicker=start
+        }
+        finalStation=null
         picker=null
+    } }
+    stationPicker?.let { start ->
+        val endpoint=if(start) from else to
+        if(endpoint!=null) JourneyStationPicker(endpoint,train,s,start,if(start) board else arrive,{ stationPicker=null }) { name,remember ->
+            m.chooseStation(name,start,remember)
+            val suggestion=name ?: StationChoices.ranked(endpoint.point,train.stations,train.catalog.stations).firstOrNull()?.name
+            suggestion?.let { value -> model.edit { if(start) it.copy(from=value) else it.copy(to=value) } }
+            stationPicker=null
+        }
+    }
+    savePlace?.let { start -> (if(start) s.access else s.destination)?.let { endpoint ->
+        SaveJourneyPlace(endpoint,s.busy,{ savePlace=null }) { name,tag -> m.saveJourneyPlace(endpoint,start,name,tag);savePlace=null }
     } }
     scheduled?.let { option -> JourneyScheduleSheet(option.query!!,option.rail!!,model,initialAccess=option.walks.firstOrNull { it.from==from }?.minutes ?: if(from?.id?.startsWith("station:")==true) 0 else 20,initialLeaveFrom=from?.label.orEmpty(),accessEndpoint=from,initialWalk=option.walks.firstOrNull { it.from==from }) { scheduled=null } }
     if(datePicker) TravelDatePicker(date,train.catalog.holidays,{ datePicker=false },trainOnly=mode=="PRASA") { date=it;model.edit { state->state.copy(date=it) };datePicker=false }
@@ -171,7 +218,9 @@ import za.co.cttrains.core.*
         val bus=s.snapshots.filterKeys(s.extras.beta::enabled).flatMap { (service,source) -> source.stops.map { WalkEndpoint("bus:${service.name}:${it.id}",it.name,it.point) } }
         saved+rail+bus
     }
-    val local=remember(places,query) { places.asSequence().filter { it.label.contains(query,true) }.take(40).toList() }
+    val local=remember(places,query,s.extras.spots) { places.asSequence().filter { p ->
+        p.label.contains(query,true) || s.extras.spots.any { p.id=="spot:${it.id}" && (it.tag.contains(query,true) || it.note.contains(query,true)) }
+    }.take(40).toList() }
     LaunchedEffect(query,online) {
         suggestions=emptyList();issue=null
         if(online && query.trim().length>=3) { delay(850);try { suggestions=m.placeSuggestions(query) } catch(e: Exception) { if(e is CancellationException) throw e;issue="Online suggestions unavailable. Saved stops and places are still searchable." } }
