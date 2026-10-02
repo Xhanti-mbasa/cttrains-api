@@ -125,7 +125,8 @@ class QualityOfLifeUiTest {
         app.onNodeWithText("Plan").performClick()
         app.onNodeWithText("Swap From and To").performScrollTo().performClick()
         app.runOnIdle { assertEquals(campus,features.state.value.access);assertEquals(home,features.state.value.destination);assertEquals("Salt River",train.state.value.from);assertEquals("Unibell",train.state.value.to) }
-        app.onNodeWithText("Travel date").performScrollTo().performClick()
+        app.onNodeWithTag("journey-planner").performScrollToNode(hasText("Travel date"))
+        app.onNodeWithText("Travel date").performClick()
         app.onNodeWithText("Choose date").assertIsDisplayed()
         UiScreenshots.save("journey-calendar")
         app.onNodeWithText("Cancel").performClick()
