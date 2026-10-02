@@ -116,15 +116,15 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
 }
 
 @Composable
-fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewModel, onDismiss: () -> Unit) {
+fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewModel, initialAccess: Int=20, initialLeaveFrom: String="", onDismiss: () -> Unit) {
     val context = LocalContext.current
     var reminder by rememberSaveable { mutableStateOf(false) }
     var lead by rememberSaveable { mutableIntStateOf(0) }
     var custom by rememberSaveable { mutableStateOf(false) }
     var customMinutes by rememberSaveable { mutableStateOf("30") }
-    var access by rememberSaveable { mutableStateOf("20") }
+    var access by rememberSaveable { mutableStateOf(initialAccess.toString()) }
     var buffer by rememberSaveable { mutableStateOf("5") }
-    var leaveFrom by rememberSaveable { mutableStateOf("") }
+    var leaveFrom by rememberSaveable { mutableStateOf(initialLeaveFrom) }
     var severity by rememberSaveable { mutableStateOf("standard") }
     var backupMinutes by rememberSaveable { mutableStateOf(listOf<String>()) }
     var backupSeverity by rememberSaveable { mutableStateOf(listOf<String>()) }
@@ -205,3 +205,4 @@ private fun MinuteField(label: String, value: String, onChange: (String) -> Unit
 private fun ReminderSeverity(value: String, onChange: (String) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { JourneyPlanning.severities.forEach { level -> FilterChip(value == level, { onChange(level) }, label = { Text(level.replaceFirstChar(Char::uppercase)) }) } }
 }
+

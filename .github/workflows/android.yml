@@ -179,6 +179,11 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: cd android && ./gradlew connectedDebugAndroidTest --no-daemon
+      - name: Collect native UI screenshots
+        if: always()
+        run: |
+          mkdir -p android/app/build/outputs/ui-screenshots
+          adb pull /sdcard/Android/data/za.co.cttrains.app/files/ui-screenshots/. android/app/build/outputs/ui-screenshots/ || true
       - name: Upload native test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -187,6 +192,7 @@ jobs:
           path: |
             android/app/build/reports/androidTests/connected/
             android/app/build/outputs/androidTest-results/connected/
+            android/app/build/outputs/ui-screenshots/
 
   publish:
     needs: [build, device]
@@ -214,3 +220,4 @@ jobs:
           SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
           SIGNING_MODE: ${{ needs.build.outputs.signing }}
         run: bash android/scripts/publish-release.sh
+

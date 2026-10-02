@@ -51,7 +51,7 @@ internal fun shareText(context: android.content.Context,text: String) { context.
     s.error?.let { Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall) }
 }
 
-@Composable fun BetaSettings(s: FeatureState,m: FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit) {
+@Composable fun BetaSettings(s: FeatureState,m: FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit,onWhatsApp: ()->Unit) {
     Card { Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Beta features",style=MaterialTheme.typography.titleLarge)
         Text("Choose each operator independently. Bus times are published schedules, not live vehicle tracking.")
@@ -74,6 +74,8 @@ internal fun shareText(context: android.content.Context,text: String) { context.
         Toggle("Nearby users","Optional approximate presence in your selected Matrix service room. Uses location permission, not Bluetooth. Requires a Matrix account, room and a separate sharing start action.",s.extras.beta.nearbyUsers) { v->m.beta { it.copy(nearbyUsers=v) } }
         OutlinedButton(onClick=onTrips) { Text("Safety trip files") }
         OutlinedButton(onClick=onCommunity) { Text("Community reports & friends") }
+        OutlinedButton(onClick=onWhatsApp) { Text("WhatsApp updates · alpha") }
+        Text("Optional OpenWA reader for selected channels or groups. Gateway setup is separate from trip/report sharing.",style=MaterialTheme.typography.bodySmall)
     } }
 }
 
@@ -182,80 +184,6 @@ internal fun shareText(context: android.content.Context,text: String) { context.
     }
 }
 
-@Composable fun BusScreen(s: FeatureState,m: FeatureViewModel,onTrip: ()->Unit,onMap: (TransportService,String?)->Unit) {
-    val enabled=listOf(TransportService.GOLDEN_ARROW,TransportService.MYCITI).filter { s.extras.beta.enabled(it) }
-    LaunchedEffect(enabled) { if(s.bus !in enabled && enabled.isNotEmpty()) m.chooseBus(enabled.first()) }
-    var q by rememberSaveable { mutableStateOf("") }
-    var day by rememberSaveable { mutableStateOf(LocalDate.now(CapeTownZone).dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase)) }
-    var tab by rememberSaveable { mutableStateOf("Routes") }
-    val source=s.snapshots[s.bus]
-    val uri=LocalUriHandler.current
-    Column(Modifier.fillMaxSize().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        Text("Bus schedules · beta",style=MaterialTheme.typography.headlineSmall)
-        FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { enabled.forEach { service->FilterChip(s.bus==service,{ m.chooseBus(service) },label={ Text(service.title) }) } }
-        if(enabled.isEmpty()) { Text("Enable Golden Arrow or MyCiTi in Settings → Beta features.");return@Column }
-        FeatureStatus(s)
-        FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf("Routes","Fares").forEach { v->FilterChip(tab==v,{ tab=v },label={ Text(v) }) };TextButton(onClick={ m.refresh(s.bus) },enabled=s.bus !in s.loading) { Text("Check source") } }
-        Text("Catalog: ${checked(source?.catalogueCheckedAt ?: 0)} · Fares: ${checked(source?.faresCheckedAt ?: 0)}",style=MaterialTheme.typography.labelSmall)
-        var details by rememberSaveable { mutableStateOf(false) }
-        if(source!=null) { TextButton(onClick={ details=!details }) { Text(if(details) "Hide source details" else "Source details & warnings") };if(details) Text((listOf(source.mapNote)+source.notes).joinToString("\n"),style=MaterialTheme.typography.bodySmall,modifier=Modifier.heightIn(max=100.dp).verticalScroll(rememberScrollState())) }
-        if(tab=="Fares") Box(Modifier.weight(1f).fillMaxWidth()) { key(s.bus) { BusFares(s,m,source) } } else {
-            OutlinedTextField(q,{ q=it },label={ Text("Search route or stop name") },singleLine=true,modifier=Modifier.fillMaxWidth())
-            FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)) { java.time.DayOfWeek.values().forEach { v->val title=v.name.lowercase().replaceFirstChar(Char::uppercase);FilterChip(day==title,{ day=title },label={ Text(title.take(3)) }) } }
-            s.timetable?.let { t -> TextButton(onClick=onTrip) { Text("Save/share this bus trip") };Text(if(s.timetableCached) "Using saved ${t.day} timetable · ${checked(t.fetchedAt)}" else "Published ${t.day} pattern · checked ${checked(t.fetchedAt)}",style=MaterialTheme.typography.bodySmall) }
-            LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                val t=s.timetable
-                if(t!=null && t.day==day) {
-                    item { Text(t.route.title,fontWeight=FontWeight.Bold);Text("Holiday exceptions, road changes and boarding points must be checked with the operator. No automatic rail–bus transfer matching.",style=MaterialTheme.typography.bodySmall);TextButton(onClick={ uri.openUri(t.route.url) }) { Text("Open published timetable") };TextButton(onClick={ onMap(s.bus,t.route.id) }) { Text(if(s.bus==TransportService.MYCITI) "View this route on map" else "View surveyed Golden Arrow map") } }
-                    if(t.trips.isEmpty()) item { Text("No supported timed trips were found for $day. Read the source document; untimed ‘via’ points are not given estimated times.") }
-                    items(t.trips.take(250),key={ it.id }) { trip->Card { Column(Modifier.padding(12.dp)) { Text("${trip.calls.first().time} → ${trip.calls.last().time} · ${trip.direction}",fontWeight=FontWeight.Bold);trip.calls.forEach { call->Text("${call.time} · ${call.name}${call.platform?.let { " · Platform $it" }.orEmpty()}",style=MaterialTheme.typography.bodySmall) };if(trip.notes.isNotBlank()) Text(trip.notes,style=MaterialTheme.typography.labelSmall) } } }
-                } else {
-                    items(source?.routes.orEmpty().filter { it.title.contains(q,true) || it.id.contains(q,true) },key={ it.id }) { route -> Card { Column(Modifier.padding(12.dp)) {
-                        Text(route.title,fontWeight=FontWeight.Bold);Text("Effective ${route.validFrom ?: "date not supplied"}${route.validUntil?.let { " through $it" }.orEmpty()}",style=MaterialTheme.typography.labelSmall)
-                        FlowRow { TextButton(onClick={ m.timetable(route,day) },enabled=!s.busy) { Text("Load $day times") };TextButton(onClick={ m.favoriteBus(route,day) }) { Text(if(BusFavorite(s.bus,route.id,day) in s.extras.busFavorites) "Unsave" else "Save for refresh") };TextButton(onClick={ onMap(s.bus,route.id) }) { Text(if(s.bus==TransportService.MYCITI) "Map route" else "Survey map") };TextButton(onClick={ uri.openUri(route.url) }) { Text("Source") } }
-                    } } }
-                }
-            }
-        }
-        TextButton(onClick={ uri.openUri(if(s.bus==TransportService.GOLDEN_ARROW) BusSources.GABS else BusSources.MYCITI_DOWNLOADS) }) { Text("Operator timetable website") }
-    }
-}
-
-@Composable private fun BusFares(s: FeatureState,m: FeatureViewModel,source: BusSnapshot?) {
-    var chosen by remember(s.bus) { mutableStateOf<BusFareRow?>(null) }
-    var product by remember(s.bus) { mutableStateOf("") }
-    var price by remember(s.bus) { mutableStateOf("") }
-    var quantity by rememberSaveable { mutableStateOf("1") }
-    var filter by rememberSaveable { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        Text("Published products · ${source?.fareDate ?: "effective date not supplied"}")
-        Text("MyCiTi uses fare distance bands, time and payment product. Golden Arrow publishes route-specific products. A weekly or monthly product is not a cash single fare. Choose the published product; the map does not infer a price from distance.",style=MaterialTheme.typography.bodySmall)
-        OutlinedTextField(filter,{ filter=it.take(100) },label={ Text("Find fare route / distance band") },modifier=Modifier.fillMaxWidth())
-        val rows=source?.fares.orEmpty().filter { it.title.contains(filter,true) }
-        if(rows.size>50) Text("Showing the first 50 of ${rows.size} products. Enter a route name to narrow the list.",style=MaterialTheme.typography.labelSmall)
-        rows.take(50).forEach { row -> Card { Column(Modifier.padding(12.dp)) { Text(row.title,fontWeight=FontWeight.Bold);row.products.forEach { (name,cents)->
-            val correction=s.extras.priceCorrections.firstOrNull { it.service==s.bus && it.fareId==row.id && it.product==name }
-            TextButton(onClick={ chosen=row;product=name;price=((correction?.cents ?: cents)/100.0).toString() }) { Text("$name · ${money(cents)}${correction?.let { " · Your price ${money(it.cents)}" }.orEmpty()}") }
-        };if(row.rules.isNotBlank()) Text(row.rules,style=MaterialTheme.typography.labelSmall) } } }
-        if(s.bus==TransportService.GOLDEN_ARROW) {
-            Text("Daily / cash single fares",style=MaterialTheme.typography.titleMedium)
-            Text("Cash singles depend on boarding, alighting and time. Where no cash price is published in this table, ask Golden Arrow for that trip. Weekly and monthly prices cannot determine a single fare.")
-            TextButton(onClick={ chosen=null;product="Cash single (personal quote)";price="" }) { Text("Add my confirmed cash fare") }
-        }
-        Text("Your budget",style=MaterialTheme.typography.titleLarge)
-        OutlinedTextField(chosen?.title ?: "Personal route/product",{ chosen=BusFareRow("personal:"+it.take(100),it.take(100),emptyMap()) },label={ Text("Route or fare band") },modifier=Modifier.fillMaxWidth())
-        OutlinedTextField(product,{ product=it.take(100) },label={ Text("Product · single, weekly…") },modifier=Modifier.fillMaxWidth())
-        OutlinedTextField(price,{ price=it.take(12) },label={ Text("Price in rand") },modifier=Modifier.fillMaxWidth())
-        OutlinedTextField(quantity,{ quantity=it.filter(Char::isDigit).take(4) },label={ Text("Number of these products") },modifier=Modifier.fillMaxWidth())
-        val cents=price.toBigDecimalOrNull()?.let { runCatching { it.movePointRight(2).longValueExact() }.getOrNull() }?.takeIf { it in 0..10_000_000 }
-        val count=quantity.toIntOrNull()?.takeIf { it in 1..1000 }
-        if(cents!=null && count!=null) Text("Budget: ${money(cents*count)}",style=MaterialTheme.typography.headlineSmall)
-        Button(onClick={ m.correctFare(s.bus,chosen?.id ?: "personal",product,cents) },enabled=cents!=null && product.isNotBlank()) { Text("Save personal fare correction") }
-        Text("Corrections stay on this device; they do not overwrite operator prices.",style=MaterialTheme.typography.bodySmall)
-        s.extras.priceCorrections.filter { it.service==s.bus }.forEach { c -> Row(verticalAlignment=Alignment.CenterVertically) { Text("${c.product} · ${money(c.cents)}\n${c.fareId.substringAfter("personal:")}",Modifier.weight(1f));TextButton(onClick={ m.correctFare(c.service,c.fareId,c.product,null) }) { Text("Remove") } } }
-    }
-}
-
 @Composable fun SafetyTripsScreen(train: TrainState,s: FeatureState,m: FeatureViewModel) {
     var owner by remember(s.extras.localName) { mutableStateOf(s.extras.localName.ifBlank { "Traveller" }) }
     var origin by rememberSaveable { mutableStateOf("Home / office / campus") }
@@ -306,3 +234,4 @@ internal fun shareText(context: android.content.Context,text: String) { context.
     s.importedCircle?.let { link->AlertDialog(onDismissRequest=m::dismissImport,title={ Text("Save live-trip invitation?") },text={ Text("${link.trip.owner}\nMatrix owner: ${link.ownerId}\nRoom: ${link.room}\nExpires: ${checked(link.expiresAt)}\n\nThis file contains a private trip key. Share it only with the intended friend. Watching requires Matrix login and a separate start action; importing does not share your own location.") },confirmButton={ TextButton(onClick={ m.acceptCircle() }) { Text("Save invitation") } },dismissButton={ TextButton(onClick=m::dismissImport) { Text("Cancel") } }) }
     s.importedReport?.let { report->AlertDialog(onDismissRequest=m::dismissImport,title={ Text("Save imported observation?") },text={ Text(CommunityReports.text(report)) },confirmButton={ TextButton(onClick={ m.acceptReport() }) { Text("Save as unverified") } },dismissButton={ TextButton(onClick=m::dismissImport) { Text("Cancel") } }) }
 }
+

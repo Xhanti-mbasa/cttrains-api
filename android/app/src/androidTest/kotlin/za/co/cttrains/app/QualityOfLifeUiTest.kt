@@ -1,6 +1,7 @@
 package za.co.cttrains.app
 
 import androidx.compose.ui.test.*
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -51,9 +52,12 @@ class QualityOfLifeUiTest {
     }
     @Test fun savedPlacesAndChatAccountSetupAreDiscoverable() {
         app.onNodeWithText("Plan").performClick()
-        app.onNodeWithText("Start: At departure station").performScrollTo().performClick()
+        val train=ViewModelProvider(app.activity)[TrainViewModel::class.java]
+        app.runOnUiThread { train.edit { it.copy(from="",to="") } }
+        app.onNodeWithText("Choose your start").performScrollTo().performClick()
         app.onNodeWithText("Where do you leave from?").assertIsDisplayed()
-        app.onNodeWithText("Just the station").performClick()
+        app.onNodeWithText("Search places, stations or stops").performTextInput("Unibell")
+        app.onNodeWithText("Unibell").performClick()
         app.onNodeWithText("Tools").performClick()
         app.onNodeWithText("Community reports, chat & friends").performClick()
         app.onNodeWithText("Chat").performClick()
@@ -76,16 +80,32 @@ class QualityOfLifeUiTest {
         app.onNodeWithText("Focus on selected journey").performScrollTo().assertIsDisplayed()
         app.onNodeWithText("Collapse").performClick()
         app.onNodeWithText("Plan").performClick()
+        app.runOnUiThread { train.edit { it.copy(from="Unibell",to="Salt River") } }
+        app.onNodeWithText("Mode of transport · Trains").performScrollTo().performClick()
         app.onNodeWithText("MyCiTi").performClick()
-        app.onNodeWithText("Plan with MyCiTi").assertIsDisplayed()
-        app.onNodeWithText("From: At boarding stop").performClick()
-        app.onNodeWithText("Where do you leave from?").assertIsDisplayed()
-        app.onNodeWithText("Just the bus stop").performClick()
+        app.onNodeWithText("Find MyCiTi routes").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Unibell").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Salt River").assertIsDisplayed()
+        app.onNodeWithText("Mode of transport · MyCiTi").performScrollTo().performClick()
         app.onNodeWithText("Golden Arrow").performClick()
-        app.onNodeWithText("Plan with Golden Arrow").assertIsDisplayed()
-        app.onNodeWithText("Trains").performClick()
-        app.onNodeWithText("Find trains").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Find Golden Arrow routes").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Mode of transport · Golden Arrow").performScrollTo().performClick()
+        app.onNodeWithText("Compare").performClick()
+        app.onNodeWithText("Compare routes").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Mode of transport · Compare").performScrollTo()
+        val image=app.onRoot().captureToImage()
+        val file=java.io.File(app.activity.getExternalFilesDir(null),"ui-screenshots/planner-compare.png").apply { parentFile!!.mkdirs() }
+        file.outputStream().use { image.asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
+        app.onNodeWithText("Unibell").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Salt River").assertIsDisplayed()
         app.runOnUiThread { features.beta { it.copy(journeyFocus=false,myCiti=false,goldenArrow=false) } }
+    }
+    @Test fun whatsAppAlphaIsDiscoverableAndHasNoDirectPhoneAccountAccess() {
+        app.onNodeWithText("Tools").performClick()
+        app.onNodeWithText("WhatsApp updates · alpha").performScrollTo().performClick()
+        app.onNodeWithText("WhatsApp updates · alpha").assertIsDisplayed()
+        app.onNodeWithText("HTTPS API base URL · including /api if required").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Reader API key").performScrollTo().assertIsDisplayed()
     }
     @Test fun healthAccessIsReadOnlyAndBluetoothIsNotRequestedForMatrixPresence() {
         val info=app.activity.packageManager.getPackageInfo(app.activity.packageName,android.content.pm.PackageManager.GET_PERMISSIONS)
@@ -97,3 +117,4 @@ class QualityOfLifeUiTest {
     }
 
 }
+

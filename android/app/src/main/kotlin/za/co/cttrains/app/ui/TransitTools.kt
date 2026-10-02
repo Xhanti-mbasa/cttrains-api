@@ -2,6 +2,8 @@
 package za.co.cttrains.app.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -23,11 +25,13 @@ fun TransitTools(onAlerts: () -> Unit, onBudget: () -> Unit) {
 }
 
 @Composable
-fun TransitToolsSheet(onDismiss: () -> Unit, onAlerts: () -> Unit, onBudget: () -> Unit,onBuses: ()->Unit={},onTrips: ()->Unit={},onCommunity: ()->Unit={}) {
-    ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.padding(24.dp).navigationBarsPadding()) {
+fun TransitToolsSheet(onDismiss: () -> Unit, onAlerts: () -> Unit, onBudget: () -> Unit,onBuses: ()->Unit={},onTrips: ()->Unit={},onCommunity: ()->Unit={},onWhatsApp: ()->Unit={}) {
+    ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp).navigationBarsPadding()) {
         TransitTools(onAlerts, onBudget)
         OutlinedButton(onClick=onBuses,modifier=Modifier.fillMaxWidth()) { Text("Golden Arrow & MyCiTi · beta") }
         OutlinedButton(onClick=onTrips,modifier=Modifier.fillMaxWidth()) { Text("Safety trips · files & sharing") }
         OutlinedButton(onClick=onCommunity,modifier=Modifier.fillMaxWidth()) { Text("Community reports, chat & friends") }
+        OutlinedButton(onClick=onWhatsApp,modifier=Modifier.fillMaxWidth()) { Text("WhatsApp updates · alpha") }
     } }
 }
+

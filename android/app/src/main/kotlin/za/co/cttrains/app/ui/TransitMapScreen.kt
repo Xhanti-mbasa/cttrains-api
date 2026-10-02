@@ -92,7 +92,7 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
             val rail=if(bus==null) state.routeTrace?.legs?.flatten()?.flatMap { section->section.points.map { GeoPoint(it.latitude,it.longitude) } }.orEmpty().ifEmpty {
                 state.stations.filter { it.mapped && stationKey(it.name) in railNames }.map { GeoPoint(it.latitude!!,it.longitude!!) }
             } else emptyList()
-            val badges=JourneyPresentation.walking(matchingWalks)+(if(bus==null) JourneyPresentation.rail(state.selectedJourney,state.routeTrace,state.stations) else listOfNotNull(bus.board?.let { a->bus.alight?.let { b->LegBadge("bus:${bus.trip.id}",JourneyPresentation.midpoint(listOf(a.point,b.point)),"${bus.timetable.service.title} · ${bus.minutes} min") } }))
+            val badges=JourneyPresentation.walking(matchingWalks)+(if(bus==null) JourneyPresentation.rail(state.selectedJourney,state.routeTrace,state.stations) else listOfNotNull(bus.board?.let { a->bus.alight?.let { b->LegBadge("bus:${bus.trip.id}",JourneyPresentation.midpoint(listOf(a.point,b.point)),"${bus.timetable.service.title} · ${bus.minutes} min","${bus.minutes} min") } }))
             base.copy(routeStations=state.stations,pins=((if(focused) emptyList() else base.pins)+endpoints+busPins+listOfNotNull(feature.pin)).distinctBy { it.id },shapes=shapes,walks=matchingWalks,badges=badges,
                 fitPoints=if(bus!=null) busPins.map { it.point }+matchingWalks.flatMap { it.points } else if(matchingWalks.isNotEmpty()) rail+matchingWalks.flatMap { it.points } else base.fitPoints,
                 fitName=if(bus!=null) "bus:${bus.trip.id}:${bus.boardIndex}:${bus.alightIndex}:${matchingWalks.size}" else if(matchingWalks.isNotEmpty()) "rail:${state.selectedJourney?.departure}:${matchingWalks.joinToString { it.key }}" else base.fitName)
@@ -365,14 +365,18 @@ private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?
                 drawRoundRect(surface.copy(alpha = .96f), Offset(x - 5.dp.toPx(), y - pinPaint.textSize - 4.dp.toPx()), androidx.compose.ui.geometry.Size(longest + 10.dp.toPx(), 36.dp.toPx()), cornerRadius = androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()))
                 labels.forEachIndexed { n, label -> drawContext.canvas.nativeCanvas.drawText(label, x, y + n * 14.dp.toPx(), pinPaint) }
             } }
-            features.badges.forEach { badge ->
+            features.badges.filter { zoom>=1.5f }.forEach { badge ->
                 val at=projected(badge.point.latitude,badge.point.longitude)
-                val labelPaint=android.graphics.Paint(paint).apply { textSize=11.dp.toPx();typeface=android.graphics.Typeface.DEFAULT_BOLD }
-                val width=labelPaint.measureText(badge.text)+16.dp.toPx()
+                val labelPaint=android.graphics.Paint(paint).apply { textSize=(if(zoom<3) 9 else 11).dp.toPx();typeface=android.graphics.Typeface.DEFAULT }
+                val width=labelPaint.measureText(badge.compact)+10.dp.toPx()
                 val left=(at.x-width/2).coerceIn(4.dp.toPx(),(size.width-width-4.dp.toPx()).coerceAtLeast(4.dp.toPx()))
-                val top=at.y-24.dp.toPx()
-                drawRoundRect(surface.copy(alpha=.96f),Offset(left,top),androidx.compose.ui.geometry.Size(width,25.dp.toPx()),cornerRadius=androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()))
-                drawContext.canvas.nativeCanvas.drawText(badge.text,left+8.dp.toPx(),top+17.dp.toPx(),labelPaint)
+                val top=at.y-32.dp.toPx()
+                val bounds=android.graphics.RectF(left,top,left+width,top+21.dp.toPx())
+                if(top>=0 && bounds.bottom<size.height && occupied.none { android.graphics.RectF.intersects(it,bounds) }) {
+                    occupied+=bounds
+                    drawRoundRect(surface.copy(alpha=.96f),Offset(left,top),androidx.compose.ui.geometry.Size(width,21.dp.toPx()),cornerRadius=androidx.compose.ui.geometry.CornerRadius(5.dp.toPx()))
+                    drawContext.canvas.nativeCanvas.drawText(badge.compact,left+5.dp.toPx(),top+14.dp.toPx(),labelPaint)
+                }
             }
             location?.let { val point = projected(it.latitude, it.longitude); drawCircle(Color(0xFF1478B8).copy(alpha = .15f), 14.dp.toPx(), point); drawCircle(Color(0xFF1478B8), 6.dp.toPx(), point) }
         }

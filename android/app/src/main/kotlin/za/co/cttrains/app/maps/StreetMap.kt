@@ -125,9 +125,18 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
                 style.addLayer(CircleLayer("rail-transfers", "rail-transfer-data").withProperties(circleRadius(13f), circleColor("#713B00"), circleStrokeColor("#ffffff"), circleStrokeWidth(3f)))
                 style.addLayer(SymbolLayer("rail-transfer-numbers", "rail-transfer-data").withProperties(textField(get("numberText")), textFont(arrayOf("Noto Sans Bold")), textSize(14f), textColor("#ffffff"), textAllowOverlap(true), textIgnorePlacement(true)))
                 style.addLayer(SymbolLayer("rail-transfer-labels", "rail-transfer-data").withProperties(textField(get("label")), textFont(arrayOf("Noto Sans Bold")), textSize(12f), textOffset(arrayOf(0f, 2.3f)), textColor("#713B00"), textHaloColor("#ffffff"), textHaloWidth(2f), textMaxWidth(24f)))
-                val bubble=android.graphics.Bitmap.createBitmap(16,16,android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.WHITE) }
+                val bubble=android.graphics.Bitmap.createBitmap(32,32,android.graphics.Bitmap.Config.ARGB_8888).apply {
+                    val canvas=android.graphics.Canvas(this)
+                    canvas.drawRoundRect(0f,0f,32f,32f,7f,7f,android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.WHITE })
+                }
                 style.addImage("leg-bubble",bubble)
-                style.addLayer(SymbolLayer("journey-leg-labels","leg-label-data").withProperties(iconImage("leg-bubble"),iconTextFit(Property.ICON_TEXT_FIT_BOTH),iconTextFitPadding(arrayOf(6f,8f,6f,8f)),textField(get("label")),textFont(arrayOf("Noto Sans Bold")),textSize(12f),textColor("#172724"),textMaxWidth(22f),textAllowOverlap(true),iconAllowOverlap(true)))
+                style.addLayer(SymbolLayer("journey-leg-labels","leg-label-data").withProperties(
+                    iconImage("leg-bubble"),iconTextFit(Property.ICON_TEXT_FIT_BOTH),iconTextFitPadding(arrayOf(3f,5f,3f,5f)),
+                    textField(get("label")),textFont(arrayOf("Noto Sans Regular")),
+                    textSize(interpolate(linear(),zoom(),stop(9.0,9),stop(12.0,11),stop(16.0,12))),
+                    textOffset(arrayOf(0f,-1.7f)),textColor("#172724"),textMaxWidth(12f),
+                    textAllowOverlap(false),iconAllowOverlap(false),textIgnorePlacement(false),iconIgnorePlacement(false)
+                ).apply { minZoom=9f })
                 if (initialFit) region?.bounds?.let { bounds -> post { if (!closed && current?.selectedJourney == null && width > 0 && height > 0) ready.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 24)) } }
                 current?.let { render(it, transfers) }
             }
@@ -184,7 +193,7 @@ private fun prepareExtra(features: FeatureLayers): ExtraFrame {
     val pins=features.pins.map { p -> Feature.fromGeometry(Point.fromLngLat(p.point.longitude,p.point.latitude)).apply { addStringProperty("id",p.id);addStringProperty("name",p.name);addStringProperty("color",p.service?.color ?: "#8b5bc2") } }
     val shapes=features.shapes.filter { it.points.size>=2 }.map { shape -> Feature.fromGeometry(LineString.fromLngLats(shape.points.map { Point.fromLngLat(it.longitude,it.latitude) })).apply { addStringProperty("color",if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color) } }
     val walks=features.walks.map { leg -> Feature.fromGeometry(LineString.fromLngLats(leg.points.map { Point.fromLngLat(it.longitude,it.latitude) })) }
-    val badges=features.badges.map { b -> Feature.fromGeometry(Point.fromLngLat(b.point.longitude,b.point.latitude)).apply { addStringProperty("label",b.text) } }
+    val badges=features.badges.map { b -> Feature.fromGeometry(Point.fromLngLat(b.point.longitude,b.point.latitude)).apply { addStringProperty("label",b.compact) } }
     return ExtraFrame(FeatureCollection.fromFeatures(pins).toJson(),FeatureCollection.fromFeatures(shapes).toJson(),FeatureCollection.fromFeatures(walks).toJson(),FeatureCollection.fromFeatures(badges).toJson())
 }
 private fun prepareRail(state: TrainState,changes: List<TransferPoint>,routeStations: List<StationPosition>): RailFrame {

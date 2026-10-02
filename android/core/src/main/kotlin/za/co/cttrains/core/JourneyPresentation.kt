@@ -2,7 +2,7 @@ package za.co.cttrains.core
 
 import kotlinx.serialization.json.*
 
-data class LegBadge(val id: String,val point: GeoPoint,val text: String)
+data class LegBadge(val id: String,val point: GeoPoint,val text: String,val compact: String=text)
 data class BusJourney(val timetable: BusTimetable,val trip: BusTrip,val boardIndex: Int,val alightIndex: Int,val board: BusStopPoint?,val alight: BusStopPoint?,val userMapped: Boolean=false) {
     val departure get()=trip.calls[boardIndex]
     val arrival get()=trip.calls[alightIndex]
@@ -18,12 +18,12 @@ object BusPlanning {
 }
 object JourneyPresentation {
     fun railNames(journey: Journey?,from: String,to: String): Set<String> = (if(journey==null) listOf(from,to) else journey.legs.flatMap { listOf(it.departure.name,it.arrival.name) }).filter(String::isNotBlank).map(::stationKey).toSet()
-    fun walking(legs: List<WalkingLeg>)=legs.map { leg -> LegBadge(leg.key,midpoint(leg.points),"Walk · ${leg.distanceMeters.toInt()} m · ${leg.minutes} min") }
+    fun walking(legs: List<WalkingLeg>)=legs.map { leg -> LegBadge(leg.key,midpoint(leg.points),"Walk · ${leg.distanceMeters.toInt()} m · ${leg.minutes} min","${leg.minutes} min · ${leg.distanceMeters.toInt()} m") }
     fun rail(journey: Journey?,trace: JourneyTrace?,stations: List<StationPosition>): List<LegBadge> = journey?.legs?.mapIndexedNotNull { i,leg ->
         val points=trace?.legs?.getOrNull(i)?.flatMap { it.points }?.map { GeoPoint(it.latitude,it.longitude) }.orEmpty().ifEmpty {
             leg.stops.mapNotNull { stop->stations.firstOrNull { it.mapped && stationKey(it.name)==stationKey(stop.name) }?.let { GeoPoint(it.latitude!!,it.longitude!!) } }
         }
-        points.takeIf(List<GeoPoint>::isNotEmpty)?.let { LegBadge("rail:$i",midpoint(it),"Train ${leg.train} · ${minutesBetween(leg.departure.time,leg.arrival.time)} min") }
+        points.takeIf(List<GeoPoint>::isNotEmpty)?.let { LegBadge("rail:$i",midpoint(it),"Train ${leg.train} · ${minutesBetween(leg.departure.time,leg.arrival.time)} min","${minutesBetween(leg.departure.time,leg.arrival.time)} min") }
     }.orEmpty()
     fun midpoint(points: List<GeoPoint>): GeoPoint {
         require(points.isNotEmpty())

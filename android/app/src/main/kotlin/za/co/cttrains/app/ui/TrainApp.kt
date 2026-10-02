@@ -93,33 +93,23 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
                 composable("plan") { PlanScreen(state, model, wide,feature,features) { journey -> model.selectJourney(journey);features.showTrainMap(); go("map") } }
                 composable("saved") { SavedScreen(state, model) { go("plan") } }
                 composable("upcoming") { UpcomingScreen(state, model) }
-                composable("settings") { AboutScreen(state, model,feature,features,{ go("buses") },{ go("trips") },{ go("community") }) }
+                composable("settings") { AboutScreen(state, model,feature,features,{ go("buses") },{ go("trips") },{ go("community") },{ go("whatsapp") }) }
                 composable("budget") { BudgetScreen(state, model) { go("plan") } }
                 composable("alerts") { AlertsScreen(state, model) }
                 composable("buses") { BusScreen(feature,features,{ go("trips") }) { service,route -> model.selectJourney(null);features.showBusMap(service,route);go("map") } }
                 composable("trips") { SafetyTripsScreen(state,feature,features) }
+                composable("whatsapp") { za.co.cttrains.app.whatsapp.WhatsAppScreen({ go("community") },{ go("trips") }) }
                 composable("community") { CommunityScreen(state,feature,features,model) { go("settings") } }
             }
         }
     }
-    if (toolsOpen) TransitToolsSheet({ toolsOpen = false }, { toolsOpen = false; go("alerts") }, { toolsOpen = false; go("budget") },{ toolsOpen=false;go("buses") },{ toolsOpen=false;go("trips") },{ toolsOpen=false;go("community") })
+    if (toolsOpen) TransitToolsSheet({ toolsOpen = false }, { toolsOpen = false; go("alerts") }, { toolsOpen = false; go("budget") },{ toolsOpen=false;go("buses") },{ toolsOpen=false;go("trips") },{ toolsOpen=false;go("community") },{ toolsOpen=false;go("whatsapp") })
     ImportedFiles(feature,features)
 }
 
 @Composable
 private fun PlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean, feature: za.co.cttrains.app.FeatureState, features: za.co.cttrains.app.FeatureViewModel, onMap: (Journey) -> Unit) {
-    var operator by rememberSaveable { mutableStateOf(TransportService.PRASA) }
-    val operators=TransportService.values().filter { feature.extras.beta.enabled(it) }
-    LaunchedEffect(operators) { if(operator !in operators) operator=TransportService.PRASA }
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=20.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            operators.forEach { service->FilterChip(operator==service,{ operator=service },label={ Text(service.title) }) }
-        }
-        Box(Modifier.weight(1f)) {
-            if(operator==TransportService.PRASA) TrainPlanScreen(state,model,wide,feature,features,onMap)
-            else BusPlanner(state,model,feature,features,operator) { model.edit { it.copy(requestedScreen="map") } }
-        }
-    }
+    JourneyPlanner(state,model,feature,features,{ model.edit { it.copy(requestedScreen="settings") } })
 }
 
 @Composable
@@ -387,7 +377,7 @@ private fun SavedScreen(state: TrainState, model: TrainViewModel, onPlan: () -> 
 }
 
 @Composable
-private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.cttrains.app.FeatureState,features: za.co.cttrains.app.FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit) {
+private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.cttrains.app.FeatureState,features: za.co.cttrains.app.FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit,onWhatsApp: ()->Unit) {
     val uri = LocalUriHandler.current
     var confirmClear by remember { mutableStateOf(false) }
     var confirmProfile by remember { mutableStateOf(false) }
@@ -395,7 +385,7 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.
         Text("Your app, your data", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Notice("An independent, community app for Cape Town rail commuters. Timetables come from CT Trains. This app is not affiliated with CT Trains, PRASA or Metrorail.", Icons.Outlined.Train)
         FeatureStatus(feature)
-        BetaSettings(feature,features,onBuses,onTrips,onCommunity)
+        BetaSettings(feature,features,onBuses,onTrips,onCommunity,onWhatsApp)
         ProfileSettings(feature,features)
         HostedSettings(feature,features)
         Card(shape = RoundedCornerShape(24.dp)) {
@@ -415,9 +405,9 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.
                 Text("Timetables & privacy", style = MaterialTheme.typography.titleLarge)
                 Text("Your last 12 searches are stored on this device for up to 14 days. If a refresh fails, the same route, date and departure time can use its saved result. Saved routes stay until you remove them.")
                 Text("An anonymous UUID identifies this installation locally. Personal records and optional account tokens are encrypted with Android Keystore in Room. Public station positions and scheduling timestamps remain readable inside the private database. No analytics or device identifiers. Google profile and hosted Matrix accounts are optional and independent.", style = MaterialTheme.typography.bodyMedium)
-                Text("Searches send the route, date, time and IP to their timetable source. Online maps reveal the viewed area and IP to OpenFreeMap or City of Cape Town imagery hosting. Explicit place searches go to OpenStreetMap Nominatim. Offline map mode disables map tile requests; timetable and hosted communication checks have their own controls.", style = MaterialTheme.typography.bodyMedium)
+                Text("Searches send the route, date, time and IP to their timetable source. Online maps reveal the viewed area and IP to OpenFreeMap or City of Cape Town imagery hosting. Explicit place searches go to OpenStreetMap Nominatim or Photon. Offline map mode disables map tile requests; timetable and hosted communication checks have their own controls.", style = MaterialTheme.typography.bodyMedium)
                 Text("Locate me samples Android location while the app is open. Only an explicitly started live-trip session continues with a visible notification, for at most two hours. Encrypted trip updates go to your private Matrix room; public reports go to the selected community room. Friend positions are retained briefly and disappear from the map after five minutes without a fresh update.", style = MaterialTheme.typography.bodyMedium)
-                Text("Calendar handoff opens your calendar app for review. The app cannot read your calendar or health data. Trip files reveal the itinerary you review before sharing. Encrypted profile backups are stored only at the file location you choose.", style = MaterialTheme.typography.bodyMedium)
+                Text("Calendar handoff opens your calendar app for review. The app cannot read your calendar. Optional Health Connect step totals are read only after separate permission; no health data is uploaded. Trip files reveal the itinerary you review before sharing. Encrypted profile backups are stored only at the file location you choose.", style = MaterialTheme.typography.bodyMedium)
                 Text("Downloaded maps and map-area bounds are public cache data and are not encrypted. Manage and delete them from the Map download button.", style = MaterialTheme.typography.bodyMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("online" to "Online", "offline" to "Offline", "stations" to "Stations").forEach { (mode, title) -> FilterChip(state.preferences.mapMode == mode, { model.setMapMode(mode) }, label = { Text(title) }) } }
                 OutlinedButton(onClick = model::forgetLocation) { Text("Forget sampled location") }
@@ -457,7 +447,7 @@ private fun EmptyState(icon: ImageVector, title: String, body: String) {
 }
 
 @Composable
-private fun SourceSelector(state: TrainState, model: TrainViewModel) {
+internal fun SourceSelector(state: TrainState, model: TrainViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Timetable source", style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -466,3 +456,4 @@ private fun SourceSelector(state: TrainState, model: TrainViewModel) {
         Text(if (model.repository.sources.size > 1) "The API and direct source both use CT Trains. Results stay separate; switching clears the current result." else "Community timetable from CT Trains. Check source and fetch date before travelling.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+

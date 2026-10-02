@@ -148,3 +148,20 @@ Independent community app; not affiliated with CT Trains, PRASA or Metrorail. Co
 See [the 1.5 quality-of-life notes](docs/QUALITY_OF_LIFE_1_5.md) for map fixes, Golden Arrow source pagination, saved places, walking-route consent and the optional learning/nearby features.
 
 See [the 1.6 final touch-up notes](docs/FINAL_TOUCHUPS_1_6.md) for journey focus, segment labels, address suggestions, operator planning and route steps.
+
+
+## Journey planner and comparison (1.7)
+
+Plan has a single **Mode of transport** selector for Trains, Golden Arrow, MyCiTi or Compare. Switching keeps the same From/To saved places or stops. Walking requires explicit routing consent. Published direct MyCiTi trips use exact stop IDs and ordered timed calls. The comparison starts at the same leave-after time, includes access/final walks, wait and a five-minute boarding buffer, and excludes departures the traveller cannot catch. Missing walks leave door-to-door duration unknown. Fastest found describes only complete options among the checked routes, not a citywide optimum. At most six candidate bus routes and three boarding/alighting pairs per route are checked; bus transfers and intermodal routing are not implemented.
+
+Golden Arrow survey route codes are not an authoritative join to published PDF timed points. **Manual bus setup** lets the user personally bind boarding and alighting timed points to surveyed map pins. Later searches reuse those explicit bindings, with an unverified-current-operation label. The app never invents schedules or cash fares from weekly/monthly passes. Choose the actual bus fare band/payment product, or enter a personal correction in Bus schedules → Fares. The bus browser uses one scrolling list, with collapsed filters/source details; map time badges hide at low zoom and avoid overlap.
+
+## WhatsApp updates (optional alpha)
+
+Open **Tools → WhatsApp updates · alpha** or **Settings → Beta features → WhatsApp updates · alpha**. Trip/report sharing remains in Tools → Safety trips and Community reports and uses Android's share sheet for review.
+
+The optional reader implements the API in [rmyndharis/OpenWA](https://github.com/rmyndharis/OpenWA), checked against commit `022f4bc97fca9139b0b14bf3eeae1fc0fac3a91a`. OpenWA must run on a separate gateway with a linked WhatsApp account; it is not embedded in this Android app. Supply an HTTPS API base URL, session ID and restricted Reader API key. Channel browsing/reading requires the **whatsapp-web.js** engine (the Baileys channel endpoints return 501). Follow the actual PRASA channel using that account and select its returned identity; no official channel ID is assumed. Group reading is restricted to explicitly selected group IDs.
+
+The reader only issues GETs to selected feeds. It caches a bounded, dated, unverified inbox encrypted locally; it does not rewrite official schedules, manage accounts, join groups or automatically send/schedule outgoing messages. Review & share opens Android's share sheet. Foreground checks occur about once a minute while the reader screen is open; optional WorkManager checks run at a minimum fifteen-minute interval subject to Android scheduling. Failures keep dated cached posts and do not fail transit refresh. Pause cancels background checks; disconnect erases credentials/inbox. Credentials and WhatsApp posts are excluded from portable backups and cleared during profile replacement. OpenWA is unofficial and may lead to account restrictions; use the dedicated account you choose, not another person's account.
+
+Parser/contract checks and setup UI are tested. Live channel/account integration requires a real gateway and account and has not been exercised by CI.

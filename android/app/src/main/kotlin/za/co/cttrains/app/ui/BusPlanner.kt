@@ -41,8 +41,9 @@ import za.co.cttrains.core.*
     val after=runCatching { LocalTime.parse(timeText) }.getOrNull()
     val fromCall=timetable?.trips?.flatMap { it.calls }?.firstOrNull { it.id==fromId }
     val toCall=timetable?.trips?.flatMap { it.calls }?.firstOrNull { it.id==toId }
-    val board=if(service==TransportService.MYCITI && snapshot!=null && fromCall!=null) BusPlanning.stop(fromCall,snapshot) else boardPin
-    val alight=if(service==TransportService.MYCITI && snapshot!=null && toCall!=null) BusPlanning.stop(toCall,snapshot) else alightPin
+    fun linked(call: BusCall?)=s.extras.busStopLinks.lastOrNull { it.service==service && it.routeId==timetable?.route?.id && it.callId==call?.id }?.let { link -> snapshot?.stops?.firstOrNull { it.id==link.stopId } }
+    val board=if(service==TransportService.MYCITI && snapshot!=null && fromCall!=null) BusPlanning.stop(fromCall,snapshot) else boardPin ?: linked(fromCall)
+    val alight=if(service==TransportService.MYCITI && snapshot!=null && toCall!=null) BusPlanning.stop(toCall,snapshot) else alightPin ?: linked(toCall)
     val check=remember(snapshot,s.access,s.destination) { BusConnections.direct(snapshot,s.access?.point,s.destination?.point) }
     val calls=remember(timetable) { timetable?.trips?.flatMap { it.calls }?.distinctBy { it.id }.orEmpty() }
     val choices=remember(timetable,fromId,toId,train.time,train.date) { if(timetable!=null && after!=null) BusPlanning.choices(timetable,fromId,toId,train.time,date) else emptyList() }
@@ -116,7 +117,7 @@ import za.co.cttrains.core.*
                 OutlinedTextField(pinQuery,{ pinQuery=it.take(100) },label={ Text("Find stop") },singleLine=true,modifier=Modifier.fillMaxWidth())
                 LazyColumn(Modifier.heightIn(max=400.dp)) {
                     if(which in listOf("board","alight")) items(calls.filter { it.name.contains(pinQuery,true) },key={ it.id }) { call -> ListItem(headlineContent={ Text(call.name) },supportingContent={ Text("Timetable ID ${call.id}") },modifier=Modifier.clickable { if(which=="board") fromId=call.id else toId=call.id;pinQuery="";picker=null }) }
-                    else items(snapshot?.stops.orEmpty().filter { it.name.contains(pinQuery,true) }.sortedBy { stop->val p=if(which=="boardPin") s.access?.point else s.destination?.point;p?.let { NearbySuggestions.distance(it,stop.point) } ?: 0.0 }.take(100),key={ it.id }) { stop -> ListItem(headlineContent={ Text(stop.name) },supportingContent={ Text("Surveyed point · current operation unverified") },modifier=Modifier.clickable { if(which=="boardPin") boardPin=stop else alightPin=stop;picker=null }) }
+                    else items(snapshot?.stops.orEmpty().filter { it.name.contains(pinQuery,true) }.sortedBy { stop->val p=if(which=="boardPin") s.access?.point else s.destination?.point;p?.let { NearbySuggestions.distance(it,stop.point) } ?: 0.0 }.take(100),key={ it.id }) { stop -> ListItem(headlineContent={ Text(stop.name) },supportingContent={ Text("Surveyed point · current operation unverified") },modifier=Modifier.clickable { if(which=="boardPin") { boardPin=stop;m.confirmBusStop(timetable!!.route,fromCall!!,stop) } else { alightPin=stop;m.confirmBusStop(timetable!!.route,toCall!!,stop) };picker=null }) }
                 }
             }
         }

@@ -196,6 +196,13 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
     }
     fun selectBus(journey: BusJourney) { beta { if(journey.timetable.service==TransportService.MYCITI) it.copy(showMyCiti=true) else it.copy(showGoldenArrow=true) };mutable.update { it.copy(selectedBus=journey,mapService=journey.timetable.service,mapRoute=if(journey.timetable.service==TransportService.MYCITI) journey.timetable.route.id else null,focus=null) } }
     fun clearBusJourney()=mutable.update { it.copy(selectedBus=null) }
+    fun usePlannedWalks(legs: List<WalkingLeg>) { walkJob?.cancel();mutable.update { it.copy(walks=legs,walkBusy=false,walkError=null) } }
+    fun confirmBusStop(route: BusRouteDocument,call: BusCall,stop: BusStopPoint)=viewModelScope.launch(handler) {
+        val service=state.value.bus
+        val link=BusStopLink(service,route.id,call.id,stop.id,System.currentTimeMillis())
+        store.update { e -> e.copy(busStopLinks=(e.busStopLinks.filterNot { it.service==service && it.routeId==route.id && it.callId==call.id }+link).takeLast(200)) }
+        message("Personal timed-stop association saved. It is not an official boarding-point verification.")
+    }
     fun busWalks(board: BusStopPoint?,alight: BusStopPoint?) {
         val s=state.value
         val pairs=listOfNotNull(s.access?.let { p->board?.let { p to WalkEndpoint("bus:${s.bus.name}:${it.id}",it.name,it.point) } },s.destination?.let { p->alight?.let { WalkEndpoint("bus:${s.bus.name}:${it.id}",it.name,it.point) to p } })
@@ -327,7 +334,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
     fun stopLive() { getApplication<Application>().stopService(Intent(getApplication(),TripLiveService::class.java));viewModelScope.launch(handler) { store.liveCircle()?.let { store.saveCircle(it.copy(sharing=false)) } } }
     fun phase(phase: String)=viewModelScope.launch(handler) { require(phase in CircleUpdates.phases);store.liveCircle()?.let { store.saveCircle(it.copy(phase=phase)) } }
     fun removeFriend(id: String)=viewModelScope.launch(handler) { stopLive();store.update { it.copy(friends=it.friends.filterNot { f->f.id==id }) };store.saveWatched(store.watched().filterNot { it.id==id }) }
-    fun reset() { jobs.values.forEach { it.cancel() };timetableJob?.cancel();walkJob?.cancel();syncJob?.cancel();stopNearby();WalkLearningService.stop(getApplication());stopLive();files.clearPrivatePhotos();BusRefreshWorker.configure(getApplication(),BetaPreferences());mutable.value=FeatureState() }
+    fun reset() { za.co.cttrains.app.whatsapp.WhatsAppReader.configure(getApplication(),null); jobs.values.forEach { it.cancel() };timetableJob?.cancel();walkJob?.cancel();syncJob?.cancel();stopNearby();WalkLearningService.stop(getApplication());stopLive();files.clearPrivatePhotos();BusRefreshWorker.configure(getApplication(),BetaPreferences());mutable.value=FeatureState() }
     private fun action(failure: String,block: suspend ()->Unit)=viewModelScope.launch(handler) {
         if(state.value.busy) return@launch
         mutable.update { it.copy(busy=true,error=null) }

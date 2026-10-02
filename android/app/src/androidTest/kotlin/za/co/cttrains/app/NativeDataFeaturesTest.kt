@@ -56,15 +56,20 @@ class NativeDataFeaturesTest {
         features.update { it.copy(localName="Native test",spots=listOf(spot),beta=it.beta.copy(hostedSharing=true)) }
         features.saveSession(MatrixSession("https://matrix.example.test","@test:example.test","test-private-session-token","test"))
         features.saveBackupLink(BackupLink("content://test/backup","test-private-auto-backup-password"))
+        features.store.writeLocal("wa-alpha-config","test-private-openwa-key")
+        features.store.writeLocal("wa-alpha-cache","test-private-whatsapp-post")
         val password="test-only export password"
         val raw=files.export(password)
         val plain=PortableCrypto.decrypt(raw,password.toCharArray())
         assertFalse(plain.contains("test-private-session-token"));assertFalse(plain.contains("test-private-auto-backup-password"))
+        assertFalse(plain.contains("test-private-openwa-key"));assertFalse(plain.contains("test-private-whatsapp-post"))
         val inspected=files.inspect(raw,password)
         features.store.clearPersonalData();files.clearPrivatePhotos();files.restore(inspected)
+        assertNull(features.store.readLocal("wa-alpha-config"));assertNull(features.store.readLocal("wa-alpha-cache"))
         val restored=features.extras()
         assertEquals("Native test",restored.localName);assertFalse(restored.beta.hostedSharing);assertNull(features.session());assertNull(features.backupLink())
         assertNotEquals(photo,restored.spots.first().photo)
         assertEquals(64,files.bitmap(restored.spots.first().photo!!)!!.width)
     }
 }
+
