@@ -21,6 +21,11 @@ class QualityOfLifeUiTest {
         app.onNodeWithText("Online").assertIsDisplayed()
         app.onNodeWithText("Collapse").performClick()
         app.onNodeWithText("Online").assertDoesNotExist()
+        app.onNodeWithText("Map options").performClick()
+        app.onNodeWithContentDescription("Manage offline maps").performClick()
+        app.onNodeWithText("Collapse").assertDoesNotExist()
+        app.runOnUiThread { app.activity.onBackPressedDispatcher.onBackPressed() }
+        app.waitForIdle()
         app.onNodeWithContentDescription("Expand map to full screen").performClick()
         app.onNodeWithContentDescription("Close full-screen map").assertIsDisplayed()
         app.onNodeWithText("Online").assertDoesNotExist()

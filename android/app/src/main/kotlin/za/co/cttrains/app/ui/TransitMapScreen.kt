@@ -201,7 +201,7 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
             listOf("online" to "Online", "offline" to "Offline", "stations" to "Stations").forEach { (mode, title) ->
                 FilterChip(state.preferences.mapMode == mode, { model.setMapMode(mode) }, label = { Text(title) })
             }
-            IconButton(onClick = { downloadsOpen = true }) { Icon(Icons.Outlined.Download, "Manage offline maps") }
+            IconButton(onClick = { optionsOpen=false;downloadsOpen = true }) { Icon(Icons.Outlined.Download, "Manage offline maps") }
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
             FilterChip(feature.extras.beta.showTrains,{ features.beta { it.copy(showTrains=!it.showTrains) } },label={ Text("Trains") })
