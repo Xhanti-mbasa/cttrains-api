@@ -8,13 +8,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
 /** Bundled instructions remain readable offline; connection details are never put in this guide. */
 @Composable internal fun WhatsAppSetupGuide(onDismiss: ()->Unit) {
     val uri=LocalUriHandler.current
     ModalBottomSheet(onDismissRequest=onDismiss,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
-        LazyColumn(Modifier.fillMaxWidth(),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+        LazyColumn(Modifier.fillMaxWidth().testTag("whatsapp-setup-guide"),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
             item { Text("Set up WhatsApp updates",style=MaterialTheme.typography.titleLarge);Text("You need an OpenWA gateway once. Sharing trips and delay reports to WhatsApp works without it.") }
             item { HelpStep("1 · Run or get access to a gateway","OpenWA is a separate server, not a WhatsApp login inside CT Trains. Run rmyndharis/OpenWA on a computer/server you control, or use a gateway you trust. The server processes messages from its linked account, so WhatsApp updates are not entirely phone-local.") }
             item {

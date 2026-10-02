@@ -111,7 +111,7 @@ class QualityOfLifeUiTest {
         app.onNodeWithText("How to set this up").performScrollTo().performClick()
         app.onNodeWithText("Set up WhatsApp updates").assertIsDisplayed()
         UiScreenshots.save("whatsapp-setup-guide")
-        app.onNode(hasScrollToIndexAction() and hasAnyDescendant(hasText("Set up WhatsApp updates")))
+        app.onNodeWithTag("whatsapp-setup-guide")
             .performScrollToNode(hasText("5 · Connect in CT Trains"))
         app.onNodeWithText("5 · Connect in CT Trains").assertIsDisplayed()
     }
