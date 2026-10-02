@@ -48,7 +48,7 @@ import za.co.cttrains.core.*
     } }
 }
 
-@Composable fun CommunityScreen(train: TrainState,s: FeatureState,m: FeatureViewModel) {
+@Composable fun CommunityScreen(train: TrainState,s: FeatureState,m: FeatureViewModel,model: TrainViewModel,onSettings: ()->Unit) {
     var service by rememberSaveable { mutableStateOf(TransportService.PRASA) }
     var tab by rememberSaveable { mutableStateOf("Reports") }
     var stop by rememberSaveable { mutableStateOf(train.from) }
@@ -73,13 +73,13 @@ import za.co.cttrains.core.*
     }
     LaunchedEffect(Unit) { while(true) { delay(30_000);now=System.currentTimeMillis() } }
     LaunchedEffect(service,s.session?.userId,s.extras.beta.hostedSharing,tab,s.extras.rooms) {
-        if(tab=="Chat" && s.session!=null && s.extras.beta.hostedSharing && s.extras.rooms.any { it.service==service }) while(true) { m.sync(service);delay(60_000) }
+        if(tab in listOf("Chat","Nearby") && s.session!=null && s.extras.beta.hostedSharing && s.extras.rooms.any { it.service==service }) while(true) { m.sync(service);delay(60_000) }
     }
     val report=runCatching { val at=LocalDateTime.parse(observed).atZone(CapeTownZone).toInstant().toEpochMilli();require(at<=now+30_000 && now-at<=CommunityReports.MAX_AGE);CommunityReports.validate(CommunityReport(id=java.util.UUID.randomUUID().toString(),service=service,stop=stop.trim(),route=route.trim(),direction=direction.trim(),observedAt=at,category=category,message=detail.trim())) }.getOrNull()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text("Community & friends · beta",style=MaterialTheme.typography.headlineSmall)
         FeatureStatus(s)
-        FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf("Reports","Chat","Friends").forEach { v->FilterChip(tab==v,{ tab=v },label={ Text(v) }) } }
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf("Reports","Chat","Friends","Nearby").forEach { v->FilterChip(tab==v,{ tab=v },label={ Text(v) }) } }
         if(tab!="Friends") FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { TransportService.values().forEach { v->FilterChip(service==v,{ service=v },label={ Text(v.title) }) } }
         if(tab=="Reports") {
             Text("Observations are separate from official schedules. Reports expire after one hour. Counts mean distinct Matrix accounts, not verified people.",style=MaterialTheme.typography.bodySmall)
@@ -109,7 +109,15 @@ import za.co.cttrains.core.*
             } } }
             if(rows.isEmpty()) Text("No fresh reports saved for this service.")
         } else if(tab=="Chat") {
-            if(!s.extras.beta.hostedSharing || s.session==null) Text("Enable Hosted community in Settings and connect a Matrix account. Offline reports can still be shared through WhatsApp.")
+            if(!s.ready) Text("Loading your saved community settings…")
+            else if(!s.extras.beta.hostedSharing) {
+                Text("Hosted community is off. Reports can still be shared through WhatsApp.")
+                Button(onClick={ m.beta { it.copy(hostedSharing=true) } }) { Text("Enable hosted community") }
+            } else if(s.session==null) {
+                Text("Hosted community is enabled. Connect your Matrix account to send and receive room messages.")
+                HostedSettings(s,m)
+                TextButton(onClick=onSettings) { Text("Open account settings") }
+            }
             else {
                 Text("${service.title} room",style=MaterialTheme.typography.titleLarge)
                 val configured=s.extras.rooms.firstOrNull { it.service==service }
@@ -119,9 +127,11 @@ import za.co.cttrains.core.*
                 Text("Public room messages are readable by members and hosting providers. Do not post home addresses or live positions here.",style=MaterialTheme.typography.bodySmall)
                 OutlinedTextField(draft,{ draft=it.take(1500) },label={ Text("Community message") },modifier=Modifier.fillMaxWidth())
                 if(Regex("\\bdelay(?:ed|s)?\\b",RegexOption.IGNORE_CASE).containsMatchIn(draft)) TextButton(onClick={ detail=draft;category=ReportCategory.DELAYED;tab="Reports" }) { Text("Turn this into a structured delay report") }
-                Button(onClick={ m.chat(service,draft) },enabled=draft.isNotBlank() && configured!=null && !s.busy) { Text("Send to room") }
-                s.chat.takeLast(100).forEach { message->Card { Column(Modifier.padding(12.dp)) { Text(message.sender,style=MaterialTheme.typography.labelMedium);Text(message.text);Text(checked(message.at),style=MaterialTheme.typography.labelSmall) } } }
+                Button(onClick={ m.chat(service,draft) { draft="" } },enabled=draft.isNotBlank() && configured!=null && !s.busy) { Text("Send to room") }
+                s.chat.takeIf { s.chatService==service }.orEmpty().takeLast(100).forEach { message->Card { Column(Modifier.padding(12.dp)) { Text(message.sender,style=MaterialTheme.typography.labelMedium);Text(message.text);Text(checked(message.at),style=MaterialTheme.typography.labelSmall) } } }
             }
+        } else if(tab=="Nearby") {
+            NearbyUsers(train,model,s,m,service,onSettings)
         } else {
             Text("Live trips are optional, require internet and a Matrix account, and stop within two hours. Position checks are roughly once a minute. ‘At station’ and ‘On board’ are your manual check-ins; location alone cannot prove boarding.")
             Text("Private invitation files contain the trip key. Keep them with the invited friend. This experimental feature has not received an independent security audit.",style=MaterialTheme.typography.bodySmall)

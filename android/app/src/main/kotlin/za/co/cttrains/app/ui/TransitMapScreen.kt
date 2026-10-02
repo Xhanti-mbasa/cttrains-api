@@ -9,6 +9,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -29,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -59,6 +64,7 @@ import za.co.cttrains.core.*
 fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boolean = false, onExpand: () -> Unit = {}, onClose: () -> Unit = {}, onPlan: () -> Unit, feature: FeatureState, features: FeatureViewModel, onBuses: ()->Unit) {
     var browser by rememberSaveable { mutableStateOf(false) }
     var downloadsOpen by remember { mutableStateOf(false) }
+    var optionsOpen by remember { mutableStateOf(false) }
     val downloads by model.offlineMaps.state.collectAsState()
     var failed by remember(state.preferences.mapMode, state.preferences.offlineMapId,feature.extras.beta.mapStyle) { mutableStateOf(false) }
     var retry by remember { mutableIntStateOf(0) }
@@ -70,7 +76,18 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
     val useStreets = state.mapsReady && state.preferences.mapMode != "stations" && !failed && (state.preferences.mapMode == "online" || savedArea != null)
     val uri = LocalUriHandler.current
     val context = LocalContext.current
-    val layers=remember(feature.snapshots,feature.extras.beta,feature.extras.spots,feature.watched,feature.focus,feature.mapRoute,feature.mapService,now) { features.layers(now) }
+    val layers by produceState(FeatureLayers(),feature.snapshots,feature.extras.beta,feature.extras.spots,feature.watched,feature.focus,feature.mapRoute,feature.mapService,feature.walks,state.selectedJourney,state.routeTrace,now) {
+        value=withContext(Dispatchers.Default) {
+            val extra=features.layers(now)
+            if(extra.walks.isEmpty()) extra else {
+                val rail=state.routeTrace?.legs?.flatten()?.flatMap { section->section.points.map { GeoPoint(it.latitude,it.longitude) } }.orEmpty().ifEmpty {
+                    val names=state.selectedJourney?.legs?.flatMap { it.stops }?.map { stationKey(it.name) }.orEmpty().toSet()
+                    state.stations.filter { it.mapped && stationKey(it.name) in names }.map { GeoPoint(it.latitude!!,it.longitude!!) }
+                }
+                extra.copy(fitPoints=extra.fitPoints+rail,fitName="${extra.fitName}:${state.selectedJourney?.departure}")
+            }
+        }
+    }
     val renderState=if(feature.extras.beta.showTrains) state else state.copy(stations=emptyList(),selectedJourney=null,routeTrace=null)
     val visibleTransfers=if(feature.extras.beta.showTrains) transfers else emptyList()
     val closest=state.currentPosition?.let { NearbySuggestions.station(GeoPoint(it.latitude,it.longitude),it.accuracyMeters,state.stations) }
@@ -86,7 +103,18 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
     val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants.values.any { it }) model.locateOnce() else model.showMessage("Location is optional. You can select stations without it.")
     }
-    Column(Modifier.fillMaxSize().then(if (fullScreen) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier).padding(horizontal = if (fullScreen) 8.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    fun refresh() { failed=false;retry++;model.refreshHome();features.refreshVisible() }
+    fun google() {
+        val start=feature.access?.point ?: state.stations.firstOrNull { it.name==state.from && it.mapped }?.let { GeoPoint(it.latitude!!,it.longitude!!) }
+        val end=feature.destination?.point ?: state.stations.firstOrNull { it.name==state.to && it.mapped }?.let { GeoPoint(it.latitude!!,it.longitude!!) }
+        val url=if(start!=null && end!=null) "https://www.google.com/maps/dir/?api=1&origin=${start.latitude},${start.longitude}&destination=${end.latitude},${end.longitude}&travelmode=transit"
+            else model.mapViewport.camera?.target?.let { "https://www.google.com/maps/search/?api=1&query=${it.latitude},${it.longitude}" } ?: "https://www.google.com/maps/search/?api=1&query=Cape+Town"
+        uri.openUri(url)
+    }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val homeMapHeight=(maxHeight-160.dp).coerceAtLeast(400.dp)
+    PullToRefreshBox(isRefreshing=state.refreshing || feature.loading.isNotEmpty(),onRefresh={ if(!fullScreen) refresh() },modifier=Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().then(if (fullScreen) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier.verticalScroll(rememberScrollState())).padding(horizontal = if (fullScreen) 0.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!fullScreen) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -110,6 +138,64 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
             IconButton(onClick = { browser = true }) { Icon(Icons.Outlined.Search, "Search stations") }
             IconButton(onClick = model::openAlerts) { Icon(Icons.Outlined.NotificationsActive, "Service alerts") }
         }
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+            TextButton(onClick={ optionsOpen=true }) { Icon(Icons.Outlined.Tune,null);Text("Map options") }
+            IconButton(onClick=::refresh) { Icon(Icons.Outlined.Refresh,"Refresh map and schedules") }
+            TextButton(onClick=::google) { Text("Open in Google") }
+        }
+        if(closest!=null && !fullScreen) {
+            Text("Closest station: ${closest.name} · GPS accuracy ${state.currentPosition?.accuracyMeters?.toInt()} m",style=MaterialTheme.typography.labelSmall)
+            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                NearbySuggestions.destinations(closest.name,state.preferences.routes,state.preferences.favoriteStations).forEach { destination ->
+                    SuggestionChip(onClick={ model.quickDestination(closest.name,destination) },label={ Text("To $destination") })
+                }
+            }
+        }
+        if (failed || (state.preferences.mapMode == "offline" && savedArea == null)) {
+            Text(if (failed) "Street map unavailable. Station map is still usable." else "Download a street map first. Station positions remain available offline.", style = MaterialTheme.typography.bodySmall)
+            if (failed) TextButton(onClick = { failed = false; retry++ }) { Text("Retry street map") }
+        }
+        Box(Modifier.then(if(fullScreen) Modifier.weight(1f) else Modifier.height(homeMapHeight)).fillMaxWidth()) {
+            Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(if(fullScreen) 0.dp else 28.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                if (useStreets) key(state.preferences.mapMode, savedArea?.id, retry,feature.extras.beta.mapStyle) { StreetMap(renderState, if (state.preferences.mapMode == "offline") model.offlineMaps.definition(savedArea?.id) else null, model.mapViewport, visibleTransfers, model::selectStation, model::selectTransfer, { failed = true }, Modifier.fillMaxSize(),feature.extras.beta.mapStyle,layers,{ features.selectPin(it) },features::drop) }
+                else OfflineStationMap(renderState.stations, renderState.selectedJourney, renderState.routeTrace, model.mapViewport, visibleTransfers, state.currentPosition, state.from, state.to, model::selectStation, model::selectTransfer,layers,{ features.selectPin(it) },features::drop)
+            }
+            Surface(Modifier.align(Alignment.TopStart).padding(12.dp).fillMaxWidth(if (fullScreen) .82f else .76f), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), tonalElevation = 3.dp) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Text(if (useStreets) if (state.preferences.mapMode == "offline") savedArea?.name ?: "Downloaded map" else MapStyles.titles[feature.extras.beta.mapStyle] ?: "Streets" else "Offline stops & stations", style = MaterialTheme.typography.labelLarge)
+                    Text(if (state.selectedJourney == null) "${renderState.stations.count { it.mapped }+layers.pins.size} pins · hold to mark a spot" else "${visibleTransfers.size} train changes · tap numbered pins", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (!fullScreen) FilledTonalIconButton(onClick = { optionsOpen=false;onExpand() }, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) { Icon(Icons.Outlined.Fullscreen, "Expand map to full screen") }
+            if (state.traceLoading) LinearProgressIndicator(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp))
+        }
+        if (!fullScreen && transfers.isNotEmpty()) FilledTonalButton(onClick = { allTransfers = true }, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Outlined.SyncAlt, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("${transfers.size} train ${if (transfers.size == 1) "change" else "changes"} · see trains & platforms")
+        }
+        if (!fullScreen && state.selectedJourney != null && state.result != null) {
+            val journey = state.selectedJourney
+            ElevatedCard(onClick = onPlan, shape = RoundedCornerShape(20.dp)) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${journey.departure} → ${journey.arrival} · ${journey.durationMinutes} min", fontWeight = FontWeight.Bold)
+                        Text("${state.result.entry.query.from} → ${state.result.entry.query.to}", style = MaterialTheme.typography.bodySmall)
+                        Text("${journey.transfers} transfers · ${sourceLabel(state.result.entry.sourceId)}", style = MaterialTheme.typography.labelSmall)
+                    }
+                    Icon(Icons.AutoMirrored.Outlined.ArrowForward, "Schedule and route details")
+                }
+            }
+        } else if(!fullScreen) Button(onClick = onPlan, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+            Icon(Icons.Outlined.Route, null); Spacer(Modifier.width(10.dp)); Text("${state.from.ifBlank { "From" }} → ${state.to.ifBlank { "To" }}")
+        }
+        if(!fullScreen) TextButton(onClick=onPlan) { Text("Add Home, Work or Campus · walking times") }
+        if (!fullScreen && state.selectedJourney != null) Text("Solid: mapped railway trace. Dashed: approximate link. Confirm trains and platforms at the station.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = { uri.openUri("https://www.openstreetmap.org/copyright") }, contentPadding = PaddingValues(0.dp)) { Text("© OpenStreetMap contributors${if (useStreets) " · OpenMapTiles" else ""} · stations: Wikidata", style = MaterialTheme.typography.labelSmall) }
+        if(useStreets && feature.extras.beta.mapStyle=="aerial" && state.preferences.mapMode=="online") Text("© City of Cape Town · January 2025 aerial imagery · non-commercial use",style=MaterialTheme.typography.labelSmall)
+    }
+    } }
+    if(optionsOpen) ModalBottomSheet(onDismissRequest={ optionsOpen=false },sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
+        Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment=Alignment.CenterVertically) { Text("Map options",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f));TextButton(onClick={ optionsOpen=false }) { Text("Collapse") } }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             listOf("online" to "Online", "offline" to "Offline", "stations" to "Stations").forEach { (mode, title) ->
                 FilterChip(state.preferences.mapMode == mode, { model.setMapMode(mode) }, label = { Text(title) })
@@ -128,53 +214,9 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
         if(state.preferences.mapMode=="online") Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
             MapStyles.titles.forEach { (id,title) -> FilterChip(feature.extras.beta.mapStyle==id,{ features.beta { it.copy(mapStyle=id) } },label={ Text(title) }) }
         }
-        if(closest!=null && !fullScreen) {
-            Text("Closest station: ${closest.name} · GPS accuracy ${state.currentPosition?.accuracyMeters?.toInt()} m",style=MaterialTheme.typography.labelSmall)
-            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                NearbySuggestions.destinations(closest.name,state.preferences.routes,state.preferences.favoriteStations).forEach { destination ->
-                    SuggestionChip(onClick={ model.quickDestination(closest.name,destination) },label={ Text("To $destination") })
-                }
-            }
+            TextButton(onClick={ optionsOpen=false;val p=model.mapViewport.camera?.target;features.drop(if(p!=null) GeoPoint(p.latitude,p.longitude) else feature.focus ?: GeoPoint(-33.95,18.58)) }) { Text("Mark map centre · Home, Work or another place") }
+            Text("You can also press and hold a point on the map to mark its exact position.",style=MaterialTheme.typography.bodySmall)
         }
-        if (failed || (state.preferences.mapMode == "offline" && savedArea == null)) {
-            Text(if (failed) "Street map unavailable. Station map is still usable." else "Download a street map first. Station positions remain available offline.", style = MaterialTheme.typography.bodySmall)
-            if (failed) TextButton(onClick = { failed = false; retry++ }) { Text("Retry street map") }
-        }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                if (useStreets) key(state.preferences.mapMode, savedArea?.id, retry,feature.extras.beta.mapStyle) { StreetMap(renderState, if (state.preferences.mapMode == "offline") model.offlineMaps.definition(savedArea?.id) else null, model.mapViewport, visibleTransfers, model::selectStation, model::selectTransfer, { failed = true }, Modifier.fillMaxSize(),feature.extras.beta.mapStyle,layers,{ features.selectPin(it) },features::drop) }
-                else OfflineStationMap(renderState.stations, renderState.selectedJourney, renderState.routeTrace, model.mapViewport, visibleTransfers, state.currentPosition, state.from, state.to, model::selectStation, model::selectTransfer,layers,{ features.selectPin(it) },features::drop)
-            }
-            Surface(Modifier.align(Alignment.TopStart).padding(12.dp).fillMaxWidth(if (fullScreen) .82f else .76f), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), tonalElevation = 3.dp) {
-                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    Text(if (useStreets) if (state.preferences.mapMode == "offline") savedArea?.name ?: "Downloaded map" else MapStyles.titles[feature.extras.beta.mapStyle] ?: "Streets" else "Offline stops & stations", style = MaterialTheme.typography.labelLarge)
-                    Text(if (state.selectedJourney == null) "${renderState.stations.count { it.mapped }+layers.pins.size} pins · hold to mark a spot" else "${visibleTransfers.size} train changes · tap numbered pins", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            if (!fullScreen) FilledTonalIconButton(onClick = onExpand, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) { Icon(Icons.Outlined.Fullscreen, "Expand map to full screen") }
-            if (state.traceLoading) LinearProgressIndicator(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp))
-        }
-        if (transfers.isNotEmpty()) FilledTonalButton(onClick = { allTransfers = true }, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Outlined.SyncAlt, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("${transfers.size} train ${if (transfers.size == 1) "change" else "changes"} · see trains & platforms")
-        }
-        if (state.selectedJourney != null && state.result != null) {
-            val journey = state.selectedJourney
-            ElevatedCard(onClick = onPlan, shape = RoundedCornerShape(20.dp)) {
-                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("${journey.departure} → ${journey.arrival} · ${journey.durationMinutes} min", fontWeight = FontWeight.Bold)
-                        Text("${state.result.entry.query.from} → ${state.result.entry.query.to}", style = MaterialTheme.typography.bodySmall)
-                        Text("${journey.transfers} transfers · ${sourceLabel(state.result.entry.sourceId)}", style = MaterialTheme.typography.labelSmall)
-                    }
-                    Icon(Icons.AutoMirrored.Outlined.ArrowForward, "Schedule and route details")
-                }
-            }
-        } else Button(onClick = onPlan, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-            Icon(Icons.Outlined.Route, null); Spacer(Modifier.width(10.dp)); Text("${state.from.ifBlank { "From" }} → ${state.to.ifBlank { "To" }}")
-        }
-        if (state.selectedJourney != null) Text("Solid: mapped railway trace. Dashed: approximate link. Confirm trains and platforms at the station.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onClick = { uri.openUri("https://www.openstreetmap.org/copyright") }, contentPadding = PaddingValues(0.dp)) { Text("© OpenStreetMap contributors${if (useStreets) " · OpenMapTiles" else ""} · stations: Wikidata", style = MaterialTheme.typography.labelSmall) }
-        if(useStreets && feature.extras.beta.mapStyle=="aerial" && state.preferences.mapMode=="online") Text("© City of Cape Town · January 2025 aerial imagery · non-commercial use",style=MaterialTheme.typography.labelSmall)
     }
     if (browser) MapSearchSheet(state,layers,features,onDismiss={ browser=false }) { model.selectStation(it);browser=false }
     feature.pin?.let { PinSheet(it,feature,features) { service -> features.chooseBus(service);features.selectPin(null);onBuses() } }
@@ -242,6 +284,11 @@ private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?
         return (projection.point(lat, lon) - middle) * zoom + middle + Offset(pan.x * size.width, pan.y * size.height)
     }
     LaunchedEffect(features.focus,size) { features.focus?.let { p -> if(p!=viewport.stationFocus && size.width>0 && size.height>0) { zoom=6f;val middle=Offset(size.width/2f,size.height/2f);val offset=(middle-projection.point(p.latitude,p.longitude))*zoom;pan=Offset(offset.x/size.width,offset.y/size.height);viewport.stationFocus=p } } }
+    val shapePaths by produceState<List<Pair<Path,Color>>>(emptyList(),projection,features.shapes) {
+        value=withContext(Dispatchers.Default) {
+            features.shapes.map { shape->val path=Path();shape.points.forEachIndexed { i,p->val xy=projection.point(p.latitude,p.longitude);if(i==0) path.moveTo(xy.x,xy.y) else path.lineTo(xy.x,xy.y) };path to Color(android.graphics.Color.parseColor(if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color)) }
+        }
+    }
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize().onSizeChanged { size = it }.transformable(transform)
             .semantics { contentDescription = "Rail station map. Use Search stations for an accessible station list." }
@@ -258,7 +305,10 @@ private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?
             val grid = 44.dp.toPx()
             var x = 0f; while (x < this.size.width) { drawLine(outline.copy(alpha = .3f), Offset(x, 0f), Offset(x, this.size.height)); x += grid }
             var y = 0f; while (y < this.size.height) { drawLine(outline.copy(alpha = .3f), Offset(0f, y), Offset(this.size.width, y)); y += grid }
-            features.shapes.forEach { shape -> val path=Path();shape.points.forEachIndexed { i,p -> val xy=projected(p.latitude,p.longitude);if(i==0) path.moveTo(xy.x,xy.y) else path.lineTo(xy.x,xy.y) };drawPath(path,Color(android.graphics.Color.parseColor(if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color)).copy(alpha=.6f),style=androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx())) }
+            features.walks.forEach { leg -> val path=Path();leg.points.forEachIndexed { i,p->val xy=projected(p.latitude,p.longitude);if(i==0) path.moveTo(xy.x,xy.y) else path.lineTo(xy.x,xy.y) };drawPath(path,Color(0xFF8B5BC2),style=androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx(),pathEffect=PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(),5.dp.toPx())))) }
+            withTransform({ translate(pan.x*size.width,pan.y*size.height);scale(zoom,zoom,Offset(size.width/2f,size.height/2f)) }) {
+                shapePaths.forEach { (path,color)->drawPath(path,color.copy(alpha=.6f),style=androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()/zoom)) }
+            }
             features.pins.forEach { pin -> val point=projected(pin.point.latitude,pin.point.longitude);drawCircle(Color.White,6.dp.toPx(),point);drawCircle(Color(android.graphics.Color.parseColor(pin.service?.color ?: "#8b5bc2")),4.dp.toPx(),point) }
             journey?.legs?.forEachIndexed { index, leg ->
                 val sections = trace?.legs?.getOrNull(index) ?: JourneyPlanning.mappedSegments(leg, stations).map { points -> RouteSection(points.map { TrackPoint(it.latitude!!, it.longitude!!) }, false) }

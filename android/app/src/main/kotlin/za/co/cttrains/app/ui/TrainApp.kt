@@ -42,6 +42,9 @@ import za.co.cttrains.app.BuildConfig
 import za.co.cttrains.app.TrainViewModel
 import za.co.cttrains.core.*
 import androidx.navigation.compose.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import za.co.cttrains.app.scheduling.openStreetMapStationUrl
 
 private val FullDate = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.ENGLISH)
@@ -50,7 +53,7 @@ private val FetchTime = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLI
 @Composable
 fun TrainApp(state: TrainState, model: TrainViewModel) {
     val features: za.co.cttrains.app.FeatureViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-    val feature by features.state.collectAsState()
+    val feature by features.state.collectAsStateWithLifecycle()
     val navigation = rememberNavController()
     var toolsOpen by remember { mutableStateOf(false) }
     val backStack by navigation.currentBackStackEntryAsState()
@@ -70,23 +73,23 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
             }
         }, actions = {
             IconButton(onClick = { go("alerts") }) { Icon(Icons.Outlined.NotificationsActive, "Service alerts") }
-            IconButton(onClick = { toolsOpen = true }) { Icon(Icons.Outlined.MoreHoriz, "CT Trains tools and budget") }
+            TextButton(onClick = { toolsOpen = true }) { Icon(Icons.Outlined.MoreHoriz, null);Text("Tools") }
         }) },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = { if (!fullMap) NavigationBar {
             listOf(Triple("map", "Map", Icons.Outlined.Map), Triple("plan", "Plan", Icons.Outlined.Route),
                 Triple("saved", "Saved", Icons.Outlined.StarBorder), Triple("upcoming", "Journeys", Icons.AutoMirrored.Outlined.EventNote),
                 Triple("settings", "Settings", Icons.Outlined.Settings)).forEach { (route, title, icon) ->
-                NavigationBarItem(selected = screen == route, onClick = { go(route) }, icon = { Icon(icon, null) }, label = { Text(title) })
+                NavigationBarItem(selected = screen == route, onClick = { if(route=="map") features.allMapStops();go(route) }, icon = { Icon(icon, null) }, label = { Text(title) })
             }
         } },
     ) { padding ->
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
             val wide = maxWidth >= 840.dp
-            NavHost(navigation, startDestination = "map", modifier = Modifier.fillMaxSize()) {
+            NavHost(navigation, startDestination = "map", modifier = Modifier.fillMaxSize(), enterTransition={ EnterTransition.None },exitTransition={ ExitTransition.None },popEnterTransition={ EnterTransition.None },popExitTransition={ ExitTransition.None }) {
                 composable("map") { TransitMapScreen(state, model, onExpand = { navigation.navigate("map/fullscreen") { launchSingleTop = true } }, onPlan = { go("plan") },feature=feature,features=features,onBuses={ go("buses") }) }
                 composable("map/fullscreen") { TransitMapScreen(state, model, fullScreen = true, onClose = { navigation.popBackStack() }, onPlan = { go("plan") },feature=feature,features=features,onBuses={ go("buses") }) }
-                composable("plan") { PlanScreen(state, model, wide) { journey -> model.selectJourney(journey); go("map") } }
+                composable("plan") { PlanScreen(state, model, wide,feature,features) { journey -> model.selectJourney(journey);features.showTrainMap(); go("map") } }
                 composable("saved") { SavedScreen(state, model) { go("plan") } }
                 composable("upcoming") { UpcomingScreen(state, model) }
                 composable("settings") { AboutScreen(state, model,feature,features,{ go("buses") },{ go("trips") },{ go("community") }) }
@@ -94,7 +97,7 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
                 composable("alerts") { AlertsScreen(state, model) }
                 composable("buses") { BusScreen(feature,features,{ go("trips") }) { service,route -> model.selectJourney(null);features.showBusMap(service,route);go("map") } }
                 composable("trips") { SafetyTripsScreen(state,feature,features) }
-                composable("community") { CommunityScreen(state,feature,features) }
+                composable("community") { CommunityScreen(state,feature,features,model) { go("settings") } }
             }
         }
     }
@@ -103,7 +106,7 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
 }
 
 @Composable
-private fun PlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean, onMap: (Journey) -> Unit) {
+private fun PlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean, feature: za.co.cttrains.app.FeatureState, features: za.co.cttrains.app.FeatureViewModel, onMap: (Journey) -> Unit) {
     var stationPicker by rememberSaveable { mutableStateOf<String?>(null) }
     var datePicker by rememberSaveable { mutableStateOf(false) }
     var timePicker by rememberSaveable { mutableStateOf(false) }
@@ -125,6 +128,7 @@ private fun PlanScreen(state: TrainState, model: TrainViewModel, wide: Boolean, 
                         PickerField("Travel date", LocalDate.parse(state.date).format(FullDate), Icons.Outlined.CalendarMonth, Modifier.weight(1f)) { datePicker = true }
                         PickerField("Depart after", state.time, Icons.Outlined.Schedule, Modifier.weight(1f)) { timePicker = true }
                     }
+                    DoorToDoorCard(state,model,feature,features)
                     SourceSelector(state, model)
                     Button(onClick = { model.search() }, enabled = !state.loading && state.catalog.stations.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         if (state.loading) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary) }

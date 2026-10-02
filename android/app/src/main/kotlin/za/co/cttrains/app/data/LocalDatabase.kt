@@ -33,6 +33,7 @@ interface TransitDao {
     @Query("SELECT * FROM scheduled_journeys WHERE id = :id") suspend fun journey(id: String): JourneyEntity?
     @Query("SELECT * FROM scheduled_journeys WHERE identity = :identity") suspend fun byIdentity(identity: String): JourneyEntity?
     @Upsert suspend fun journey(row: JourneyEntity)
+    @Query("DELETE FROM local_values WHERE key = :key") suspend fun deleteValue(key: String)
     @Query("DELETE FROM scheduled_journeys WHERE id = :id") suspend fun deleteJourney(id: String)
     @Query("DELETE FROM scheduled_journeys WHERE departureAt < :cutoff") suspend fun pruneJourneys(cutoff: Long)
     @Query("DELETE FROM scheduled_journeys") suspend fun clearJourneys()

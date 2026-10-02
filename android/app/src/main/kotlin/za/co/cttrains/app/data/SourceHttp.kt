@@ -19,7 +19,7 @@ class SourceHttp(cookies: Boolean = false, private val redirects: Boolean = true
         .followRedirects(redirects).followSslRedirects(redirects).cookieJar(if(cookies) jar else CookieJar.NO_COOKIES).build()
     suspend fun bytes(request: Request,limit: Int=8*1024*1024,allowedHosts: Set<String>?=null): ByteArray = suspendCancellableCoroutine { continuation ->
         require(request.url.isHttps && request.url.username.isBlank() && request.url.password.isBlank())
-        val call=client.newCall(request.newBuilder().header("User-Agent","CTTrains-Android/1.4 (community app; https://github.com/Xhanti-mbasa)").build())
+        val call=client.newCall(request.newBuilder().header("User-Agent","CTTrains-Android/1.5 (community app; https://github.com/Xhanti-mbasa)").build())
         continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object: Callback {
             override fun onFailure(call: Call,e: IOException) { if(continuation.isActive) continuation.resumeWithException(e) }

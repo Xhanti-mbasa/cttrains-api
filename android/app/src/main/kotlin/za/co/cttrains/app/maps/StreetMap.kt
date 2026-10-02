@@ -3,6 +3,8 @@ package za.co.cttrains.app.maps
 import android.content.Context
 import android.graphics.RectF
 import androidx.compose.runtime.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,14 +51,22 @@ fun StreetMap(state: TrainState, region: OfflineRegionDefinition?, viewport: Map
         owner.lifecycle.addObserver(observer); synchronize()
         onDispose { owner.lifecycle.removeObserver(observer); view.captureViewport(); if (resumed) view.onPause(); if (started) view.onStop(); view.onDestroy() }
     }
-    AndroidView(factory = { view }, modifier = modifier, update = { it.features=features;it.render(state, transfers) })
+    val extra by produceState<ExtraFrame?>(null,features.pins,features.shapes,features.walks) {
+        value=withContext(Dispatchers.Default) { prepareExtra(features) }
+    }
+    val rail by produceState<RailFrame?>(null,state.stations,state.selectedJourney,state.routeTrace,state.currentPosition,state.from,state.to,transfers) {
+        value=withContext(Dispatchers.Default) { prepareRail(state,transfers) }
+    }
+    AndroidView(factory = { view }, modifier = modifier, update = { it.features=features;it.extraFrame=extra;it.railFrame=rail;it.render(state, transfers) })
 }
 
 private class TransitStreetView(context: Context, private val region: OfflineRegionDefinition?, private val viewport: MapViewport, private val modeKey: String, private val select: (String) -> Unit, private val transfer: (Int) -> Unit, private val fail: () -> Unit, private val styleId: String, private val pin: (MapPin)->Unit, private val drop: (GeoPoint)->Unit) : MapView(context) {
     var features=FeatureLayers()
     private var focused: GeoPoint?=viewport.featureFocus
-    private var renderedPins: List<MapPin>?=null
-    private var renderedShapes: List<BusShape>?=null
+    var extraFrame: ExtraFrame?=null
+    var railFrame: RailFrame?=null
+    private var renderedExtra: ExtraFrame?=null
+    private var renderedRail: RailFrame?=null
     private var fittedFeature: String?=viewport.featureFit
     private var map: MapLibreMap? = null
     private var current: TrainState? = null
@@ -65,7 +75,7 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
     private var fittedTrace: JourneyTrace? = null
     private var closed = false
     init {
-        if (viewport.modeKey != modeKey) { viewport.modeKey = modeKey; viewport.camera = null; viewport.fittedJourney = null; viewport.fittedTrace = null;viewport.featureFocus=null;focused=null;viewport.featureFit=null;fittedFeature=null }
+        if (viewport.modeKey != modeKey) { val retain=viewport.modeKey?.startsWith("online:")==true && modeKey.startsWith("online:");viewport.modeKey = modeKey; if(!retain) viewport.camera = null; viewport.fittedJourney = null; viewport.fittedTrace = null;viewport.featureFocus=null;focused=null;viewport.featureFit=null;fittedFeature=null }
         fitted = viewport.fittedJourney; fittedTrace = viewport.fittedTrace
         val initialFit = viewport.camera == null
         onCreate(null)
@@ -101,6 +111,8 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
                 style.addSource(GeoJsonSource("rail-transfer-data", FeatureCollection.fromFeatures(emptyArray<Feature>())))
                 style.addSource(GeoJsonSource("extra-pin-data",FeatureCollection.fromFeatures(emptyArray<Feature>())))
                 style.addSource(GeoJsonSource("extra-shape-data",FeatureCollection.fromFeatures(emptyArray<Feature>())))
+                style.addSource(GeoJsonSource("walk-data",FeatureCollection.fromFeatures(emptyArray<Feature>())))
+                style.addLayer(LineLayer("walking-route","walk-data").withProperties(lineWidth(4f),lineColor("#8b5bc2"),lineDasharray(arrayOf(1f,1.5f))))
                 style.addLayer(LineLayer("extra-shapes","extra-shape-data").withProperties(lineWidth(2f),lineColor(get("color")),lineOpacity(.65f)))
                 style.addLayer(CircleLayer("extra-pins","extra-pin-data").withProperties(circleRadius(6f),circleColor(get("color")),circleStrokeColor("#ffffff"),circleStrokeWidth(2f)))
                 style.addLayer(SymbolLayer("extra-labels","extra-pin-data").withProperties(textField(get("name")),textFont(arrayOf("Noto Sans Regular")),textSize(11f),textOffset(arrayOf(0f,1.3f)),textColor("#0a304b"),textHaloColor("#ffffff"),textHaloWidth(1.5f)))
@@ -131,27 +143,20 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
         if (state.selectedJourney == null) { fitted = null; fittedTrace = null }
         val ready = map ?: return
         val style = ready.style?.takeIf { it.isFullyLoaded } ?: return
-        if(renderedPins!=features.pins) { val extraPins=features.pins.map { p -> Feature.fromGeometry(Point.fromLngLat(p.point.longitude,p.point.latitude)).apply { addStringProperty("id",p.id);addStringProperty("name",p.name);addStringProperty("color",p.service?.color ?: "#8b5bc2") } };style.getSourceAs<GeoJsonSource>("extra-pin-data")?.setGeoJson(FeatureCollection.fromFeatures(extraPins));renderedPins=features.pins }
-        if(renderedShapes!=features.shapes) { val shapes=features.shapes.filter { it.points.size>=2 }.map { shape -> Feature.fromGeometry(LineString.fromLngLats(shape.points.map { Point.fromLngLat(it.longitude,it.latitude) })).apply { addStringProperty("color",if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color) } };style.getSourceAs<GeoJsonSource>("extra-shape-data")?.setGeoJson(FeatureCollection.fromFeatures(shapes));renderedShapes=features.shapes }
-        if(features.focus!=null && features.focus!=focused) { val p=features.focus!!;ready.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(p.latitude,p.longitude),if(region==null) 15.0 else region.maxZoom.coerceAtMost(15.0)));focused=p;viewport.featureFocus=p }
-        val stations = state.stations.filter { it.mapped }.map { p -> Feature.fromGeometry(Point.fromLngLat(p.longitude!!, p.latitude!!)).apply {
-            addStringProperty("name", p.name); addStringProperty("color", if (p.name == state.to) "#d77721" else if (p.name == state.from) "#1478B8" else "#148777")
-            addBooleanProperty("transfer", changes.any { stationKey(it.station) == stationKey(p.name) })
+        extraFrame?.let { frame -> if(frame!==renderedExtra) {
+            style.getSourceAs<GeoJsonSource>("extra-pin-data")?.setGeoJson(frame.pins)
+            style.getSourceAs<GeoJsonSource>("extra-shape-data")?.setGeoJson(frame.shapes)
+            style.getSourceAs<GeoJsonSource>("walk-data")?.setGeoJson(frame.walks)
+            renderedExtra=frame
         } }
-        style.getSourceAs<GeoJsonSource>("rail-station-data")?.setGeoJson(FeatureCollection.fromFeatures(stations))
-        val routes = state.selectedJourney?.legs?.flatMapIndexed { i, leg ->
-            val sections = state.routeTrace?.legs?.getOrNull(i) ?: JourneyPlanning.mappedSegments(leg, state.stations).map { points -> RouteSection(points.map { TrackPoint(it.latitude!!, it.longitude!!) }, false) }
-            sections.map { section ->
-            Feature.fromGeometry(LineString.fromLngLats(section.points.map { Point.fromLngLat(it.longitude, it.latitude) })).apply { addStringProperty("color", listOf("#1478B8", "#d77721", "#148777")[i % 3]); addBooleanProperty("rail", section.followsRail) }
-        } }.orEmpty()
-        style.getSourceAs<GeoJsonSource>("rail-route-data")?.setGeoJson(FeatureCollection.fromFeatures(routes))
-        val location = state.currentPosition?.let { listOf(Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))) }.orEmpty()
-        style.getSourceAs<GeoJsonSource>("rail-location-data")?.setGeoJson(FeatureCollection.fromFeatures(location))
-        val pins = changes.mapNotNull { change -> change.position?.let { p -> Feature.fromGeometry(Point.fromLngLat(p.longitude!!, p.latitude!!)).apply {
-            addNumberProperty("number", change.number); addStringProperty("numberText", "${change.number}")
-            addStringProperty("label", "Change ${change.number} · ${change.station}\nTrain ${change.nextTrain} · ${change.boardingLabel}")
-        } } }
-        style.getSourceAs<GeoJsonSource>("rail-transfer-data")?.setGeoJson(FeatureCollection.fromFeatures(pins))
+        railFrame?.let { frame -> if(frame!==renderedRail) {
+            style.getSourceAs<GeoJsonSource>("rail-station-data")?.setGeoJson(frame.stations)
+            style.getSourceAs<GeoJsonSource>("rail-route-data")?.setGeoJson(frame.routes)
+            style.getSourceAs<GeoJsonSource>("rail-location-data")?.setGeoJson(frame.location)
+            style.getSourceAs<GeoJsonSource>("rail-transfer-data")?.setGeoJson(frame.transfers)
+            renderedRail=frame
+        } }
+        if(features.focus!=null && features.focus!=focused) { val p=features.focus!!;ready.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(p.latitude,p.longitude),if(region==null) 15.0 else region.maxZoom.coerceAtMost(15.0)));focused=p;viewport.featureFocus=p }
         if (state.selectedJourney != null && (state.selectedJourney != fitted || state.routeTrace != fittedTrace) && width > 0 && height > 0) {
             MapPlanning.area(state.stations, state.selectedJourney, state.routeTrace)?.bounds?.let { b ->
                 ready.animateCamera(CameraUpdateFactory.newLatLngBounds(LatLngBounds.from(b.north, b.east, b.south, b.west), 70))
@@ -166,4 +171,30 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
             fittedFeature=features.fitName;viewport.featureFit=features.fitName
         }
     }
+}
+
+private data class ExtraFrame(val pins: String,val shapes: String,val walks: String)
+private data class RailFrame(val stations: String,val routes: String,val location: String,val transfers: String)
+private fun prepareExtra(features: FeatureLayers): ExtraFrame {
+    val pins=features.pins.map { p -> Feature.fromGeometry(Point.fromLngLat(p.point.longitude,p.point.latitude)).apply { addStringProperty("id",p.id);addStringProperty("name",p.name);addStringProperty("color",p.service?.color ?: "#8b5bc2") } }
+    val shapes=features.shapes.filter { it.points.size>=2 }.map { shape -> Feature.fromGeometry(LineString.fromLngLats(shape.points.map { Point.fromLngLat(it.longitude,it.latitude) })).apply { addStringProperty("color",if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color) } }
+    val walks=features.walks.map { leg -> Feature.fromGeometry(LineString.fromLngLats(leg.points.map { Point.fromLngLat(it.longitude,it.latitude) })) }
+    return ExtraFrame(FeatureCollection.fromFeatures(pins).toJson(),FeatureCollection.fromFeatures(shapes).toJson(),FeatureCollection.fromFeatures(walks).toJson())
+}
+private fun prepareRail(state: TrainState,changes: List<TransferPoint>): RailFrame {
+        val stations = state.stations.filter { it.mapped }.map { p -> Feature.fromGeometry(Point.fromLngLat(p.longitude!!, p.latitude!!)).apply {
+            addStringProperty("name", p.name); addStringProperty("color", if (p.name == state.to) "#d77721" else if (p.name == state.from) "#1478B8" else "#148777")
+            addBooleanProperty("transfer", changes.any { stationKey(it.station) == stationKey(p.name) })
+        } }
+        val routes = state.selectedJourney?.legs?.flatMapIndexed { i, leg ->
+            val sections = state.routeTrace?.legs?.getOrNull(i) ?: JourneyPlanning.mappedSegments(leg, state.stations).map { points -> RouteSection(points.map { TrackPoint(it.latitude!!, it.longitude!!) }, false) }
+            sections.map { section ->
+            Feature.fromGeometry(LineString.fromLngLats(section.points.map { Point.fromLngLat(it.longitude, it.latitude) })).apply { addStringProperty("color", listOf("#1478B8", "#d77721", "#148777")[i % 3]); addBooleanProperty("rail", section.followsRail) }
+        } }.orEmpty()
+        val location = state.currentPosition?.let { listOf(Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))) }.orEmpty()
+        val pins = changes.mapNotNull { change -> change.position?.let { p -> Feature.fromGeometry(Point.fromLngLat(p.longitude!!, p.latitude!!)).apply {
+            addNumberProperty("number", change.number); addStringProperty("numberText", "${change.number}")
+            addStringProperty("label", "Change ${change.number} · ${change.station}\nTrain ${change.nextTrain} · ${change.boardingLabel}")
+        } } }
+    return RailFrame(FeatureCollection.fromFeatures(stations).toJson(),FeatureCollection.fromFeatures(routes).toJson(),FeatureCollection.fromFeatures(location).toJson(),FeatureCollection.fromFeatures(pins).toJson())
 }

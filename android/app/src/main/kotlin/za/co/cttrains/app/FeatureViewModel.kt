@@ -17,11 +17,14 @@ import za.co.cttrains.core.*
 
 data class FeatureState(val extras: LocalExtras = LocalExtras(),val snapshots: Map<TransportService,BusSnapshot> = emptyMap(),
     val loading: Set<TransportService> = emptySet(),val bus: TransportService = TransportService.GOLDEN_ARROW,
-    val timetable: BusTimetable? = null,val timetableCached: Boolean = false,val busy: Boolean = false,
+    val timetable: BusTimetable? = null,val timetableCached: Boolean = false,val busy: Boolean = false,val timetableLoading: Boolean=false,
     val error: String? = null,val message: String? = null,val pin: MapPin? = null,val focus: GeoPoint? = null,
     val importedTrip: SafetyTrip? = null,val importedCircle: CircleLink? = null,val importedReport: CommunityReport? = null,
     val backup: PortableProfile? = null,val session: MatrixSession? = null,val chat: List<RoomMessage> = emptyList(),
-    val live: LiveCircle? = null,val watched: List<WatchedFriend> = emptyList(),val mapService: TransportService?=null,val mapRoute: String?=null)
+    val live: LiveCircle? = null,val watched: List<WatchedFriend> = emptyList(),val mapService: TransportService?=null,val mapRoute: String?=null,
+    val ready: Boolean=false,val access: WalkEndpoint?=null,val destination: WalkEndpoint?=null,
+    val walks: List<WalkingLeg> = emptyList(),val walkBusy: Boolean=false,val walkError: String?=null,val walksCached: Boolean=false,
+    val chatService: TransportService?=null,val syncing: Boolean=false,val nearby: List<RoomMessage> = emptyList(),val nearbySharing: Boolean=false)
 
 @OptIn(kotlinx.coroutines.FlowPreview::class)
 class FeatureViewModel(app: Application): AndroidViewModel(app) {
@@ -29,6 +32,9 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
     val files=PortableFiles(app,store)
     private val buses=BusRepository(app)
     private val matrix=MatrixClient()
+    private val walking=WalkingRepository(app)
+    private var walkJob: Job?=null
+    private var syncJob: Job?=null
     private val mutable=MutableStateFlow(FeatureState())
     val state=mutable.asStateFlow()
     private val jobs=mutableMapOf<TransportService,Job>()
@@ -40,7 +46,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
         viewModelScope.launch(handler+Dispatchers.IO) { store.store.cleanLargeValues() }
         viewModelScope.launch(handler) { store.store.initialize(); store.extras.collect { extras ->
             val old=state.value.extras.beta
-            mutable.update { it.copy(extras=extras) }
+            mutable.update { it.copy(extras=extras,ready=true) }
             if(old!=extras.beta) BusRefreshWorker.configure(app,extras.beta)
             listOf(TransportService.GOLDEN_ARROW,TransportService.MYCITI).forEach { service ->
                 if(!extras.beta.enabled(service)) { jobs.remove(service)?.cancel();if(timetableService==service) timetableJob?.cancel() }
@@ -69,10 +75,15 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
     fun message(text: String)=mutable.update { it.copy(message=text) }
     fun dismissMessage()=mutable.update { it.copy(message=null) }
     fun beta(transform: (BetaPreferences)->BetaPreferences)=viewModelScope.launch(handler) {
-        val before=store.extras().beta;val next=transform(before)
-        require(next.mapStyle in MapStyles.titles && next.busRefreshMinutes in 15..240)
-        if(before.hostedSharing && !next.hostedSharing) stopLive()
-        store.update { it.copy(beta=next) }
+        store.update { e ->
+            val next=transform(e.beta)
+            require(next.mapStyle in MapStyles.titles && next.busRefreshMinutes in 15..240)
+            e.copy(beta=next)
+        }
+        val current=store.extras().beta
+        if(!current.hostedSharing) { stopLive();stopNearby() }
+        if(!current.nearbyUsers) stopNearby()
+        if(!current.walkLearning) WalkLearningService.stop(getApplication())
     }
     fun localName(name: String)=viewModelScope.launch(handler) { require(name.length<=80);store.update { it.copy(localName=name.trim()) } }
     fun refresh(service: TransportService,force: Boolean=false) {
@@ -88,11 +99,14 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
     }
     fun chooseBus(service: TransportService) { require(service!=TransportService.PRASA);mutable.update { it.copy(bus=service,timetable=null,error=null) } }
     fun timetable(route: BusRouteDocument,day: String): Job {
-        timetableJob?.cancel();timetableService=state.value.bus
-        val job=action("Couldn’t load this timetable. Open the operator’s published document.") {
-        val service=state.value.bus
-        require(state.value.extras.beta.enabled(service));val result=buses.timetable(service,route,day)
-        if(state.value.bus==service && state.value.extras.beta.enabled(service)) mutable.update { it.copy(timetable=result.first,timetableCached=result.second) }
+        val previous=timetableJob;previous?.cancel();val service=state.value.bus;timetableService=service
+        val job=viewModelScope.launch(handler) {
+            previous?.join()
+            mutable.update { it.copy(timetableLoading=true,error=null) }
+            try { require(state.value.extras.beta.enabled(service));val result=buses.timetable(service,route,day)
+                if(state.value.bus==service && state.value.extras.beta.enabled(service)) mutable.update { it.copy(timetable=result.first,timetableCached=result.second) }
+            } catch(e: Exception) { if(e is CancellationException) throw e;mutable.update { it.copy(error="Couldn’t load this timetable. Open the operator’s published document.") } }
+            finally { mutable.update { it.copy(timetableLoading=false) } }
         }
         timetableJob=job;return job
     }
@@ -113,7 +127,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
             s.watched.mapNotNull { f -> val u=f.update;val point=u.point;val link=s.extras.friends.firstOrNull { it.id==f.id }; if(link!=null && point!=null && u.expiresAt>now && u.sentAt<=now+30_000 && now-u.sentAt<5*60_000) MapPin("friend:${f.id}",link.trip.owner,point,null,"Last shared: ${u.phase} · accuracy ${u.accuracy?.toInt()} m") else null }
         val selected=visible[s.mapService]?.takeIf { s.mapRoute!=null }
         val fitPoints=selected?.shapes?.flatMap { it.points }.orEmpty().ifEmpty { selected?.stops?.map { it.point }.orEmpty() }
-        return FeatureLayers(pins,visible.values.flatMap { it.shapes },s.focus,if(fitPoints.isNotEmpty()) "${s.mapService?.title} ${s.mapRoute}" else null,fitPoints)
+        return FeatureLayers(pins,visible.values.flatMap { it.shapes },s.focus,if(fitPoints.isNotEmpty()) "${s.mapService?.title} ${s.mapRoute}" else if(s.walks.isNotEmpty()) s.walks.joinToString { it.key } else null,if(s.walks.isNotEmpty()) fitPoints+s.walks.flatMap { it.points } else fitPoints,s.walks)
     }
     fun showBusMap(service: TransportService,route: String?) {
         require(service!=TransportService.PRASA && state.value.extras.beta.enabled(service))
@@ -121,6 +135,33 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
         beta { if(service==TransportService.GOLDEN_ARROW) it.copy(showGoldenArrow=true) else it.copy(showMyCiti=true) }
     }
     fun allMapStops()=mutable.update { it.copy(mapService=null,mapRoute=null) }
+    fun showTrainMap() { allMapStops();mutable.update { it.copy(focus=null) };beta { it.copy(showTrains=true) } }
+    fun refreshVisible() {
+        listOf(TransportService.GOLDEN_ARROW,TransportService.MYCITI).filter { state.value.extras.beta.enabled(it) }.forEach { refresh(it,true) }
+        state.value.timetable?.takeIf { state.value.extras.beta.enabled(it.service) }?.let { chooseBus(it.service);timetable(it.route,it.day) }
+    }
+    fun place(endpoint: WalkEndpoint?,start: Boolean) {
+        walkJob?.cancel()
+        mutable.update { if(start) it.copy(access=endpoint,walks=emptyList(),walkError=null,walkBusy=false) else it.copy(destination=endpoint,walks=emptyList(),walkError=null,walkBusy=false) }
+    }
+    fun walks(train: TrainState) {
+        val previous=walkJob;previous?.cancel()
+        val s=state.value
+        val a=train.stations.firstOrNull { stationKey(it.name)==stationKey(train.from) && it.mapped }
+        val b=train.stations.firstOrNull { stationKey(it.name)==stationKey(train.to) && it.mapped }
+        val pairs=listOfNotNull(s.access?.let { p->a?.let { p to WalkingRoutes.endpoint(it) } },s.destination?.let { p->b?.let { WalkingRoutes.endpoint(it) to p } })
+        if(pairs.isEmpty()) return message("Select a saved place or current location and a mapped station first.")
+        walkJob=viewModelScope.launch(handler) {
+            previous?.join()
+            mutable.update { it.copy(walkBusy=true,walkError=null,walks=emptyList(),walksCached=false) }
+            try { for((from,to) in pairs) {
+                val (leg,cached)=walking.route(from,to)
+                mutable.update { it.copy(walks=it.walks+leg,walksCached=it.walksCached || cached) }
+            } } catch(e: Exception) { if(e is CancellationException) throw e
+                mutable.update { it.copy(walkError="Walking route unavailable. Straight-line distances are shown separately; walking time is unknown until a route is available.") }
+            } finally { mutable.update { it.copy(walkBusy=false) } }
+        }
+    }
     fun selectPin(pin: MapPin?)=mutable.update { it.copy(pin=pin,focus=pin?.point ?: it.focus) }
     fun focus(point: GeoPoint) { require(point.valid);mutable.update { it.copy(focus=point) } }
     fun drop(point: GeoPoint) { require(point.valid);mutable.update { it.copy(pin=MapPin("new","New spot",point,null,"Personal pin"),focus=point) } }
@@ -173,14 +214,14 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
     fun pauseBackup()=viewModelScope.launch(handler) { store.saveBackupLink(null);message("Automatic backup paused.") }
     fun inspectBackup(uri: Uri,password: String)=action("Backup could not be opened. Check the password and file.") { val p=files.inspect(files.read(uri,34*1024*1024),password);mutable.update { it.copy(backup=p) } }
     fun restore()=action("Couldn’t restore the profile.") {
-        val p=state.value.backup ?: error("No backup");stopLive();files.restore(p);dismissImport();message("Profile restored. Reminders are paused; choose the backup file again to enable automatic saving.")
+        val p=state.value.backup ?: error("No backup");stopNearby();WalkLearningService.stop(getApplication());walkJob?.cancel();stopLive();files.restore(p);dismissImport();message("Profile restored. Reminders are paused; choose the backup file again to enable automatic saving.")
     }
     fun login(server: String,user: String,password: String,token: Boolean)=action("Sign-in failed. Check your Matrix homeserver and account. Google sign-in is a separate local profile option.") {
         require(state.value.extras.beta.hostedSharing);val s=if(token) matrix.token(server,password) else matrix.login(server,user,password)
         store.saveSession(s);message("Connected to ${s.userId}. Choose or create a service room.")
     }
     fun logout()=action("Disconnected locally; the server session could not be revoked. Revoke it in your Matrix client.") {
-        stopLive();val s=store.session();store.saveSession(null);store.update { it.copy(queued=emptyList()) };mutable.update { it.copy(chat=emptyList()) };if(s!=null) matrix.logout(s)
+        stopLive();stopNearby();syncJob?.cancel();val s=store.session();store.saveSession(null);store.update { it.copy(queued=emptyList()) };mutable.update { it.copy(chat=emptyList(),nearby=emptyList(),chatService=null) };if(s!=null) matrix.logout(s)
     }
     private suspend fun session(): MatrixSession { require(store.extras().beta.hostedSharing);return store.session() ?: error("Sign in to Matrix first") }
     fun room(service: TransportService,room: String,create: Boolean)=action("Couldn’t join or create the room. This client supports unencrypted community rooms; use Element for Matrix-encrypted chats.") {
@@ -197,14 +238,52 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
         store.update { it.copy(queued=(it.queued.filterNot { q->q.report.id==report.id }+QueuedReport(report,room,s.userId)).takeLast(100)) }
         ReportUploadWorker.enqueue(getApplication());message("Report queued for this room. Expired observations will not be posted.")
     }
-    fun chat(service: TransportService,text: String)=action("Message could not be sent. The draft is still on this screen.") {
-        val s=session();val room=store.extras().rooms.firstOrNull { it.service==service } ?: error("Choose a room");matrix.send(s,room.room,text.trim());message("Message sent. Refresh to see room replies.")
-    }
-    fun sync(service: TransportService)=action("Couldn’t refresh this room. Local reports remain available.") {
+    fun chat(service: TransportService,text: String,onSent: ()->Unit={})=action("Message could not be sent. The draft is still on this screen.") {
         val s=session();val room=store.extras().rooms.firstOrNull { it.service==service } ?: error("Choose a room")
-        val messages=matrix.messages(s,room.room)
-        store.update { e -> e.copy(reports=(e.reports+messages.mapNotNull { m -> m.report?.takeIf { it.service==service && CommunityReports.fresh(it,System.currentTimeMillis()) }?.let { ReceivedReport(it,m.sender,m.id,m.at,true) } }).distinctBy { it.eventId }.filter { CommunityReports.fresh(it.report,System.currentTimeMillis()) }.takeLast(300)) }
-        mutable.update { it.copy(chat=messages.filter { m->m.update==null }.sortedBy { m->m.at }) }
+        matrix.send(s,room.room,text.trim());onSent();sync(service)
+    }
+    fun sync(service: TransportService) {
+        if(syncJob?.isActive==true && state.value.chatService==service) return
+        syncJob?.cancel()
+        mutable.update { it.copy(chatService=service,chat=if(it.chatService==service) it.chat else emptyList(),nearby=if(it.chatService==service) it.nearby else emptyList()) }
+        syncJob=viewModelScope.launch(handler) {
+            mutable.update { it.copy(syncing=true) }
+            try {
+                val s=session();val room=store.extras().rooms.firstOrNull { it.service==service } ?: error("Choose a room")
+                val messages=matrix.messages(s,room.room)
+                store.update { e -> e.copy(reports=(e.reports+messages.mapNotNull { m -> m.report?.takeIf { it.service==service && CommunityReports.fresh(it,System.currentTimeMillis()) }?.let { ReceivedReport(it,m.sender,m.id,m.at,true) } }).distinctBy { it.eventId }.filter { CommunityReports.fresh(it.report,System.currentTimeMillis()) }.takeLast(300)) }
+                if(state.value.chatService==service) mutable.update { it.copy(chat=messages.filter { m->m.update==null && m.presence==null }.sortedBy { m->m.at },nearby=messages.filter { m->m.presence!=null }) }
+            } catch(e: Exception) { if(e is CancellationException) throw e;message("Couldn’t refresh this room. Check your account, connection and room settings.") }
+            finally { if(state.value.chatService==service) mutable.update { it.copy(syncing=false) } }
+        }
+    }
+    private var nearbySession: Pair<MatrixSession,String>?=null
+    private var nearbyDeadline=0L
+    private var nearbyJob: Job?=null
+    fun nearby(service: TransportService,point: GeoPoint) {
+        if(nearbyJob?.isActive==true) return
+        nearbyJob=viewModelScope.launch(handler) {
+            try {
+                val extras=store.extras();require(extras.beta.nearbyUsers && extras.beta.hostedSharing)
+                val account=session();val room=extras.rooms.first { it.service==service }.room
+                val former=nearbySession
+                if(former!=null && former!=(account to room)) {
+                    nearbySession=null
+                    val at=System.currentTimeMillis()
+                    runCatching { matrix.send(former.first,former.second,"CT Trains nearby sharing stopped",presence=NearbyPresence(sentAt=at,expiresAt=at,active=false)) }
+                }
+                if(nearbySession==null) { nearbySession=account to room;nearbyDeadline=System.currentTimeMillis()+15*60_000L }
+                if(System.currentTimeMillis()>=nearbyDeadline) { stopNearby();return@launch }
+                matrix.send(account,room,"Approximate CT Trains nearby presence · expires in 5 minutes",presence=NearbyPeople.create(point,System.currentTimeMillis()))
+                mutable.update { it.copy(nearbySharing=true) };sync(service)
+            } catch(e: Exception) { if(e is CancellationException) throw e;message("Nearby sharing unavailable. Connect a service room and grant foreground location access.");stopNearby() }
+        }
+    }
+    fun stopNearby() {
+        nearbyJob?.cancel();nearbyJob=null
+        val old=nearbySession;nearbySession=null;nearbyDeadline=0
+        mutable.update { it.copy(nearbySharing=false) }
+        if(old!=null) viewModelScope.launch { runCatching { val now=System.currentTimeMillis();matrix.send(old.first,old.second,"CT Trains nearby sharing stopped",presence=NearbyPresence(sentAt=now,expiresAt=now,active=false)) } }
     }
     fun createCircle(trip: SafetyTrip,friend: String)=action("Couldn’t create this live trip. Sign in to Matrix and enter your friend’s Matrix ID.") {
         TripFiles.validate(trip);val s=session();val room=matrix.create(s,"Private CT Trains trip",true)
@@ -221,7 +300,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
     fun stopLive() { getApplication<Application>().stopService(Intent(getApplication(),TripLiveService::class.java));viewModelScope.launch(handler) { store.liveCircle()?.let { store.saveCircle(it.copy(sharing=false)) } } }
     fun phase(phase: String)=viewModelScope.launch(handler) { require(phase in CircleUpdates.phases);store.liveCircle()?.let { store.saveCircle(it.copy(phase=phase)) } }
     fun removeFriend(id: String)=viewModelScope.launch(handler) { stopLive();store.update { it.copy(friends=it.friends.filterNot { f->f.id==id }) };store.saveWatched(store.watched().filterNot { it.id==id }) }
-    fun reset() { jobs.values.forEach { it.cancel() };timetableJob?.cancel();stopLive();files.clearPrivatePhotos();BusRefreshWorker.configure(getApplication(),BetaPreferences());mutable.value=FeatureState() }
+    fun reset() { jobs.values.forEach { it.cancel() };timetableJob?.cancel();walkJob?.cancel();syncJob?.cancel();stopNearby();WalkLearningService.stop(getApplication());stopLive();files.clearPrivatePhotos();BusRefreshWorker.configure(getApplication(),BetaPreferences());mutable.value=FeatureState() }
     private fun action(failure: String,block: suspend ()->Unit)=viewModelScope.launch(handler) {
         if(state.value.busy) return@launch
         mutable.update { it.copy(busy=true,error=null) }

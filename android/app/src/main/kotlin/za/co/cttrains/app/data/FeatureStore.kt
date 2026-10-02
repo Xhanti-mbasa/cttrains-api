@@ -18,6 +18,7 @@ import za.co.cttrains.core.*
     val reports: List<ReceivedReport> = emptyList(), val queued: List<QueuedReport> = emptyList(),
     val busFavorites: List<BusFavorite> = emptyList(), val priceCorrections: List<BusPriceCorrection> = emptyList(),
     val places: List<SavedPlace> = emptyList(),
+    val walkSamples: List<WalkSample> = emptyList(),
 )
 @Serializable data class MatrixSession(val server: String, val userId: String, val token: String, val deviceId: String)
 @Serializable data class BackupLink(val uri: String, val password: String)

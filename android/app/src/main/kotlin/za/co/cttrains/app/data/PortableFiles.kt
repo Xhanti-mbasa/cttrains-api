@@ -84,11 +84,16 @@ class PortableFiles(private val context: Context, private val features: FeatureS
                 key=="extras" -> {
                     val e=TripFiles.json.decodeFromString<LocalExtras>(value)
                     require(e.localName.length<=80 && e.spots.size<=100 && e.trips.size<=100 && e.friends.size<=20 && e.reports.size<=300 && e.queued.size<=100)
+                    require(e.walkSamples.size<=200 && e.walkSamples.all { it.key.length<=500 && it.seconds in 20..7200 && it.distanceMeters in 50.0..30000.0 && it.recordedAt in 1..now+30_000 })
                     e.trips.forEach(TripFiles::validate)
                     e.spots.forEach { require(it.point.valid && it.name.length in 1..100 && it.note.length<=500 && it.tag.length<=80); it.photo?.let(::photo) }
                     require(e.spots.mapNotNull { it.photo }.all { it in p.photos })
                     e.reports.forEach { CommunityReports.validate(it.report) }
                     require(e.beta.mapStyle in listOf("streets","light","dark","aerial") && e.beta.busRefreshMinutes in 15..240)
+                }
+                Regex("walk-[a-f0-9]{64}").matches(key) -> {
+                    val leg=TripFiles.json.decodeFromString<WalkingLeg>(value)
+                    require(leg.from.point.valid && leg.to.point.valid && leg.from.label.length<=100 && leg.to.label.length<=100 && leg.points.size in 2..15000 && leg.points.all(GeoPoint::valid) && leg.distanceMeters in 0.0..30000.0 && leg.durationSeconds in 0.0..28800.0 && leg.fetchedAt in 1..now+30_000)
                 }
                 Regex("bus-(GOLDEN_ARROW|MYCITI)").matches(key) -> BusSources.validate(TripFiles.json.decodeFromString<BusSnapshot>(value))
                 Regex("bus-time-(GOLDEN_ARROW|MYCITI)-[a-f0-9]{64}").matches(key) -> BusSources.validate(TripFiles.json.decodeFromString<BusTimetable>(value))
@@ -105,7 +110,7 @@ class PortableFiles(private val context: Context, private val features: FeatureS
         val values=p.values.toMutableMap()
         values["extras"]?.let { raw ->
             val e=features.json.decodeFromString<LocalExtras>(raw)
-            values["extras"]=features.json.encodeToString(e.copy(beta=e.beta.copy(hostedSharing=false),queued=emptyList(),friends=emptyList(),spots=e.spots.map { it.copy(photo=it.photo?.let(remap::getValue)) },reports=e.reports.map { it.copy(hosted=false,sender="Restored observation") }))
+            values["extras"]=features.json.encodeToString(e.copy(beta=e.beta.copy(hostedSharing=false,walkLearning=false,nearbyUsers=false),queued=emptyList(),friends=emptyList(),spots=e.spots.map { it.copy(photo=it.photo?.let(remap::getValue)) },reports=e.reports.map { it.copy(hosted=false,sender="Restored observation") }))
         }
         za.co.cttrains.app.scheduling.JourneyReminders(context).cancelAll()
         try { features.store.replacePersonalData(p.preferences.copy(offlineMapId=null),p.plans,p.searches,p.catalog,values) }

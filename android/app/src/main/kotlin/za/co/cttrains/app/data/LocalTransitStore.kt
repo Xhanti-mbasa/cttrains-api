@@ -44,7 +44,7 @@ class LocalTransitStore private constructor(private val context: Context) {
     val stations = dao.stations().map { rows -> rows.map { StationPosition(it.name, it.latitude, it.longitude) } }
     val journeys = dao.journeys().map { rows -> rows.map { decodeJourney(it) } }
     val changes = kotlinx.coroutines.flow.combine(dao.observeValues(), dao.journeys(), dao.observeCaches()) { values, journeys, caches ->
-        listOf(values.filter { it.key == "profile" || it.key == "extras" || it.key == "catalog" || it.key.startsWith("bus-") }, journeys, caches).hashCode()
+        listOf(values.filter { it.key == "profile" || it.key == "extras" || it.key == "catalog" || (it.key.startsWith("bus-") || it.key.startsWith("walk-")) }, journeys, caches).hashCode()
     }.distinctUntilChanged()
     fun observeLocal(key: String) = dao.observeValue(key).distinctUntilChanged().map { row ->
         if(row==null) null else lock.withLock { dao.value(key)?.let { content(it.encryptedValue) } }
@@ -54,6 +54,11 @@ class LocalTransitStore private constructor(private val context: Context) {
         initialize(); lock.withLock { saveValue(key, transform(dao.value(key)?.let { content(it.encryptedValue) } ?: initial)) }
     }
     suspend fun writeLocal(key: String, value: String) = withContext(Dispatchers.IO) { initialize(); lock.withLock { saveValue(key, value) } }
+    suspend fun trimWalkCaches() = withContext(Dispatchers.IO) {
+        initialize();lock.withLock {
+            dao.allValues().filter { it.key.startsWith("walk-") }.dropLast(20).forEach { dao.deleteValue(it.key) }
+        }
+    }
     suspend fun searches(): List<CachedSearch> { initialize(); return dao.caches().map { json.decodeFromString<CachedSearch>(codec.decrypt(it.encryptedValue)) } }
     suspend fun portable(): PortableProfile {
         initialize()
@@ -61,7 +66,7 @@ class LocalTransitStore private constructor(private val context: Context) {
             val values = dao.allValues().associate { it.key to content(it.encryptedValue) }
             PortableProfile(createdAt = System.currentTimeMillis(), preferences = json.decodeFromString(values.getValue("profile")),
                 plans = dao.allJourneys().map(::decodeJourney), searches = dao.caches().map { json.decodeFromString(codec.decrypt(it.encryptedValue)) },
-                catalog = values["catalog"]?.let { json.decodeFromString(it) }, values = values.filterKeys { it == "extras" || it.startsWith("bus-") })
+                catalog = values["catalog"]?.let { json.decodeFromString(it) }, values = values.filterKeys { it == "extras" || (it.startsWith("bus-") || it.startsWith("walk-")) })
         } }
     }
     suspend fun replacePersonalData(prefs: Preferences, plans: List<ScheduledJourney>, searches: List<CachedSearch>, catalog: StationCatalog?, values: Map<String, String>) {
@@ -69,7 +74,7 @@ class LocalTransitStore private constructor(private val context: Context) {
             dao.clearValues(); dao.clearJourneys(); dao.clearCache()
             saveValue("profile", json.encodeToString(prefs))
             if (catalog != null) saveValue("catalog", json.encodeToString(catalog))
-            values.forEach { (key, value) -> require(key == "extras" || key.startsWith("bus-")); saveValue(key,value) }
+            values.forEach { (key, value) -> require(key == "extras" || (key.startsWith("bus-") || key.startsWith("walk-"))); saveValue(key,value) }
             plans.forEach { item -> val stopped = item.copy(remindersStopped = true, nextReminderAt = null)
                 dao.journey(JourneyEntity(stopped.id,SecureCodec.digest(stopped.identity),stopped.departureAt,codec.encrypt(json.encodeToString(stopped)))) }
             CachePolicy.prune(searches,System.currentTimeMillis()).forEach { putCache(it) }

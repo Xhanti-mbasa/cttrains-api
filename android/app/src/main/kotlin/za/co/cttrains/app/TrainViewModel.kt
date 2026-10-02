@@ -45,7 +45,7 @@ data class TrainState(
     val requestedScreen: String? = null,
     val mapsReady: Boolean = false,
     val alerts: AlertSnapshot? = null, val alertsLoading: Boolean = false, val alertsOffline: Boolean = false, val alertsError: String? = null,
-    val routeTrace: JourneyTrace? = null, val traceLoading: Boolean = false, val selectedTransfer: Int? = null,
+    val routeTrace: JourneyTrace? = null, val traceLoading: Boolean = false, val refreshing: Boolean=false, val selectedTransfer: Int? = null,
 ) {
     val query: SearchQuery get() = SearchQuery(from, to, date, time)
     val isSaved: Boolean get() = SavedRoute(from, to) in preferences.routes
@@ -128,8 +128,19 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun useRoute(route: SavedRoute) = edit { it.copy(from = route.from, to = route.to, date = LocalDate.now(CapeTownZone).toString()) }
 
+    fun refreshHome() {
+        if(state.value.refreshing) return
+        refreshAlerts()
+        if(state.value.result!=null) performSearch(state.value.selectedJourney!=null,state.value.selectedJourney)
+        viewModelScope.launch(storageErrors) {
+            mutableState.update { it.copy(refreshing=true) }
+            try { val catalog=repository.refreshCatalog(state.value.preferences.sourceId);mutableState.update { it.copy(catalog=catalog,stationNotice=null) } }
+            catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException) throw e;mutableState.update { it.copy(stationNotice="Refresh unavailable. Using the saved station list.") } }
+            finally { mutableState.update { it.copy(refreshing=false) } }
+        }
+    }
     fun search() = performSearch(false)
-    private fun performSearch(autoSelect: Boolean) {
+    private fun performSearch(autoSelect: Boolean,previous: Journey?=null) {
         val current = state.value
         val error = TravelRules.validationError(current.query, current.catalog, LocalDate.now(CapeTownZone))
         if (error != null) { mutableState.update { it.copy(error = error) }; return }
@@ -139,7 +150,7 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val result = repository.search(current.query, current.preferences.sourceId)
                 repository.updatePreferences { it.copy(lastQuery = current.query) }
-                mutableState.update { it.copy(loading = false, result = result, selectedJourney = if(autoSelect) result.entry.journeys.firstOrNull() else null) }
+                mutableState.update { it.copy(loading = false, result = result, selectedJourney = if(autoSelect) result.entry.journeys.firstOrNull { it==previous } ?: result.entry.journeys.firstOrNull() else null) }
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 val message = if (error is ScheduleFormatException) error.message else "Couldn’t reach CT Trains. Check your connection and try again."

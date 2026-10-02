@@ -9,7 +9,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import za.co.cttrains.core.*
 
-data class RoomMessage(val id: String,val sender: String,val at: Long,val text: String,val report: CommunityReport? = null,val update: SealedUpdate? = null)
+data class RoomMessage(val id: String,val sender: String,val at: Long,val text: String,val report: CommunityReport? = null,val update: SealedUpdate? = null,val presence: NearbyPresence?=null)
 
 /** Opt-in hosted Matrix transport. Credentials never enter a URL, log, portable profile or trip file. */
 class MatrixClient {
@@ -69,12 +69,13 @@ class MatrixClient {
         require(events.none { it.jsonObject["type"]?.jsonPrimitive?.content=="m.room.encryption" }) { "This Matrix room uses encryption requiring a full Matrix client. Open it in Element instead." }
         if(private) require(events.any { it.jsonObject["type"]?.jsonPrimitive?.content=="m.room.join_rules" && it.jsonObject["content"]?.jsonObject?.get("join_rule")?.jsonPrimitive?.content=="invite" }) { "Trip sharing requires an invite-only room." }
     }
-    suspend fun send(s: MatrixSession,room: String,text: String,report: CommunityReport?=null,update: SealedUpdate?=null,transaction: String=UUID.randomUUID().toString()) {
+    suspend fun send(s: MatrixSession,room: String,text: String,report: CommunityReport?=null,update: SealedUpdate?=null,transaction: String=UUID.randomUUID().toString(),presence: NearbyPresence?=null) {
         require(text.length in 1..2000);plainRoom(s,room,update!=null)
         val content=buildJsonObject {
             put("msgtype","m.text");put("body",text)
             report?.let { put("za.co.cttrains.report",json.encodeToJsonElement(it)) }
             update?.let { put("za.co.cttrains.trip_update",json.encodeToJsonElement(it)) }
+            presence?.let { put("za.co.cttrains.nearby",json.encodeToJsonElement(NearbyPeople.validate(it))) }
         }
         call(s.server,listOf("rooms",room,"send","m.room.message",transaction),"PUT",content,s)
     }
@@ -87,7 +88,8 @@ class MatrixClient {
             val text=c["body"]?.jsonPrimitive?.content.orEmpty().take(2000)
             RoomMessage(o.getValue("event_id").jsonPrimitive.content,o.getValue("sender").jsonPrimitive.content,o.getValue("origin_server_ts").jsonPrimitive.long,text,
                 c["za.co.cttrains.report"]?.let { runCatching { CommunityReports.validate(json.decodeFromJsonElement<CommunityReport>(it)) }.getOrNull() },
-                c["za.co.cttrains.trip_update"]?.let { runCatching { json.decodeFromJsonElement<SealedUpdate>(it) }.getOrNull() })
+                c["za.co.cttrains.trip_update"]?.let { runCatching { json.decodeFromJsonElement<SealedUpdate>(it) }.getOrNull() },
+                c["za.co.cttrains.nearby"]?.let { runCatching { NearbyPeople.validate(json.decodeFromJsonElement<NearbyPresence>(it)) }.getOrNull() })
         }.getOrNull() }.take(100)
     }
 }

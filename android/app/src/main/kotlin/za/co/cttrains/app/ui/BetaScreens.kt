@@ -46,7 +46,7 @@ internal fun shareText(context: android.content.Context,text: String) { context.
     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title,fontWeight=FontWeight.Bold);Text(note,style=MaterialTheme.typography.bodySmall) };Switch(checked,changed,Modifier.semantics { contentDescription=title }) }
 }
 @Composable internal fun FeatureStatus(s: FeatureState) {
-    if(s.busy || s.loading.isNotEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+    if(s.busy || s.timetableLoading || s.loading.isNotEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
     s.error?.let { Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall) }
 }
 
@@ -67,6 +67,8 @@ internal fun shareText(context: android.content.Context,text: String) { context.
         Text("Android schedules checks when a connection is available. Last checked dates remain visible; a failed refresh keeps the saved version.",style=MaterialTheme.typography.bodySmall)
         Toggle("Nearby station suggestions","Use location while the map is open. Approximate location may be too broad for a station recommendation.",s.extras.beta.autoNearby) { v->m.beta { it.copy(autoNearby=v) } }
         Toggle("Hosted community & live trips","Optional Matrix account. Public reports are unverified; location sharing requires a separate start action.",s.extras.beta.hostedSharing) { v->m.beta { it.copy(hostedSharing=v) } }
+        Toggle("Learn walking times","Start an individual walk to measure its duration in the background. No raw location history is saved.",s.extras.beta.walkLearning) { v->m.beta { it.copy(walkLearning=v) } }
+        Toggle("Nearby users","Optional approximate presence in your selected Matrix service room. Requires a separate sharing start action.",s.extras.beta.nearbyUsers) { v->m.beta { it.copy(nearbyUsers=v) } }
         OutlinedButton(onClick=onTrips) { Text("Safety trip files") }
         OutlinedButton(onClick=onCommunity) { Text("Community reports & friends") }
     } }
@@ -137,6 +139,7 @@ internal fun shareText(context: android.content.Context,text: String) { context.
             if(edit) {
                 OutlinedTextField(name,{ name=it.take(100) },label={ Text("Spot name") },modifier=Modifier.fillMaxWidth())
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { FilterChip(service==null,{ service=null },label={ Text("Personal") });TransportService.values().forEach { v->FilterChip(service==v,{ service=v },label={ Text(v.title) }) } }
+                FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf("Home","Work","Campus","Friend","Custom").forEach { label->FilterChip(tag==label,{ tag=label;service=null },label={ Text(label) }) } }
                 OutlinedTextField(tag,{ tag=it.take(80) },label={ Text("Tag · stop, campus, home…") },modifier=Modifier.fillMaxWidth())
                 OutlinedTextField(note,{ note=it.take(500) },label={ Text("Your note") },modifier=Modifier.fillMaxWidth())
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
