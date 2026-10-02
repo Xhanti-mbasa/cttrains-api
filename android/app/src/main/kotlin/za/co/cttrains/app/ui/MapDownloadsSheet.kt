@@ -12,7 +12,7 @@ import za.co.cttrains.app.TrainState
 import za.co.cttrains.app.TrainViewModel
 
 @Composable
-fun MapDownloadsSheet(state: TrainState, model: TrainViewModel, onDismiss: () -> Unit) {
+fun MapDownloadsSheet(state: TrainState, model: TrainViewModel, featureArea: za.co.cttrains.core.MapArea? = null, onDismiss: () -> Unit) {
     val downloads by model.offlineMaps.state.collectAsState()
     var deleting by remember { mutableStateOf<Long?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -22,6 +22,7 @@ fun MapDownloadsSheet(state: TrainState, model: TrainViewModel, onDismiss: () ->
             Text("Rail overview: zoom 8–12. Selected journey: street detail at zoom 10–14. The download includes map styles, fonts and tiles.", style = MaterialTheme.typography.bodySmall)
             Button(onClick = { model.downloadMap() }, enabled = !downloads.loading && !downloads.creating, modifier = Modifier.fillMaxWidth()) { Text("Download rail overview") }
             OutlinedButton(onClick = { model.downloadMap(state.selectedJourney) }, enabled = state.selectedJourney != null && !state.traceLoading && !downloads.loading && !downloads.creating, modifier = Modifier.fillMaxWidth()) { Text("Download selected journey") }
+            featureArea?.let { area -> OutlinedButton(onClick={ model.downloadArea(area) },enabled=!downloads.loading && !downloads.creating,modifier=Modifier.fillMaxWidth()) { Text("Download ${area.name}") } }
             if (downloads.loading || downloads.creating) LinearProgressIndicator(Modifier.fillMaxWidth())
             downloads.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             downloads.regions.forEach { area ->

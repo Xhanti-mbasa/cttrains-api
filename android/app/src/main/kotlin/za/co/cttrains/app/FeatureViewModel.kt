@@ -1,0 +1,231 @@
+package za.co.cttrains.app
+
+import android.app.Application
+import android.content.Intent
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.*
+import java.util.UUID
+import za.co.cttrains.app.data.*
+import za.co.cttrains.app.maps.*
+import za.co.cttrains.app.scheduling.*
+import za.co.cttrains.core.*
+
+data class FeatureState(val extras: LocalExtras = LocalExtras(),val snapshots: Map<TransportService,BusSnapshot> = emptyMap(),
+    val loading: Set<TransportService> = emptySet(),val bus: TransportService = TransportService.GOLDEN_ARROW,
+    val timetable: BusTimetable? = null,val timetableCached: Boolean = false,val busy: Boolean = false,
+    val error: String? = null,val message: String? = null,val pin: MapPin? = null,val focus: GeoPoint? = null,
+    val importedTrip: SafetyTrip? = null,val importedCircle: CircleLink? = null,val importedReport: CommunityReport? = null,
+    val backup: PortableProfile? = null,val session: MatrixSession? = null,val chat: List<RoomMessage> = emptyList(),
+    val live: LiveCircle? = null,val watched: List<WatchedFriend> = emptyList(),val mapService: TransportService?=null,val mapRoute: String?=null)
+
+@OptIn(kotlinx.coroutines.FlowPreview::class)
+class FeatureViewModel(app: Application): AndroidViewModel(app) {
+    val store=FeatureStore(app)
+    val files=PortableFiles(app,store)
+    private val buses=BusRepository(app)
+    private val matrix=MatrixClient()
+    private val mutable=MutableStateFlow(FeatureState())
+    val state=mutable.asStateFlow()
+    private val jobs=mutableMapOf<TransportService,Job>()
+    private val lastAttempts=mutableMapOf<TransportService,Long>()
+    private var timetableJob: Job?=null
+    private var timetableService: TransportService?=null
+    private val handler=CoroutineExceptionHandler { _,_ -> message("Couldn’t update local data. Try again or restore a backup.") }
+    init {
+        viewModelScope.launch(handler+Dispatchers.IO) { store.store.cleanLargeValues() }
+        viewModelScope.launch(handler) { store.store.initialize(); store.extras.collect { extras ->
+            val old=state.value.extras.beta
+            mutable.update { it.copy(extras=extras) }
+            if(old!=extras.beta) BusRefreshWorker.configure(app,extras.beta)
+            listOf(TransportService.GOLDEN_ARROW,TransportService.MYCITI).forEach { service ->
+                if(!extras.beta.enabled(service)) { jobs.remove(service)?.cancel();if(timetableService==service) timetableJob?.cancel() }
+                else if(!old.enabled(service)) refresh(service)
+            }
+        } }
+        listOf(TransportService.GOLDEN_ARROW,TransportService.MYCITI).forEach { service ->
+            viewModelScope.launch(handler) { store.observeSnapshot(service).collect { value -> mutable.update { s -> s.copy(snapshots=if(value==null) s.snapshots-service else s.snapshots+(service to value)) } } }
+        }
+        viewModelScope.launch(handler) { store.session.collect { session -> mutable.update { it.copy(session=session) } } }
+        viewModelScope.launch(handler) {
+            store.liveCircle()?.takeIf { it.sharing && TripLiveService.activeMode==null }?.let { store.saveCircle(it.copy(sharing=false)) }
+            store.circle.collect { circle -> mutable.update { it.copy(live=circle) } }
+        }
+        viewModelScope.launch(handler) { combine(store.watched,TripLiveService.positions) { saved,live ->
+            saved.map { row->live.firstOrNull { it.id==row.id && it.update.sequence==row.update.sequence } ?: row }
+        }.collect { rows->mutable.update { it.copy(watched=rows) } } }
+        viewModelScope.launch(handler) { store.store.changes.debounce(2000).collectLatest {
+            val link=store.backupLink() ?: return@collectLatest
+            try { files.write(Uri.parse(link.uri),files.export(link.password)) } catch(e: Exception) {
+                if(e is CancellationException) throw e
+                store.saveBackupLink(null);message("Automatic backup paused: select the backup file again to grant write access.")
+            }
+        } }
+    }
+    fun message(text: String)=mutable.update { it.copy(message=text) }
+    fun dismissMessage()=mutable.update { it.copy(message=null) }
+    fun beta(transform: (BetaPreferences)->BetaPreferences)=viewModelScope.launch(handler) {
+        val before=store.extras().beta;val next=transform(before)
+        require(next.mapStyle in MapStyles.titles && next.busRefreshMinutes in 15..240)
+        if(before.hostedSharing && !next.hostedSharing) stopLive()
+        store.update { it.copy(beta=next) }
+    }
+    fun localName(name: String)=viewModelScope.launch(handler) { require(name.length<=80);store.update { it.copy(localName=name.trim()) } }
+    fun refresh(service: TransportService,force: Boolean=false) {
+        if(!state.value.extras.beta.enabled(service) || service==TransportService.PRASA || jobs[service]?.isActive==true) return
+        val now=System.currentTimeMillis();if(now-(lastAttempts[service] ?: 0)<15_000) return message("Wait a moment before checking this source again.")
+        lastAttempts[service]=now
+        jobs[service]=viewModelScope.launch(handler) {
+            mutable.update { it.copy(loading=it.loading+service,error=null) }
+            try { val result=buses.refresh(service,force);if(result.notes.isNotEmpty()) message(result.notes.joinToString(" · ")) }
+            catch(e: Exception) { if(e is CancellationException) throw e;mutable.update { it.copy(error="${service.title} could not be refreshed. ${if(store.snapshot(service)!=null) "Using the last saved data; check its dates." else "No saved data yet. Open the published source."}") } }
+            finally { mutable.update { it.copy(loading=it.loading-service) } }
+        }
+    }
+    fun chooseBus(service: TransportService) { require(service!=TransportService.PRASA);mutable.update { it.copy(bus=service,timetable=null,error=null) } }
+    fun timetable(route: BusRouteDocument,day: String): Job {
+        timetableJob?.cancel();timetableService=state.value.bus
+        val job=action("Couldn’t load this timetable. Open the operator’s published document.") {
+        val service=state.value.bus
+        require(state.value.extras.beta.enabled(service));val result=buses.timetable(service,route,day)
+        if(state.value.bus==service && state.value.extras.beta.enabled(service)) mutable.update { it.copy(timetable=result.first,timetableCached=result.second) }
+        }
+        timetableJob=job;return job
+    }
+    fun favoriteBus(route: BusRouteDocument,day: String)=viewModelScope.launch(handler) {
+        val f=BusFavorite(state.value.bus,route.id,day)
+        store.update { it.copy(busFavorites=if(f in it.busFavorites) it.busFavorites-f else (it.busFavorites+f).takeLast(20)) }
+    }
+    fun correctFare(service: TransportService,fare: String,product: String,cents: Long?)=viewModelScope.launch(handler) {
+        require(cents==null || cents in 0..10_000_000)
+        store.update { e -> val old=e.priceCorrections.filterNot { it.service==service && it.fareId==fare && it.product==product };e.copy(priceCorrections=(if(cents==null) old else old+BusPriceCorrection(service,fare,product,cents,System.currentTimeMillis())).takeLast(100)) }
+    }
+    fun layers(now: Long): FeatureLayers {
+        val s=state.value;val visible=s.snapshots.filterKeys { s.extras.beta.visible(it) }.mapValues { (service,value) ->
+            if(service==s.mapService && s.mapRoute!=null && service==TransportService.MYCITI) value.copy(stops=value.stops.filter { s.mapRoute in it.routes },shapes=value.shapes.filter { it.route==s.mapRoute }) else value
+        }
+        val pins=visible.flatMap { (service,data)->data.stops.map { MapPin("${service.name}:${it.id}",it.name,it.point,service,"${it.routes.joinToString()} · ${it.source}") } } +
+            s.extras.spots.filter { it.service?.let(s.extras.beta::visible) ?: true }.map { MapPin("spot:${it.id}",it.name,it.point,it.service,"Personal pin · ${it.tag}",it.id) } +
+            s.watched.mapNotNull { f -> val u=f.update;val point=u.point;val link=s.extras.friends.firstOrNull { it.id==f.id }; if(link!=null && point!=null && u.expiresAt>now && u.sentAt<=now+30_000 && now-u.sentAt<5*60_000) MapPin("friend:${f.id}",link.trip.owner,point,null,"Last shared: ${u.phase} · accuracy ${u.accuracy?.toInt()} m") else null }
+        val selected=visible[s.mapService]?.takeIf { s.mapRoute!=null }
+        val fitPoints=selected?.shapes?.flatMap { it.points }.orEmpty().ifEmpty { selected?.stops?.map { it.point }.orEmpty() }
+        return FeatureLayers(pins,visible.values.flatMap { it.shapes },s.focus,if(fitPoints.isNotEmpty()) "${s.mapService?.title} ${s.mapRoute}" else null,fitPoints)
+    }
+    fun showBusMap(service: TransportService,route: String?) {
+        require(service!=TransportService.PRASA && state.value.extras.beta.enabled(service))
+        mutable.update { it.copy(mapService=service,mapRoute=if(service==TransportService.MYCITI) route else null,focus=null) }
+        beta { if(service==TransportService.GOLDEN_ARROW) it.copy(showGoldenArrow=true) else it.copy(showMyCiti=true) }
+    }
+    fun allMapStops()=mutable.update { it.copy(mapService=null,mapRoute=null) }
+    fun selectPin(pin: MapPin?)=mutable.update { it.copy(pin=pin,focus=pin?.point ?: it.focus) }
+    fun focus(point: GeoPoint) { require(point.valid);mutable.update { it.copy(focus=point) } }
+    fun drop(point: GeoPoint) { require(point.valid);mutable.update { it.copy(pin=MapPin("new","New spot",point,null,"Personal pin"),focus=point) } }
+    fun saveSpot(name: String,tag: String,service: TransportService?,note: String,photoUri: Uri?)=action("Couldn’t save this spot or photo.") {
+        require(name.trim().length in 1..100 && tag.length<=80 && note.length<=500)
+        val pin=state.value.pin ?: error("Choose a point")
+        val old=store.extras().spots.firstOrNull { it.id==pin.spotId }
+        val photo=photoUri?.let { files.addPhoto(it) } ?: old?.photo
+        val spot=MarkedSpot(old?.id ?: UUID.randomUUID().toString(),name.trim(),service,pin.point,tag.trim(),note.trim(),photo,old?.createdAt ?: System.currentTimeMillis())
+        store.update { it.copy(spots=(it.spots.filterNot { p -> p.id==spot.id }+spot).takeLast(100)) };selectPin(null);message("Spot saved on this device.")
+    }
+    fun removeSpot(id: String)=viewModelScope.launch(handler) { store.update { it.copy(spots=it.spots.filterNot { s -> s.id==id }) };selectPin(null) }
+    fun searchPlace(query: String)=action("Place search unavailable. Use a map pin or search saved stops.") {
+        require(query.trim().length in 3..150)
+        // Explicit search only; no autocomplete. Restrict results to the Cape Town region.
+        delay(1100)
+        val url="https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=za&bounded=1&viewbox=18.1,-33.4,19.2,-34.5&q="+Uri.encode(query.trim())
+        val list=store.json.parseToJsonElement(SourceHttp().get(url,100_000,setOf("nominatim.openstreetmap.org"))).jsonArray
+        val first=list.firstOrNull()?.jsonObject ?: error("No places found")
+        val point=GeoPoint(first.getValue("lat").jsonPrimitive.double,first.getValue("lon").jsonPrimitive.double)
+        require(point.valid);mutable.update { it.copy(focus=point,pin=MapPin("new",first.getValue("display_name").jsonPrimitive.content.take(100),point,null,"Search result · © OpenStreetMap contributors")) }
+    }
+    fun saveTrip(trip: SafetyTrip)=viewModelScope.launch(handler) { TripFiles.validate(trip);store.update { it.copy(trips=(it.trips.filterNot { t->t.id==trip.id }+trip).takeLast(100)) };message("Safety trip saved locally.") }
+    fun deleteTrip(id: String)=viewModelScope.launch(handler) { store.update { it.copy(trips=it.trips.filterNot { t->t.id==id }) } }
+    fun importFile(uri: Uri)=action("This file could not be imported. Use a supported CT Trains trip, report or live-trip invitation.") {
+        val raw=files.read(uri);TripFiles.document(raw);val format=store.json.parseToJsonElement(raw).jsonObject["format"]?.jsonPrimitive?.content
+        when(format) {
+            "cttrains.trip" -> mutable.update { it.copy(importedTrip=TripFiles.parse(raw)) }
+            "cttrains.circle" -> mutable.update { it.copy(importedCircle=CircleUpdates.validate(TripFiles.json.decodeFromString(raw),System.currentTimeMillis())) }
+            "cttrains.report" -> mutable.update { it.copy(importedReport=CommunityReports.validate(TripFiles.json.decodeFromString(raw))) }
+            else -> error("Unsupported file")
+        }
+    }
+    fun importIntent(intent: Intent?) {
+        if(intent?.action !in listOf(Intent.ACTION_VIEW,Intent.ACTION_SEND)) return
+        @Suppress("DEPRECATION") val uri=intent?.data ?: intent?.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+        if(uri?.scheme=="content") importFile(uri)
+    }
+    fun dismissImport()=mutable.update { it.copy(importedTrip=null,importedCircle=null,importedReport=null,backup=null) }
+    fun acceptTrip() { state.value.importedTrip?.let(::saveTrip);dismissImport() }
+    fun acceptCircle()=viewModelScope.launch(handler) { val link=state.value.importedCircle ?: return@launch;CircleUpdates.validate(link,System.currentTimeMillis());store.update { it.copy(friends=(it.friends.filterNot { f->f.id==link.id }+link).takeLast(20)) };dismissImport();message("Invitation saved. Start watching in Community when ready.") }
+    fun acceptReport()=viewModelScope.launch(handler) { val r=state.value.importedReport ?: return@launch;store.update { it.copy(reports=(it.reports+ReceivedReport(r,"Imported file",r.id,System.currentTimeMillis(),false)).takeLast(300)) };dismissImport() }
+    fun share(raw: String,extension: String,title: String)=action("Couldn’t create a shared file.") { val intent=files.shareFile(raw,extension,title);getApplication<Application>().startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    fun export(uri: Uri,password: String,automatic: Boolean)=action("Backup could not be written. Choose a writable file and a password of at least ten characters.") {
+        files.write(uri,files.export(password));if(automatic) {
+            getApplication<Application>().contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            store.saveBackupLink(BackupLink(uri.toString(),password))
+        };message("Encrypted backup saved. Keep its password to restore after reinstalling.")
+    }
+    fun pauseBackup()=viewModelScope.launch(handler) { store.saveBackupLink(null);message("Automatic backup paused.") }
+    fun inspectBackup(uri: Uri,password: String)=action("Backup could not be opened. Check the password and file.") { val p=files.inspect(files.read(uri,34*1024*1024),password);mutable.update { it.copy(backup=p) } }
+    fun restore()=action("Couldn’t restore the profile.") {
+        val p=state.value.backup ?: error("No backup");stopLive();files.restore(p);dismissImport();message("Profile restored. Reminders are paused; choose the backup file again to enable automatic saving.")
+    }
+    fun login(server: String,user: String,password: String,token: Boolean)=action("Sign-in failed. Check your Matrix homeserver and account. Google sign-in is a separate local profile option.") {
+        require(state.value.extras.beta.hostedSharing);val s=if(token) matrix.token(server,password) else matrix.login(server,user,password)
+        store.saveSession(s);message("Connected to ${s.userId}. Choose or create a service room.")
+    }
+    fun logout()=action("Disconnected locally; the server session could not be revoked. Revoke it in your Matrix client.") {
+        stopLive();val s=store.session();store.saveSession(null);store.update { it.copy(queued=emptyList()) };mutable.update { it.copy(chat=emptyList()) };if(s!=null) matrix.logout(s)
+    }
+    private suspend fun session(): MatrixSession { require(store.extras().beta.hostedSharing);return store.session() ?: error("Sign in to Matrix first") }
+    fun room(service: TransportService,room: String,create: Boolean)=action("Couldn’t join or create the room. This client supports unencrypted community rooms; use Element for Matrix-encrypted chats.") {
+        val s=session();val id=if(create) matrix.create(s,"CT Trains · ${service.title}",false) else matrix.join(s,room.trim())
+        store.update { it.copy(rooms=it.rooms.filterNot { r->r.service==service }+ReportRoom(service,id)) };message("Room connected: $id")
+    }
+    fun report(report: CommunityReport,online: Boolean)=viewModelScope.launch(handler) {
+        CommunityReports.validate(report)
+        val room=store.extras().rooms.firstOrNull { it.service==report.service }?.room
+        if(!online || room==null) {
+            store.update { it.copy(reports=(it.reports+ReceivedReport(report,"This device",report.id,System.currentTimeMillis(),false)).takeLast(300)) };message("Report saved locally. Share its formatted message or file.");return@launch
+        }
+        val s=runCatching { session() }.getOrNull() ?: return@launch message("Connect Matrix in Settings before posting.")
+        store.update { it.copy(queued=(it.queued.filterNot { q->q.report.id==report.id }+QueuedReport(report,room,s.userId)).takeLast(100)) }
+        ReportUploadWorker.enqueue(getApplication());message("Report queued for this room. Expired observations will not be posted.")
+    }
+    fun chat(service: TransportService,text: String)=action("Message could not be sent. The draft is still on this screen.") {
+        val s=session();val room=store.extras().rooms.firstOrNull { it.service==service } ?: error("Choose a room");matrix.send(s,room.room,text.trim());message("Message sent. Refresh to see room replies.")
+    }
+    fun sync(service: TransportService)=action("Couldn’t refresh this room. Local reports remain available.") {
+        val s=session();val room=store.extras().rooms.firstOrNull { it.service==service } ?: error("Choose a room")
+        val messages=matrix.messages(s,room.room)
+        store.update { e -> e.copy(reports=(e.reports+messages.mapNotNull { m -> m.report?.takeIf { it.service==service && CommunityReports.fresh(it,System.currentTimeMillis()) }?.let { ReceivedReport(it,m.sender,m.id,m.at,true) } }).distinctBy { it.eventId }.filter { CommunityReports.fresh(it.report,System.currentTimeMillis()) }.takeLast(300)) }
+        mutable.update { it.copy(chat=messages.filter { m->m.update==null }.sortedBy { m->m.at }) }
+    }
+    fun createCircle(trip: SafetyTrip,friend: String)=action("Couldn’t create this live trip. Sign in to Matrix and enter your friend’s Matrix ID.") {
+        TripFiles.validate(trip);val s=session();val room=matrix.create(s,"Private CT Trains trip",true)
+        matrix.invite(s,room,friend.trim())
+        val link=CircleLink(id=UUID.randomUUID().toString(),room=room,ownerId=s.userId,secret=PortableCrypto.secret(),expiresAt=System.currentTimeMillis()+2*60*60_000L,trip=trip)
+        store.saveCircle(LiveCircle(link));message("Private invitation ready. Share its file only with the invited friend; location sharing is still off.")
+    }
+    fun live(start: Boolean,watch: Boolean=false) {
+        if(start && TripLiveService.activeMode!=null) return message("A live session is already running (${TripLiveService.activeMode}). Stop it before starting another mode.")
+        if(start) runCatching { TripLiveService.start(getApplication(),watch) }.onFailure { message("Couldn’t start a live session. Keep the app open and check permissions.") } else stopLive()
+    }
+    // stopService identifies the explicit Service component, not an object/listener instance.
+    @android.annotation.SuppressLint("ImplicitSamInstance")
+    fun stopLive() { getApplication<Application>().stopService(Intent(getApplication(),TripLiveService::class.java));viewModelScope.launch(handler) { store.liveCircle()?.let { store.saveCircle(it.copy(sharing=false)) } } }
+    fun phase(phase: String)=viewModelScope.launch(handler) { require(phase in CircleUpdates.phases);store.liveCircle()?.let { store.saveCircle(it.copy(phase=phase)) } }
+    fun removeFriend(id: String)=viewModelScope.launch(handler) { stopLive();store.update { it.copy(friends=it.friends.filterNot { f->f.id==id }) };store.saveWatched(store.watched().filterNot { it.id==id }) }
+    fun reset() { jobs.values.forEach { it.cancel() };timetableJob?.cancel();stopLive();files.clearPrivatePhotos();BusRefreshWorker.configure(getApplication(),BetaPreferences());mutable.value=FeatureState() }
+    private fun action(failure: String,block: suspend ()->Unit)=viewModelScope.launch(handler) {
+        if(state.value.busy) return@launch
+        mutable.update { it.copy(busy=true,error=null) }
+        try { block() } catch(e: Exception) { if(e is CancellationException) throw e;mutable.update { it.copy(error=failure) } }
+        finally { mutable.update { it.copy(busy=false) } }
+    }
+}

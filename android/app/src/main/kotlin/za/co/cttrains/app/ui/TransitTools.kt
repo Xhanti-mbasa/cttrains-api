@@ -23,6 +23,11 @@ fun TransitTools(onAlerts: () -> Unit, onBudget: () -> Unit) {
 }
 
 @Composable
-fun TransitToolsSheet(onDismiss: () -> Unit, onAlerts: () -> Unit, onBudget: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.padding(24.dp).navigationBarsPadding()) { TransitTools(onAlerts, onBudget) } }
+fun TransitToolsSheet(onDismiss: () -> Unit, onAlerts: () -> Unit, onBudget: () -> Unit,onBuses: ()->Unit={},onTrips: ()->Unit={},onCommunity: ()->Unit={}) {
+    ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.padding(24.dp).navigationBarsPadding()) {
+        TransitTools(onAlerts, onBudget)
+        OutlinedButton(onClick=onBuses,modifier=Modifier.fillMaxWidth()) { Text("Golden Arrow & MyCiTi · beta") }
+        OutlinedButton(onClick=onTrips,modifier=Modifier.fillMaxWidth()) { Text("Safety trips · files & sharing") }
+        OutlinedButton(onClick=onCommunity,modifier=Modifier.fillMaxWidth()) { Text("Community reports, chat & friends") }
+    } }
 }

@@ -2,6 +2,12 @@
 
 Native **Kotlin, Jetpack Compose and Google Material 3** transit planner. The app incorporates the first stage of the [smart transit proposal](docs/SMART_TRANSIT_VISION.md), with the [architecture and remaining stages](docs/TRANSIT_ARCHITECTURE.md) documented explicitly.
 
+## Optional beta features in 1.4.0
+
+Independent Golden Arrow and MyCiTi switches now add operator routes/stops, published day timetables, product fares and personal corrections. Map filters, street/light/dark/2025 aerial styles, nearby saved-route suggestions and local pins/photos are available. Tools includes portable safety-trip files/import, structured offline reports, and optional hosted Matrix community/chat and time-limited private trip sharing. Settings supports a local name and password-encrypted document backups. These features preserve source/freshness limits and require explicit remote/location opt-in. See [BETA_TRANSIT.md](docs/BETA_TRANSIT.md) for data provenance, privacy, limitations and device verification still needed.
+
+Optional Google profile sign-in is implemented but awaits a Web application client ID; the supplied Android ID cannot replace it. See [GOOGLE_SIGN_IN.md](docs/GOOGLE_SIGN_IN.md). CI now publishes exact APK certificate fingerprints with its artifacts/releases.
+
 ## What works now
 
 - Map-first home with real positions for all 102 bundled stations, tap/search selection, origin/destination controls and favourite stations.
@@ -19,14 +25,14 @@ Native **Kotlin, Jetpack Compose and Google Material 3** transit planner. The ap
 - Up to three dismissal-triggered backup reminders, each with a custom delay of 1–60 minutes and Gentle, Standard or Urgent severity. Swipe away or choose Remind again to advance; I'm leaving stops the chain. Backups stop at departure.
 - Room persistence, random local UUID, Android Keystore encryption for private payloads and migration of existing DataStore preferences/routes/cache. Existing saved departure-based reminders retain their meaning.
 - Calendar export through a user-reviewed Android insert intent/chooser. No calendar account or read permission is required by this app.
-- Optional, cancellable foreground location sample through Android's system provider. No continuous GPS polling, raw GPS history or background location permission. The sample is forgotten when the app backgrounds or after five minutes.
+- Optional, cancellable foreground location sample through Android's system provider. Outside an explicitly started beta live-trip session there is no continuous GPS polling; no background-location permission is requested. The sample is forgotten when the app backgrounds or after five minutes.
 - Favourite routes, sharing, dark/light/system themes, optional Material You colours and local personal-data deletion.
 
 ## Privacy and limits
 
-No mandatory account, email, analytics, hardware/device identifier or cloud behavioral profile. Profile/preferences (including price corrections), favourites, cached searches, alert snapshots and saved journey content are AES-GCM encrypted in Room. Public station positions and indexed scheduling timestamps remain readable inside the private database. Device backup/transfer is disabled. Reinstall or resetting the profile creates a new UUID.
+No mandatory account, email, analytics or hardware/device identifier. Optional hosted accounts and live trip updates are described in the beta document. Profile/preferences (including price corrections), favourites, cached searches, alert snapshots and saved journey content are AES-GCM encrypted in Room. Large records, including bus geometry, use encrypted private files with small encrypted references in Room, avoiding Android's cursor row-size limit. Public station positions and indexed scheduling timestamps remain readable inside the private database. Automatic Android device backup/transfer is disabled; user-chosen encrypted document backups are available. Reinstall or resetting the profile creates a new UUID.
 
-Search queries and IP addresses go to the selected transit source. Online maps send tile/style/font requests to OpenFreeMap; those requests reveal viewed areas and the device's IP to the provider/CDN. Station overlays and the sampled location are rendered locally. Offline and Stations modes block map HTTP requests; timetable searches and browser links are separate online operations. Location uses the device's system location implementation. Calendar export hands event information to the calendar app the user chooses. No location, health, calendar or behavioral profile is uploaded by the app to its transit backend.
+Search queries and IP addresses go to the selected transit source. Online maps send tile/style/font requests to OpenFreeMap; those requests reveal viewed areas and the device's IP to the provider/CDN. Station overlays and the sampled location are rendered locally. Offline and Stations modes block map HTTP requests; timetable searches and browser links are separate online operations. Location uses the device's system location implementation. Calendar export hands event information to the calendar app the user chooses. No location, health or calendar profile is uploaded to the transit backend. Explicit beta live-trip updates go separately to the chosen private Matrix room; public reports go to the chosen service room.
 
 Downloaded maps, their geographic bounds and the temporary map cache are public, unencrypted cache data inside app-private storage. Delete downloaded areas and clear temporary tiles from Map's download panel; resetting personal data does not remove map packs. OpenFreeMap has no service-level guarantee. See its [privacy policy](https://openfreemap.org/privacy/) and [terms](https://openfreemap.org/tos/).
 
@@ -90,24 +96,24 @@ cd android
 ./gradlew clean :core:test :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease
 ```
 
-The release workflow performs these checks with explicit development signing when a private key is not configured, verifies the APK signature/non-debuggable flag, and uploads APK/checksum and test/lint/schema reports. An unsigned local release can be signed through Android Studio or the documented environment variables below. Room's version-1 schema is exported under `app/schemas`; future database changes need explicit migrations.
+The release workflow performs these checks with explicit development signing when a private key is not configured, verifies the APK signature/non-debuggable flag, and uploads APK/checksum/signing-certificate and test/lint/schema reports. A separate API 35 emulator job runs native large-record storage, actual Golden Arrow PDF extraction, encrypted photo backup/restore and independent operator switch tests. Both jobs must pass before publishing. To run device checks locally with an emulator or phone connected, use `./gradlew connectedDebugAndroidTest`. An unsigned local release can be signed through Android Studio or the documented environment variables below. Room's version-1 schema is exported under `app/schemas`; future database changes need explicit migrations.
 
 The bundled geographic dataset and refresh/import instructions are in [STATION_DATA.md](docs/STATION_DATA.md). Parser tests use source HTML captured on 1 October 2026. Build verification does not replace device testing of notification timing, native street rendering, full-screen/transfer interactions, airplane-mode map coverage, foreground location, dismissal/backup notification actions or calendar applications.
 
 ## GitHub Releases
 
-After this PR is merged, changes to `android/` on `main` automatically create a GitHub prerelease with the installable APK and checksum in the repository's **Releases** section. Each automatic build gets its own `android-v1.3.0-build.N` tag, pointing at the exact source commit.
+After this PR is merged, changes to `android/` on `main` automatically create a GitHub prerelease with the installable APK, checksum and public signing-certificate fingerprints in the repository's **Releases** section. Each automatic build gets its own `android-v1.4.0-build.N` tag, pointing at the exact source commit.
 
-For a named version, push a tag or use **Actions → Android build and release → Run workflow** on `main`, and enter a tag such as `android-v1.3.1`:
+For a named version, push a tag or use **Actions → Android build and release → Run workflow** on `main`, and enter a tag such as `android-v1.4.1`:
 
 ```bash
 git checkout main
 git pull
-git tag android-v1.3.1
-git push origin android-v1.3.1
+git tag android-v1.4.1
+git push origin android-v1.4.1
 ```
 
-`android/version.properties` stores the default app version. Named tags set the APK's version name; the workflow adds its run number to the base version code. The About screen displays the built version. Failed builds never publish a release. Publishing stages a draft until both assets are uploaded, and a rerun leaves an already published release unchanged.
+`android/version.properties` stores the default app version. Named tags set the APK's version name; the workflow adds its run number to the base version code. The About screen displays the built version. Failed builds or device checks never publish a release. Publishing stages a draft until all three assets are uploaded, and a rerun leaves an already published release unchanged.
 
 ### Signing
 

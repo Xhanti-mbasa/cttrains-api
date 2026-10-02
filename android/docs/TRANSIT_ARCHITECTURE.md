@@ -1,6 +1,6 @@
 # Smart transit implementation and next stages
 
-The original product brief is preserved in [SMART_TRANSIT_VISION.md](SMART_TRANSIT_VISION.md). This release implements its transit MVP and establishes boundaries for the later context and intelligence stages.
+The original product brief is preserved in [SMART_TRANSIT_VISION.md](SMART_TRANSIT_VISION.md). This release implements its transit MVP and establishes boundaries for the later context and intelligence stages. Version 1.4 adds independent beta bus adapters, map layers, portable profiles/trips and opt-in hosted reports/chat/private check-ins; their current boundaries and source provenance are documented in [BETA_TRANSIT.md](BETA_TRANSIT.md). Multi-operator journey planning and verified live operator feeds remain future work.
 
 ## Implemented MVP
 
@@ -21,13 +21,13 @@ The original product brief is preserved in [SMART_TRANSIT_VISION.md](SMART_TRANS
 | Website tools | Native updates/delays and fare/budget calculator; early reporter browser handoff, no automatic submissions |
 | Calendar | User-reviewed insert intent and app chooser, works with an installed calendar app; no background sync/read permission |
 | Location | Optional coarse/fine permission, one bounded foreground sample via Android system providers; forgotten when app backgrounds |
-| Privacy | No account, hardware identifiers, analytics, cloud behavioral profile, health permission or background GPS. Reset deletes local personal data and cancels app reminders |
+| Privacy | No mandatory account, hardware identifiers, analytics, cloud behavioral profile or health permission. Explicit, time-limited live trip sharing uses a foreground service; no background-location permission. Reset deletes local personal data and cancels app reminders |
 
 Map display does not prove service availability. Timetable snapshots are not live train tracking. WorkManager delivery is approximate and may be delayed by Android battery controls. A saved plan is not recorded as an observed journey. Calendar events remain under the user's calendar account and are not deleted when local app data is reset.
 
 ## Boundaries
 
-`ui/` uses Navigation Compose and observes `TrainViewModel`. The ViewModel coordinates `data/`, `maps/`, `location/` and `scheduling/`. The `core` module contains normalized journeys, source/query validation, time arithmetic, cache policy and planning rules without Android dependencies. `data/LocalTransitStore` owns Room and the one-time migration; `SecureCodec` protects private payloads with an AES-GCM Android Keystore key. Public station positions and indexed scheduling timestamps are not encrypted. The separate MapLibre database stores unencrypted public map resources and region bounds; personal-data reset preserves map downloads, which have their own deletion controls. Backup and device transfer remain disabled; reinstall creates a new local UUID.
+`ui/` uses Navigation Compose and observes `TrainViewModel` and `FeatureViewModel`. They coordinate `data/`, `maps/`, `location/` and `scheduling/`. The `core` module contains normalized journeys, source/query validation, time arithmetic, cache policy and planning rules without Android dependencies. `data/LocalTransitStore` owns Room and the one-time migration; `SecureCodec` protects private payloads with an AES-GCM Android Keystore key. Large payloads use immutable encrypted private files and small encrypted Room references. Public station positions and indexed scheduling timestamps are not encrypted. The separate MapLibre database stores unencrypted public map resources and region bounds; personal-data reset preserves map downloads, which have their own deletion controls. Automatic Android backup/device transfer remain disabled. User-chosen password-encrypted backups can restore supported local data after reinstall; document permission and password must be supplied again.
 
 `TrainRepository` presents normalized source results. The configured API adapter allows the scraper to run outside the Android app. The existing parser remains a direct-source fallback so the app still works without a deployment. Caches are keyed by source and exact query, with 12 entries/14-day limits. Personal preference updates are serialized. Reminder input contains random journey/profile identifiers, generation tokens and stage numbers; the worker loads encrypted content locally. No personal profile, calendar content, health information or location is sent to the transit server.
 

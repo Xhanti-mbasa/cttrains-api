@@ -94,6 +94,7 @@ jobs:
           CTTRAINS_VERSION_CODE: ${{ steps.metadata.outputs.version_code }}
           CTTRAINS_USE_DEVELOPMENT_SIGNING: "true"
           CTTRAINS_TRANSIT_BASE_URL: ${{ vars.CTTRAINS_TRANSIT_BASE_URL }}
+          CTTRAINS_GOOGLE_WEB_CLIENT_ID: ${{ vars.CTTRAINS_GOOGLE_WEB_CLIENT_ID }}
           CTTRAINS_KEYSTORE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_KEYSTORE_PASSWORD || '' }}
           CTTRAINS_KEY_ALIAS: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_KEY_ALIAS || '' }}
           CTTRAINS_KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_KEY_PASSWORD || '' }}
@@ -115,6 +116,20 @@ jobs:
           filename="CT-Trains-${VERSION}-${SIGNING_MODE}.apk"
           cp "$apk" "dist/$filename"
           (cd dist && sha256sum "$filename" > "$filename.sha256")
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --print-certs "$apk" > "${RUNNER_TEMP}/cttrains-certificates.txt"
+          python3 - <<'PY'
+          import os, pathlib, re
+          raw = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'cttrains-certificates.txt').read_text()
+          lines = ['Package: za.co.cttrains.app', 'Certificate fingerprints for this exact APK:']
+          for label in ('SHA-1', 'SHA-256'):
+              found = re.search(r'Signer #1 certificate ' + label + r' digest: ([a-fA-F0-9]+)', raw)
+              if found is None:
+                  raise SystemExit('Missing signing certificate fingerprint')
+              value = found.group(1).upper()
+              lines.append(label + ': ' + ':'.join(value[i:i+2] for i in range(0,len(value),2)))
+          pathlib.Path('dist/signing-certificate.txt').write_text('\n'.join(lines) + '\n')
+          print('\n'.join(lines))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: cttrains-release-apk
@@ -133,8 +148,48 @@ jobs:
         if: always()
         run: rm -f -- "${RUNNER_TEMP}/cttrains-release.jks"
 
+  device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Native storage, timetable, backup and settings tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: cd android && ./gradlew connectedDebugAndroidTest --no-daemon
+      - name: Upload native test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-device-reports
+          path: |
+            android/app/build/reports/androidTests/connected/
+            android/app/build/outputs/androidTest-results/connected/
+
   publish:
-    needs: build
+    needs: [build, device]
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/android-v'))
     runs-on: ubuntu-latest
     timeout-minutes: 10

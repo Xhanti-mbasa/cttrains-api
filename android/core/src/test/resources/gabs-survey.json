@@ -1,0 +1,125 @@
+{
+ "displayFieldName": "ROUTENAME",
+ "fieldAliases": {
+  "OBJECTID": "OBJECTID",
+  "ROUTECODE": "ROUTECODE",
+  "ROUTENAME": "ROUTENAME",
+  "BUSSTOPNO": "BUSSTOPNO",
+  "BUSSTOPDES": "BUSSTOPDES",
+  "CLASSIFICA": "CLASSIFICA",
+  "ORDINAL": "ORDINAL",
+  "XCOORD": "XCOORD",
+  "YCOORD": "YCOORD"
+ },
+ "geometryType": "esriGeometryPoint",
+ "spatialReference": {
+  "wkid": 4326,
+  "latestWkid": 4326
+ },
+ "fields": [
+  {
+   "name": "OBJECTID",
+   "type": "esriFieldTypeOID",
+   "alias": "OBJECTID"
+  },
+  {
+   "name": "ROUTECODE",
+   "type": "esriFieldTypeString",
+   "alias": "ROUTECODE",
+   "length": 4
+  },
+  {
+   "name": "ROUTENAME",
+   "type": "esriFieldTypeString",
+   "alias": "ROUTENAME",
+   "length": 79
+  },
+  {
+   "name": "BUSSTOPNO",
+   "type": "esriFieldTypeString",
+   "alias": "BUSSTOPNO",
+   "length": 7
+  },
+  {
+   "name": "BUSSTOPDES",
+   "type": "esriFieldTypeString",
+   "alias": "BUSSTOPDES",
+   "length": 57
+  },
+  {
+   "name": "CLASSIFICA",
+   "type": "esriFieldTypeString",
+   "alias": "CLASSIFICA",
+   "length": 7
+  },
+  {
+   "name": "ORDINAL",
+   "type": "esriFieldTypeInteger",
+   "alias": "ORDINAL"
+  },
+  {
+   "name": "XCOORD",
+   "type": "esriFieldTypeDouble",
+   "alias": "XCOORD"
+  },
+  {
+   "name": "YCOORD",
+   "type": "esriFieldTypeDouble",
+   "alias": "YCOORD"
+  }
+ ],
+ "features": [
+  {
+   "attributes": {
+    "OBJECTID": 1,
+    "ROUTECODE": "AAA6",
+    "ROUTENAME": "CITY GOLDEN ACRE C LANE to SEA POINT",
+    "BUSSTOPNO": "GABS008",
+    "BUSSTOPDES": "Golden Acre",
+    "CLASSIFICA": "Station",
+    "ORDINAL": 1,
+    "XCOORD": -53179,
+    "YCOORD": -3755390
+   },
+   "geometry": {
+    "x": 18.424889681530431,
+    "y": -33.924087018064057
+   }
+  },
+  {
+   "attributes": {
+    "OBJECTID": 2,
+    "ROUTECODE": "AAA6",
+    "ROUTENAME": "CITY GOLDEN ACRE C LANE to SEA POINT",
+    "BUSSTOPNO": "745",
+    "BUSSTOPDES": "On Darling Street after Plein",
+    "CLASSIFICA": "Stop",
+    "ORDINAL": 2,
+    "XCOORD": -53377,
+    "YCOORD": -3755415
+   },
+   "geometry": {
+    "x": 18.422746963713802,
+    "y": -33.92430237385598
+   }
+  },
+  {
+   "attributes": {
+    "OBJECTID": 3,
+    "ROUTECODE": "AAA6",
+    "ROUTENAME": "CITY GOLDEN ACRE C LANE to SEA POINT",
+    "BUSSTOPNO": "239",
+    "BUSSTOPDES": "On Adderley Street 1st after Hout",
+    "CLASSIFICA": "Stop",
+    "ORDINAL": 3,
+    "XCOORD": -53432,
+    "YCOORD": -3755256
+   },
+   "geometry": {
+    "x": 18.422161862680248,
+    "y": -33.922866204786224
+   }
+  }
+ ],
+ "exceededTransferLimit": true
+}

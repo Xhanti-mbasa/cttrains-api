@@ -14,5 +14,8 @@ class MapViewport {
     var stationZoom: Float = 1f
     var stationPanX: Float = 0f
     var stationPanY: Float = 0f
-    fun reset() { modeKey = null; camera = null; fittedJourney = null; fittedTrace = null; stationJourney = null; stationZoom = 1f; stationPanX = 0f; stationPanY = 0f }
+    var featureFocus: za.co.cttrains.core.GeoPoint? = null
+    var stationFocus: za.co.cttrains.core.GeoPoint? = null
+    var featureFit: String? = null
+    fun reset() { modeKey = null; camera = null; fittedJourney = null; fittedTrace = null; stationJourney = null; stationZoom = 1f; stationPanX = 0f; stationPanY = 0f;featureFocus=null;stationFocus=null;featureFit=null }
 }

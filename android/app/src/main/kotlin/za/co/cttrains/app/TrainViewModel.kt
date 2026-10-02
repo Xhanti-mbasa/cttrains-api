@@ -128,7 +128,8 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun useRoute(route: SavedRoute) = edit { it.copy(from = route.from, to = route.to, date = LocalDate.now(CapeTownZone).toString()) }
 
-    fun search() {
+    fun search() = performSearch(false)
+    private fun performSearch(autoSelect: Boolean) {
         val current = state.value
         val error = TravelRules.validationError(current.query, current.catalog, LocalDate.now(CapeTownZone))
         if (error != null) { mutableState.update { it.copy(error = error) }; return }
@@ -138,7 +139,7 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val result = repository.search(current.query, current.preferences.sourceId)
                 repository.updatePreferences { it.copy(lastQuery = current.query) }
-                mutableState.update { it.copy(loading = false, result = result) }
+                mutableState.update { it.copy(loading = false, result = result, selectedJourney = if(autoSelect) result.entry.journeys.firstOrNull() else null) }
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 val message = if (error is ScheduleFormatException) error.message else "Couldn’t reach CT Trains. Check your connection and try again."
@@ -182,7 +183,7 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-    fun selectJourney(journey: Journey) = mutableState.update { it.copy(selectedJourney = journey) }
+    fun selectJourney(journey: Journey?) = mutableState.update { it.copy(selectedJourney = journey, selectedTransfer = null) }
     fun toggleStation(name: String) = viewModelScope.launch(storageErrors) {
         repository.updatePreferences { prefs -> prefs.copy(favoriteStations = if (name in prefs.favoriteStations) prefs.favoriteStations - name else (prefs.favoriteStations + name).takeLast(30)) }
     }
@@ -199,13 +200,18 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
         requestedMapMode = "online"; MapEngine.mode("online")
         repository.updatePreferences { it.copy(mapMode = "online") }
         if (requestedMapMode != null && requestedMapMode != "online") return@launch
-        offlineMaps.create(area)
+        val style = za.co.cttrains.app.data.FeatureStore(getApplication()).extras().beta.mapStyle
+        offlineMaps.create(area, style)
     }
     fun resumeMap(id: Long) = viewModelScope.launch(storageErrors) {
         requestedMapMode = "online"; MapEngine.mode("online")
         repository.updatePreferences { it.copy(mapMode = "online") }
         if (requestedMapMode != null && requestedMapMode != "online") return@launch
         offlineMaps.resume(id)
+    }
+    fun downloadArea(area: MapArea) = viewModelScope.launch(storageErrors) {
+        requestedMapMode="online";MapEngine.mode("online");repository.updatePreferences { it.copy(mapMode="online") }
+        offlineMaps.create(area,za.co.cttrains.app.data.FeatureStore(getApplication()).extras().beta.mapStyle)
     }
     fun useOfflineMap(id: Long) = viewModelScope.launch(storageErrors) {
         requestedMapMode = "offline"
@@ -229,7 +235,7 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
         locationJob = viewModelScope.launch(storageErrors) {
             mutableState.update { it.copy(locating = true) }
             try {
-                val point = ForegroundLocation.sample(getApplication())
+                val point = ForegroundLocation.sample(getApplication())?.takeIf { it.capturedAt<=System.currentTimeMillis()+30_000 && System.currentTimeMillis()-it.capturedAt<=2*60_000 }
                 locationExpiryJob?.cancel()
                 mutableState.update { it.copy(currentPosition = point, locating = false, message = if (point == null) "Location is unavailable. Station search still works." else "Location sampled once. Accuracy about ${point.accuracyMeters.toInt()} m.") }
                 if (point != null) locationExpiryJob = viewModelScope.launch {
@@ -243,8 +249,14 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun forgetLocation() { locationJob?.cancel(); locationExpiryJob?.cancel(); mutableState.update { it.copy(currentPosition = null, locating = false) } }
+    fun nearbyOrigin(name: String) { if(state.value.from!=name) edit { it.copy(from=name) } }
+    fun quickDestination(origin: String,destination: String) {
+        edit { it.copy(from=origin,to=destination,date=LocalDate.now(CapeTownZone).toString(),time=TravelRules.defaultTime(LocalTime.now(CapeTownZone))) }
+        performSearch(true)
+    }
     fun showMessage(message: String) = mutableState.update { it.copy(message = message) }
     fun openBudget() = mutableState.update { it.copy(requestedScreen = "budget") }
+    fun openCommunity() = mutableState.update { it.copy(requestedScreen = "community") }
     fun schedule(query: SearchQuery, journey: Journey, reminder: Int?, access: Int, buffer: Int, leaveFrom: String, severity: String, backups: List<BackupReminder>, onResult: (String?) -> Unit): Job = viewModelScope.launch(storageErrors) {
         try {
             if (reminder != null && !notificationsAllowed(getApplication())) { onResult("Enable notifications, or save this journey without an app reminder."); return@launch }

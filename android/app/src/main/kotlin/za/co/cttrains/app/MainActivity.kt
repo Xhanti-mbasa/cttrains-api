@@ -16,7 +16,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val model = ViewModelProvider(this)[TrainViewModel::class.java]
+        val features = ViewModelProvider(this)[FeatureViewModel::class.java]
+        features.importIntent(intent)
         model.openScheduled(intent.getStringExtra("journey_id"))
+        if(intent.getBooleanExtra("community",false)) model.openCommunity()
         setContent {
             val state = model.state.collectAsStateWithLifecycle().value
             TrainTheme(state.preferences) { TrainApp(state, model) }
@@ -26,6 +29,8 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         ViewModelProvider(this)[TrainViewModel::class.java].openScheduled(intent.getStringExtra("journey_id"))
+        ViewModelProvider(this)[FeatureViewModel::class.java].importIntent(intent)
+        if(intent.getBooleanExtra("community",false)) ViewModelProvider(this)[TrainViewModel::class.java].openCommunity()
     }
     override fun onStop() {
         ViewModelProvider(this)[TrainViewModel::class.java].apply { forgetLocation(); offlineMaps.foreground(false) }

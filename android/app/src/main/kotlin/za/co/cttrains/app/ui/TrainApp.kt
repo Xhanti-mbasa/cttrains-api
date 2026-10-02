@@ -49,6 +49,8 @@ private val FetchTime = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLI
 
 @Composable
 fun TrainApp(state: TrainState, model: TrainViewModel) {
+    val features: za.co.cttrains.app.FeatureViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val feature by features.state.collectAsState()
     val navigation = rememberNavController()
     var toolsOpen by remember { mutableStateOf(false) }
     val backStack by navigation.currentBackStackEntryAsState()
@@ -57,6 +59,8 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
     val snackbar = remember { SnackbarHostState() }
     fun go(route: String) { navigation.navigate(route) { popUpTo(navigation.graph.startDestinationId) { saveState = true }; launchSingleTop = true; restoreState = true } }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); model.dismissMessage() } }
+    LaunchedEffect(feature.message) { feature.message?.let { snackbar.showSnackbar(it);features.dismissMessage() } }
+    LaunchedEffect(feature.error) { feature.error?.let { snackbar.showSnackbar(it) } }
     LaunchedEffect(state.requestedScreen) { state.requestedScreen?.let { go(it); model.navigationHandled() } }
     Scaffold(
         topBar = { if (!fullMap) CenterAlignedTopAppBar(title = {
@@ -80,18 +84,22 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
             val wide = maxWidth >= 840.dp
             NavHost(navigation, startDestination = "map", modifier = Modifier.fillMaxSize()) {
-                composable("map") { TransitMapScreen(state, model, onExpand = { navigation.navigate("map/fullscreen") { launchSingleTop = true } }, onPlan = { go("plan") }) }
-                composable("map/fullscreen") { TransitMapScreen(state, model, fullScreen = true, onClose = { navigation.popBackStack() }, onPlan = { go("plan") }) }
+                composable("map") { TransitMapScreen(state, model, onExpand = { navigation.navigate("map/fullscreen") { launchSingleTop = true } }, onPlan = { go("plan") },feature=feature,features=features,onBuses={ go("buses") }) }
+                composable("map/fullscreen") { TransitMapScreen(state, model, fullScreen = true, onClose = { navigation.popBackStack() }, onPlan = { go("plan") },feature=feature,features=features,onBuses={ go("buses") }) }
                 composable("plan") { PlanScreen(state, model, wide) { journey -> model.selectJourney(journey); go("map") } }
                 composable("saved") { SavedScreen(state, model) { go("plan") } }
                 composable("upcoming") { UpcomingScreen(state, model) }
-                composable("settings") { AboutScreen(state, model) }
+                composable("settings") { AboutScreen(state, model,feature,features,{ go("buses") },{ go("trips") },{ go("community") }) }
                 composable("budget") { BudgetScreen(state, model) { go("plan") } }
                 composable("alerts") { AlertsScreen(state, model) }
+                composable("buses") { BusScreen(feature,features,{ go("trips") }) { service,route -> model.selectJourney(null);features.showBusMap(service,route);go("map") } }
+                composable("trips") { SafetyTripsScreen(state,feature,features) }
+                composable("community") { CommunityScreen(state,feature,features) }
             }
         }
     }
-    if (toolsOpen) TransitToolsSheet({ toolsOpen = false }, { toolsOpen = false; go("alerts") }, { toolsOpen = false; go("budget") })
+    if (toolsOpen) TransitToolsSheet({ toolsOpen = false }, { toolsOpen = false; go("alerts") }, { toolsOpen = false; go("budget") },{ toolsOpen=false;go("buses") },{ toolsOpen=false;go("trips") },{ toolsOpen=false;go("community") })
+    ImportedFiles(feature,features)
 }
 
 @Composable
@@ -358,13 +366,17 @@ private fun SavedScreen(state: TrainState, model: TrainViewModel, onPlan: () -> 
 }
 
 @Composable
-private fun AboutScreen(state: TrainState, model: TrainViewModel) {
+private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.cttrains.app.FeatureState,features: za.co.cttrains.app.FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit) {
     val uri = LocalUriHandler.current
     var confirmClear by remember { mutableStateOf(false) }
     var confirmProfile by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp).widthIn(max = 700.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Text("Your app, your data", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Notice("An independent, community app for Cape Town rail commuters. Timetables come from CT Trains. This app is not affiliated with CT Trains, PRASA or Metrorail.", Icons.Outlined.Train)
+        FeatureStatus(feature)
+        BetaSettings(feature,features,onBuses,onTrips,onCommunity)
+        ProfileSettings(feature,features)
+        HostedSettings(feature,features)
         Card(shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Appearance", style = MaterialTheme.typography.titleLarge)
@@ -381,9 +393,10 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Timetables & privacy", style = MaterialTheme.typography.titleLarge)
                 Text("Your last 12 searches are stored on this device for up to 14 days. If a refresh fails, the same route, date and departure time can use its saved result. Saved routes stay until you remove them.")
-                Text("An anonymous UUID identifies this installation locally. Profile, favourites, timetable queries and journey content are encrypted with Android Keystore in Room. Public station positions and scheduling timestamps remain readable inside the app’s private database. No device IDs, account, analytics or cloud profile.", style = MaterialTheme.typography.bodyMedium)
-                Text("Searches send the route, date, time and IP address to the selected timetable source. Online maps load from OpenFreeMap and reveal the viewed map area and your IP to that provider. Offline mode disables map network requests. Locate me uses Android’s system location provider; the app stores no GPS history.", style = MaterialTheme.typography.bodyMedium)
-                Text("Calendar handoff opens your calendar app for review. The app cannot read your calendar, health data or background location.", style = MaterialTheme.typography.bodyMedium)
+                Text("An anonymous UUID identifies this installation locally. Personal records and optional account tokens are encrypted with Android Keystore in Room. Public station positions and scheduling timestamps remain readable inside the private database. No analytics or device identifiers. Google profile and hosted Matrix accounts are optional and independent.", style = MaterialTheme.typography.bodyMedium)
+                Text("Searches send the route, date, time and IP to their timetable source. Online maps reveal the viewed area and IP to OpenFreeMap or City of Cape Town imagery hosting. Explicit place searches go to OpenStreetMap Nominatim. Offline map mode disables map tile requests; timetable and hosted communication checks have their own controls.", style = MaterialTheme.typography.bodyMedium)
+                Text("Locate me samples Android location while the app is open. Only an explicitly started live-trip session continues with a visible notification, for at most two hours. Encrypted trip updates go to your private Matrix room; public reports go to the selected community room. Friend positions are retained briefly and disappear from the map after five minutes without a fresh update.", style = MaterialTheme.typography.bodyMedium)
+                Text("Calendar handoff opens your calendar app for review. The app cannot read your calendar or health data. Trip files reveal the itinerary you review before sharing. Encrypted profile backups are stored only at the file location you choose.", style = MaterialTheme.typography.bodyMedium)
                 Text("Downloaded maps and map-area bounds are public cache data and are not encrypted. Manage and delete them from the Map download button.", style = MaterialTheme.typography.bodyMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("online" to "Online", "offline" to "Offline", "stations" to "Stations").forEach { (mode, title) -> FilterChip(state.preferences.mapMode == mode, { model.setMapMode(mode) }, label = { Text(title) }) } }
                 OutlinedButton(onClick = model::forgetLocation) { Text("Forget sampled location") }
@@ -396,11 +409,11 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel) {
         Text("Timetables are not live tracking. Open Updates & delays for published service and platform notices; reports may be incomplete or late. The finder supports today through the end of next month and does not list Sunday or public-holiday services.")
         OutlinedButton(onClick = model::openAlerts) { Text("Updates & delays") }
         OutlinedButton(onClick = { uri.openUri("https://cttrains.co.za/train-form.php") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.AutoMirrored.Outlined.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Visit CT Trains") }
-        TextButton(onClick = { uri.openUri("https://github.com/Xhanti-mbasa/cttrains-api") }) { Text("Source code on GitHub") }
+        TextButton(onClick = { uri.openUri("https://github.com/Xhanti-mbasa") }) { Text("Built by Xhanti-mbasa · GitHub",style=MaterialTheme.typography.labelMedium) }
         Text("CT Trains for Android · ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("Clear saved timetables?") }, text = { Text("You’ll need an internet connection for your next search. Your favourite routes will stay saved.") }, confirmButton = { TextButton(onClick = { model.clearCache(); confirmClear = false }) { Text("Clear") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } })
-    if (confirmProfile) AlertDialog(onDismissRequest = { confirmProfile = false }, title = { Text("Delete your local profile?") }, text = { Text("Favourites, fare corrections, scheduled journeys, app reminders and saved timetables will be removed. Public offline map downloads are managed separately on Map. A new anonymous profile will be created. Events you added to your calendar remain there.") }, confirmButton = { TextButton(onClick = { model.clearPersonalData(); confirmProfile = false }) { Text("Delete local data") } }, dismissButton = { TextButton(onClick = { confirmProfile = false }) { Text("Cancel") } })
+    if (confirmProfile) AlertDialog(onDismissRequest = { confirmProfile = false }, title = { Text("Delete your local profile?") }, text = { Text("Favourites, corrections, journeys, reminders, personal spots/photos, trip files, account sessions and saved timetables will be removed. Public offline maps are managed separately. External backup files and calendar events remain at their chosen locations.") }, confirmButton = { TextButton(onClick = { features.reset();model.clearPersonalData(); confirmProfile = false }) { Text("Delete local data") } }, dismissButton = { TextButton(onClick = { confirmProfile = false }) { Text("Cancel") } })
 }
 
 @Composable

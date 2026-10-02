@@ -47,15 +47,20 @@ import za.co.cttrains.app.maps.StreetMap
 import za.co.cttrains.app.maps.MapViewport
 import za.co.cttrains.app.TrainState
 import za.co.cttrains.app.TrainViewModel
+import za.co.cttrains.app.FeatureViewModel
+import za.co.cttrains.app.FeatureState
+import za.co.cttrains.app.maps.FeatureLayers
+import za.co.cttrains.app.maps.MapStyles
+import za.co.cttrains.app.maps.MapPin
 import za.co.cttrains.app.location.CurrentPosition
 import za.co.cttrains.core.*
 
 @Composable
-fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boolean = false, onExpand: () -> Unit = {}, onClose: () -> Unit = {}, onPlan: () -> Unit) {
+fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boolean = false, onExpand: () -> Unit = {}, onClose: () -> Unit = {}, onPlan: () -> Unit, feature: FeatureState, features: FeatureViewModel, onBuses: ()->Unit) {
     var browser by rememberSaveable { mutableStateOf(false) }
     var downloadsOpen by remember { mutableStateOf(false) }
     val downloads by model.offlineMaps.state.collectAsState()
-    var failed by remember(state.preferences.mapMode, state.preferences.offlineMapId) { mutableStateOf(false) }
+    var failed by remember(state.preferences.mapMode, state.preferences.offlineMapId,feature.extras.beta.mapStyle) { mutableStateOf(false) }
     var retry by remember { mutableIntStateOf(0) }
     var allTransfers by remember { mutableStateOf(false) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -65,6 +70,19 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
     val useStreets = state.mapsReady && state.preferences.mapMode != "stations" && !failed && (state.preferences.mapMode == "online" || savedArea != null)
     val uri = LocalUriHandler.current
     val context = LocalContext.current
+    val layers=remember(feature.snapshots,feature.extras.beta,feature.extras.spots,feature.watched,feature.focus,feature.mapRoute,feature.mapService,now) { features.layers(now) }
+    val renderState=if(feature.extras.beta.showTrains) state else state.copy(stations=emptyList(),selectedJourney=null,routeTrace=null)
+    val visibleTransfers=if(feature.extras.beta.showTrains) transfers else emptyList()
+    val closest=state.currentPosition?.let { NearbySuggestions.station(GeoPoint(it.latitude,it.longitude),it.accuracyMeters,state.stations) }
+    var lastAuto by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.mapsReady,feature.extras.beta.autoNearby) {
+        if(state.mapsReady && feature.extras.beta.autoNearby && state.currentPosition==null &&
+            (ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED)) model.locateOnce()
+    }
+    LaunchedEffect(state.currentPosition?.capturedAt,feature.extras.beta.autoNearby) {
+        if(feature.extras.beta.autoNearby) state.currentPosition?.let { features.focus(GeoPoint(it.latitude,it.longitude)) }
+        if(feature.extras.beta.autoNearby && closest!=null && state.selectedJourney==null && (state.from.isBlank() || lastAuto==null || state.from==lastAuto)) { model.nearbyOrigin(closest.name);lastAuto=closest.name }
+    }
     val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants.values.any { it }) model.locateOnce() else model.showMessage("Location is optional. You can select stations without it.")
     }
@@ -98,19 +116,39 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
             }
             IconButton(onClick = { downloadsOpen = true }) { Icon(Icons.Outlined.Download, "Manage offline maps") }
         }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            FilterChip(feature.extras.beta.showTrains,{ features.beta { it.copy(showTrains=!it.showTrains) } },label={ Text("Trains") })
+            listOf(TransportService.GOLDEN_ARROW,TransportService.MYCITI).filter { feature.extras.beta.enabled(it) }.forEach { service ->
+                FilterChip(feature.extras.beta.visible(service),{ features.beta { if(service==TransportService.GOLDEN_ARROW) it.copy(showGoldenArrow=!it.showGoldenArrow) else it.copy(showMyCiti=!it.showMyCiti) } },label={ Text(service.title) })
+            }
+            if(feature.extras.beta.goldenArrow || feature.extras.beta.myCiti) TextButton(onClick=onBuses) { Text("Bus schedules") }
+            if(feature.mapRoute!=null) TextButton(onClick={ features.allMapStops() }) { Text("All service stops") }
+        }
+        if(feature.extras.beta.visible(TransportService.GOLDEN_ARROW)) Text("Golden Arrow survey · current operation unverified",style=MaterialTheme.typography.labelSmall)
+        if(state.preferences.mapMode=="online") Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            MapStyles.titles.forEach { (id,title) -> FilterChip(feature.extras.beta.mapStyle==id,{ features.beta { it.copy(mapStyle=id) } },label={ Text(title) }) }
+        }
+        if(closest!=null && !fullScreen) {
+            Text("Closest station: ${closest.name} · GPS accuracy ${state.currentPosition?.accuracyMeters?.toInt()} m",style=MaterialTheme.typography.labelSmall)
+            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                NearbySuggestions.destinations(closest.name,state.preferences.routes,state.preferences.favoriteStations).forEach { destination ->
+                    SuggestionChip(onClick={ model.quickDestination(closest.name,destination) },label={ Text("To $destination") })
+                }
+            }
+        }
         if (failed || (state.preferences.mapMode == "offline" && savedArea == null)) {
             Text(if (failed) "Street map unavailable. Station map is still usable." else "Download a street map first. Station positions remain available offline.", style = MaterialTheme.typography.bodySmall)
             if (failed) TextButton(onClick = { failed = false; retry++ }) { Text("Retry street map") }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                if (useStreets) key(state.preferences.mapMode, savedArea?.id, retry) { StreetMap(state, if (state.preferences.mapMode == "offline") model.offlineMaps.definition(savedArea?.id) else null, model.mapViewport, transfers, model::selectStation, model::selectTransfer, { failed = true }, Modifier.fillMaxSize()) }
-                else OfflineStationMap(state.stations, state.selectedJourney, state.routeTrace, model.mapViewport, transfers, state.currentPosition, state.from, state.to, model::selectStation, model::selectTransfer)
+                if (useStreets) key(state.preferences.mapMode, savedArea?.id, retry,feature.extras.beta.mapStyle) { StreetMap(renderState, if (state.preferences.mapMode == "offline") model.offlineMaps.definition(savedArea?.id) else null, model.mapViewport, visibleTransfers, model::selectStation, model::selectTransfer, { failed = true }, Modifier.fillMaxSize(),feature.extras.beta.mapStyle,layers,{ features.selectPin(it) },features::drop) }
+                else OfflineStationMap(renderState.stations, renderState.selectedJourney, renderState.routeTrace, model.mapViewport, visibleTransfers, state.currentPosition, state.from, state.to, model::selectStation, model::selectTransfer,layers,{ features.selectPin(it) },features::drop)
             }
             Surface(Modifier.align(Alignment.TopStart).padding(12.dp).fillMaxWidth(if (fullScreen) .82f else .76f), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), tonalElevation = 3.dp) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    Text(if (useStreets) if (state.preferences.mapMode == "offline") "Downloaded street map" else "OpenFreeMap · online" else "Offline station map", style = MaterialTheme.typography.labelLarge)
-                    Text(if (state.selectedJourney == null) "${state.stations.count { it.mapped }} mapped stations · tap to choose" else "${transfers.size} train changes · tap numbered pins", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (useStreets) if (state.preferences.mapMode == "offline") savedArea?.name ?: "Downloaded map" else MapStyles.titles[feature.extras.beta.mapStyle] ?: "Streets" else "Offline stops & stations", style = MaterialTheme.typography.labelLarge)
+                    Text(if (state.selectedJourney == null) "${renderState.stations.count { it.mapped }+layers.pins.size} pins · hold to mark a spot" else "${visibleTransfers.size} train changes · tap numbered pins", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             if (!fullScreen) FilledTonalIconButton(onClick = onExpand, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) { Icon(Icons.Outlined.Fullscreen, "Expand map to full screen") }
@@ -136,9 +174,12 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
         }
         if (state.selectedJourney != null) Text("Solid: mapped railway trace. Dashed: approximate link. Confirm trains and platforms at the station.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         TextButton(onClick = { uri.openUri("https://www.openstreetmap.org/copyright") }, contentPadding = PaddingValues(0.dp)) { Text("© OpenStreetMap contributors${if (useStreets) " · OpenMapTiles" else ""} · stations: Wikidata", style = MaterialTheme.typography.labelSmall) }
+        if(useStreets && feature.extras.beta.mapStyle=="aerial" && state.preferences.mapMode=="online") Text("© City of Cape Town · January 2025 aerial imagery · non-commercial use",style=MaterialTheme.typography.labelSmall)
     }
-    if (browser) StationBrowser(state, model, onDismiss = { browser = false }) { model.selectStation(it); browser = false }
-    if (downloadsOpen) MapDownloadsSheet(state, model) { downloadsOpen = false }
+    if (browser) MapSearchSheet(state,layers,features,onDismiss={ browser=false }) { model.selectStation(it);browser=false }
+    feature.pin?.let { PinSheet(it,feature,features) { service -> features.chooseBus(service);features.selectPin(null);onBuses() } }
+    val featureArea=layers.fitPoints.takeIf { it.size>=2 && layers.fitName!=null }?.let { p -> MapArea(layers.fitName!!,MapBounds(p.minOf { it.longitude }-.005,p.minOf { it.latitude }-.005,p.maxOf { it.longitude }+.005,p.maxOf { it.latitude }+.005),10,14) }
+    if (downloadsOpen) MapDownloadsSheet(state, model,featureArea) { downloadsOpen = false }
     val selectedTransfer = transfers.firstOrNull { it.number == state.selectedTransfer }
     if (allTransfers || selectedTransfer != null) TransferDetailsSheet(if (allTransfers) transfers else listOfNotNull(selectedTransfer), { allTransfers = false; model.selectTransfer(null) }, { allTransfers = false; model.selectTransfer(null); model.openAlerts() })
 
@@ -176,17 +217,18 @@ private class Projection(stations: List<StationPosition>, trace: JourneyTrace?, 
     private val factor = cos(Math.toRadians((minLat + maxLat) / 2))
     private val units = min(size.width * .82 / ((maxLon - minLon).coerceAtLeast(.01) * factor), size.height * .74 / (maxLat - minLat).coerceAtLeast(.01))
     fun point(lat: Double, lon: Double): Offset = Offset((size.width / 2 + (lon - (minLon + maxLon) / 2) * factor * units).toFloat(), (size.height / 2 - (lat - (minLat + maxLat) / 2) * units).toFloat())
+    fun coordinate(point: Offset)=GeoPoint((minLat+maxLat)/2-(point.y-size.height/2)/units,(minLon+maxLon)/2+(point.x-size.width/2)/(factor*units))
 }
 
 @Composable
-private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?, trace: JourneyTrace?, viewport: MapViewport, transfers: List<TransferPoint>, location: CurrentPosition?, from: String, to: String, onStation: (String) -> Unit, onTransfer: (Int) -> Unit) {
+private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?, trace: JourneyTrace?, viewport: MapViewport, transfers: List<TransferPoint>, location: CurrentPosition?, from: String, to: String, onStation: (String) -> Unit, onTransfer: (Int) -> Unit,features: FeatureLayers,onPin: (MapPin)->Unit,onDrop: (GeoPoint)->Unit) {
     var size by remember { mutableStateOf(IntSize.Zero) }
     var zoom by remember(journey) { mutableFloatStateOf(if (viewport.stationJourney == journey) viewport.stationZoom else 1f) }
     var pan by remember(journey) { mutableStateOf(if (viewport.stationJourney == journey) Offset(viewport.stationPanX, viewport.stationPanY) else Offset.Zero) }
     SideEffect { viewport.stationJourney = journey; viewport.stationZoom = zoom; viewport.stationPanX = pan.x; viewport.stationPanY = pan.y }
     val transform = rememberTransformableState { delta, movement, _ -> zoom = (zoom * delta).coerceIn(1f, 16f); pan += Offset(movement.x / size.width.coerceAtLeast(1), movement.y / size.height.coerceAtLeast(1)) }
     val routeNames = journey?.legs?.flatMap { it.stops }?.map { stationKey(it.name) }?.toSet()
-    val extent = if (routeNames == null) stations else stations.filter { stationKey(it.name) in routeNames }
+    val extent = if(features.fitPoints.isNotEmpty()) features.fitPoints.map { StationPosition("Route",it.latitude,it.longitude) } else if(routeNames==null) stations+features.pins.map { StationPosition(it.name,it.point.latitude,it.point.longitude) } else stations.filter { stationKey(it.name) in routeNames }
     val projection = remember(extent, trace, size) { Projection(extent, trace, size) }
     val density = LocalDensity.current
     val primary = MaterialTheme.colorScheme.primary
@@ -199,20 +241,25 @@ private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?
         val middle = Offset(size.width / 2f, size.height / 2f)
         return (projection.point(lat, lon) - middle) * zoom + middle + Offset(pan.x * size.width, pan.y * size.height)
     }
+    LaunchedEffect(features.focus,size) { features.focus?.let { p -> if(p!=viewport.stationFocus && size.width>0 && size.height>0) { zoom=6f;val middle=Offset(size.width/2f,size.height/2f);val offset=(middle-projection.point(p.latitude,p.longitude))*zoom;pan=Offset(offset.x/size.width,offset.y/size.height);viewport.stationFocus=p } } }
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize().onSizeChanged { size = it }.transformable(transform)
             .semantics { contentDescription = "Rail station map. Use Search stations for an accessible station list." }
-            .pointerInput(stations, transfers, journey, trace, size, zoom, pan) {
-                detectTapGestures { tap ->
+            .pointerInput(stations, transfers, journey, trace, size, zoom, pan,features.pins) {
+                detectTapGestures(onLongPress={ tap -> val middle=Offset(size.width/2f,size.height/2f);val original=(tap-middle-Offset(pan.x*size.width,pan.y*size.height))/zoom+middle;onDrop(projection.coordinate(original)) },onTap={ tap ->
                     val transfer = transfers.mapNotNull { t -> t.position?.let { t to projected(it.latitude!!, it.longitude!!) } }.minByOrNull { (it.second - tap).getDistance() }
                     if (transfer != null && (transfer.second - tap).getDistance() < with(density) { 26.dp.toPx() }) { onTransfer(transfer.first.number); return@detectTapGestures }
+                    val pin=features.pins.minByOrNull { (projected(it.point.latitude,it.point.longitude)-tap).getDistance() }
+                    if(pin!=null && (projected(pin.point.latitude,pin.point.longitude)-tap).getDistance()<with(density) { 24.dp.toPx() }) { onPin(pin);return@detectTapGestures }
                     val closest = stations.filter { it.mapped }.minByOrNull { (projected(it.latitude!!, it.longitude!!) - tap).getDistance() }
                     if (closest != null && (projected(closest.latitude!!, closest.longitude!!) - tap).getDistance() < with(density) { 24.dp.toPx() }) onStation(closest.name)
-                }
+                })
             }) {
             val grid = 44.dp.toPx()
             var x = 0f; while (x < this.size.width) { drawLine(outline.copy(alpha = .3f), Offset(x, 0f), Offset(x, this.size.height)); x += grid }
             var y = 0f; while (y < this.size.height) { drawLine(outline.copy(alpha = .3f), Offset(0f, y), Offset(this.size.width, y)); y += grid }
+            features.shapes.forEach { shape -> val path=Path();shape.points.forEachIndexed { i,p -> val xy=projected(p.latitude,p.longitude);if(i==0) path.moveTo(xy.x,xy.y) else path.lineTo(xy.x,xy.y) };drawPath(path,Color(android.graphics.Color.parseColor(if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color)).copy(alpha=.6f),style=androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx())) }
+            features.pins.forEach { pin -> val point=projected(pin.point.latitude,pin.point.longitude);drawCircle(Color.White,6.dp.toPx(),point);drawCircle(Color(android.graphics.Color.parseColor(pin.service?.color ?: "#8b5bc2")),4.dp.toPx(),point) }
             journey?.legs?.forEachIndexed { index, leg ->
                 val sections = trace?.legs?.getOrNull(index) ?: JourneyPlanning.mappedSegments(leg, stations).map { points -> RouteSection(points.map { TrackPoint(it.latitude!!, it.longitude!!) }, false) }
                 sections.forEach { section ->

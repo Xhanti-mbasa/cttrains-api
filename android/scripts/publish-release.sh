@@ -11,8 +11,8 @@ if git show-ref --verify --quiet "refs/tags/$TAG"; then
 fi
 
 shopt -s nullglob
-assets=(release-assets/*.apk release-assets/*.sha256)
-[[ ${#assets[@]} -eq 2 ]] || { echo 'Expected one APK and its SHA-256 checksum.' >&2; exit 1; }
+assets=(release-assets/*.apk release-assets/*.sha256 release-assets/signing-certificate.txt)
+[[ ${#assets[@]} -eq 3 && -f release-assets/signing-certificate.txt ]] || { echo 'Expected one APK, checksum and signing certificate fingerprints.' >&2; exit 1; }
 (cd release-assets && sha256sum -c ./*.sha256)
 
 prerelease=true
@@ -29,7 +29,8 @@ trap 'rm -f -- "$notes"' EXIT
     else
         printf '**Development signing:** installable test APK, signed with an Android debug key. The key can differ between workflow runs; uninstall an older debug-signed APK before installing if Android reports a signature mismatch.\n'
     fi
-    printf '\nDownload the APK below. Its SHA-256 checksum is provided alongside it.\n'
+    printf '\nDownload the APK below. Its SHA-256 checksum and public signing certificate fingerprints are provided alongside it.\n'
+    printf '\nBus operators, community reports and live trip sharing are optional beta features in Settings. Timetables are published schedules; confirm current operation and boarding points. Live sharing requires separate hosted Matrix accounts and device validation.\n'
 } > "$notes"
 
 if gh release view "$TAG" >/dev/null 2>&1; then

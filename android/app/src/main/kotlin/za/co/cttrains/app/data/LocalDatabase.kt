@@ -20,6 +20,11 @@ interface TransitDao {
     @Query("SELECT * FROM local_values WHERE `key` = :key") suspend fun value(key: String): LocalValue?
     @Query("SELECT * FROM local_values WHERE `key` = :key") fun observeValue(key: String): Flow<LocalValue?>
     @Upsert suspend fun value(row: LocalValue)
+    @Query("SELECT * FROM local_values") fun observeValues(): Flow<List<LocalValue>>
+    @Query("SELECT * FROM local_values") suspend fun allValues(): List<LocalValue>
+    @Query("SELECT * FROM scheduled_journeys ORDER BY departureAt") suspend fun allJourneys(): List<JourneyEntity>
+    @Query("SELECT * FROM schedule_cache ORDER BY fetchedAt DESC") suspend fun caches(): List<CacheEntity>
+    @Query("SELECT * FROM schedule_cache ORDER BY fetchedAt DESC") fun observeCaches(): Flow<List<CacheEntity>>
     @Query("SELECT * FROM schedule_cache WHERE `key` = :key") suspend fun cache(key: String): CacheEntity?
     @Upsert suspend fun cache(row: CacheEntity)
     @Query("DELETE FROM schedule_cache WHERE fetchedAt < :cutoff OR fetchedAt > :now OR `key` NOT IN (SELECT `key` FROM schedule_cache ORDER BY fetchedAt DESC LIMIT 12)") suspend fun pruneCache(cutoff: Long, now: Long)

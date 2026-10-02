@@ -98,7 +98,7 @@ class OfflineMaps(context: Context) {
         val service = app.getSystemService(ConnectivityManager::class.java)
         return service.getNetworkCapabilities(service.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
     }
-    fun create(area: MapArea) {
+    fun create(area: MapArea, style: String = "streets") {
         val error = when {
             !foreground || !connected() -> "Open the app with an internet connection to download maps."
             state.value.loading || state.value.creating -> "Wait for the current map operation."
@@ -111,11 +111,12 @@ class OfflineMaps(context: Context) {
         pauseAll()
         mutable.update { it.copy(creating = true, error = null) }
         val b = area.bounds
-        val definition = OfflineTilePyramidRegionDefinition(MapPlanning.STYLE_URL, LatLngBounds.from(b.north, b.east, b.south, b.west), area.minZoom.toDouble(), area.maxZoom.toDouble(), 1f, false)
-        manager.createOfflineRegion(definition, JSONObject().put("name", area.name).toString().toByteArray(), object : OfflineManager.CreateOfflineRegionCallback {
+        val name = "${area.name} · ${MapStyles.titles[style] ?: "Streets"}"
+        val definition = OfflineTilePyramidRegionDefinition(MapStyles.url(style), LatLngBounds.from(b.north, b.east, b.south, b.west), area.minZoom.toDouble(), area.maxZoom.toDouble(), 1f, false)
+        manager.createOfflineRegion(definition, JSONObject().put("name", name).put("style",style).toString().toByteArray(), object : OfflineManager.CreateOfflineRegionCallback {
             override fun onCreate(region: OfflineRegion) {
                 regions[region.id] = region; observe(region)
-                mutable.update { it.copy(creating = false, regions = it.regions + MapDownload(region.id, area.name)) }
+                mutable.update { it.copy(creating = false, regions = it.regions + MapDownload(region.id, name)) }
                 if (foreground && MapEngine.online()) resume(region.id)
             }
             override fun onError(error: String) { mutable.update { it.copy(creating = false, error = "Couldn’t create this map download.") } }
