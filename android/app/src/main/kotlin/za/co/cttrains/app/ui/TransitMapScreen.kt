@@ -104,11 +104,12 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
         if (grants.values.any { it }) model.locateOnce() else model.showMessage("Location is optional. You can select stations without it.")
     }
     fun refresh() { failed=false;retry++;model.refreshHome();features.refreshVisible() }
+    fun centre(): GeoPoint? = if(useStreets) model.mapViewport.camera?.target?.let { GeoPoint(it.latitude,it.longitude) } else model.mapViewport.stationCenter
     fun google() {
         val start=feature.access?.point ?: state.stations.firstOrNull { it.name==state.from && it.mapped }?.let { GeoPoint(it.latitude!!,it.longitude!!) }
         val end=feature.destination?.point ?: state.stations.firstOrNull { it.name==state.to && it.mapped }?.let { GeoPoint(it.latitude!!,it.longitude!!) }
         val url=if(start!=null && end!=null) "https://www.google.com/maps/dir/?api=1&origin=${start.latitude},${start.longitude}&destination=${end.latitude},${end.longitude}&travelmode=transit"
-            else model.mapViewport.camera?.target?.let { "https://www.google.com/maps/search/?api=1&query=${it.latitude},${it.longitude}" } ?: "https://www.google.com/maps/search/?api=1&query=Cape+Town"
+            else centre()?.let { "https://www.google.com/maps/search/?api=1&query=${it.latitude},${it.longitude}" } ?: "https://www.google.com/maps/search/?api=1&query=Cape+Town"
         uri.openUri(url)
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -214,7 +215,7 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
         if(state.preferences.mapMode=="online") Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
             MapStyles.titles.forEach { (id,title) -> FilterChip(feature.extras.beta.mapStyle==id,{ features.beta { it.copy(mapStyle=id) } },label={ Text(title) }) }
         }
-            TextButton(onClick={ optionsOpen=false;val p=model.mapViewport.camera?.target;features.drop(if(p!=null) GeoPoint(p.latitude,p.longitude) else feature.focus ?: GeoPoint(-33.95,18.58)) }) { Text("Mark map centre · Home, Work or another place") }
+            TextButton(onClick={ optionsOpen=false;val p=centre();if(p!=null) features.drop(p) else features.message("Wait for the map to load, or press and hold your chosen position.") }) { Text("Mark map centre · Home, Work or another place") }
             Text("You can also press and hold a point on the map to mark its exact position.",style=MaterialTheme.typography.bodySmall)
         }
     }
@@ -272,6 +273,7 @@ private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?
     val routeNames = journey?.legs?.flatMap { it.stops }?.map { stationKey(it.name) }?.toSet()
     val extent = if(features.fitPoints.isNotEmpty()) features.fitPoints.map { StationPosition("Route",it.latitude,it.longitude) } else if(routeNames==null) stations+features.pins.map { StationPosition(it.name,it.point.latitude,it.point.longitude) } else stations.filter { stationKey(it.name) in routeNames }
     val projection = remember(extent, trace, size) { Projection(extent, trace, size) }
+    SideEffect { if(size.width>0 && size.height>0) viewport.stationCenter=projection.coordinate(Offset(size.width/2f,size.height/2f)-Offset(pan.x*size.width,pan.y*size.height)/zoom) }
     val density = LocalDensity.current
     val primary = MaterialTheme.colorScheme.primary
     val outline = MaterialTheme.colorScheme.outlineVariant
