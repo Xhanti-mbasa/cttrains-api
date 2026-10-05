@@ -87,6 +87,21 @@ class DirectionsUpdatesUiTest {
         app.onNodeWithText("Notification settings").assertIsDisplayed()
         UiScreenshots.save("live-update-now-bar-setup")
     }
+    @Test fun savedDirectionsMapDoesNotRequirePlannerStateOrOnlineImagery() {
+        val vm=ViewModelProvider(app.activity)[TrainViewModel::class.java]
+        app.runOnUiThread {
+            vm.setMapMode("stations")
+            vm.selectJourney(null)
+            DirectionsRuntime.state.value=DirectionsState(preview=plan())
+            vm.openDirections()
+        }
+        app.onNodeWithText("View journey map").performScrollTo().performClick()
+        app.onNodeWithTag("directions-map").assertIsDisplayed()
+        app.onNodeWithText("Work → Home").assertIsDisplayed()
+        UiScreenshots.save("restored-directions-map-offline")
+        app.onNodeWithText("Close map").performClick()
+        app.onNodeWithTag("directions-screen").assertIsDisplayed()
+    }
     @Test fun apkVerifierRejectsCorruptedPayloadAndUpdateCredentialsAreEncrypted() {
         val c=app.activity
         val installed=File(c.applicationInfo.sourceDir)

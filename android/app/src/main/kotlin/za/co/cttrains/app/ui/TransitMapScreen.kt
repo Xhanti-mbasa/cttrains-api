@@ -285,7 +285,7 @@ private class Projection(stations: List<StationPosition>, trace: JourneyTrace?, 
 }
 
 @Composable
-private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?, trace: JourneyTrace?, viewport: MapViewport, transfers: List<TransferPoint>, location: CurrentPosition?, from: String, to: String, onStation: (String) -> Unit, onTransfer: (Int) -> Unit,features: FeatureLayers,onPin: (MapPin)->Unit,onDrop: (GeoPoint)->Unit) {
+internal fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?, trace: JourneyTrace?, viewport: MapViewport, transfers: List<TransferPoint>, location: CurrentPosition?, from: String, to: String, onStation: (String) -> Unit, onTransfer: (Int) -> Unit,features: FeatureLayers,onPin: (MapPin)->Unit,onDrop: (GeoPoint)->Unit) {
     var size by remember { mutableStateOf(IntSize.Zero) }
     var zoom by remember(journey) { mutableFloatStateOf(if (viewport.stationJourney == journey) viewport.stationZoom else 1f) }
     var pan by remember(journey) { mutableStateOf(if (viewport.stationJourney == journey) Offset(viewport.stationPanX, viewport.stationPanY) else Offset.Zero) }
@@ -309,7 +309,7 @@ private fun OfflineStationMap(stations: List<StationPosition>, journey: Journey?
     LaunchedEffect(features.focus,size) { features.focus?.let { p -> if(p!=viewport.stationFocus && size.width>0 && size.height>0) { zoom=6f;val middle=Offset(size.width/2f,size.height/2f);val offset=(middle-projection.point(p.latitude,p.longitude))*zoom;pan=Offset(offset.x/size.width,offset.y/size.height);viewport.stationFocus=p } } }
     val shapePaths by produceState<List<Pair<Path,Color>>>(emptyList(),projection,features.shapes) {
         value=withContext(Dispatchers.Default) {
-            features.shapes.map { shape->val path=Path();shape.points.forEachIndexed { i,p->val xy=projection.point(p.latitude,p.longitude);if(i==0) path.moveTo(xy.x,xy.y) else path.lineTo(xy.x,xy.y) };path to Color(android.graphics.Color.parseColor(if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color)) }
+            features.shapes.map { shape->val path=Path();shape.points.forEachIndexed { i,p->val xy=projection.point(p.latitude,p.longitude);if(i==0) path.moveTo(xy.x,xy.y) else path.lineTo(xy.x,xy.y) };path to Color(android.graphics.Color.parseColor(if(shape.source.startsWith("Saved directions")) "#1478B8" else if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color)) }
         }
     }
     Box(Modifier.fillMaxSize()) {

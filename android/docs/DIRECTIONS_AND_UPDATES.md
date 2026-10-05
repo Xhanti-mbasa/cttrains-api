@@ -13,6 +13,13 @@ before it can work offline; starting directions itself makes no network request.
 Map imagery has its own online/downloaded controls. No Google Maps API key is
 required.
 
+**View journey map** opens a full-screen map built from the saved directions,
+even after Android closes the planner screen. It keeps only the journey's
+numbered stops and walking paths. Transit links in this recovery view are
+approximate station/stop connections; the regular planner map retains its
+separately mapped railway trace. Without imagery, the offline schematic still
+shows the saved geometry and current position.
+
 Allow location while using the app and notifications when starting. Android's
 location foreground service continues an explicitly started session when the
 app is in the background, for at most four hours. Pause stops GPS sampling; Stop

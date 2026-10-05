@@ -73,7 +73,7 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
     var toolsOpen by remember { mutableStateOf(false) }
     val backStack by navigation.currentBackStackEntryAsState()
     val screen = backStack?.destination?.route ?: "map"
-    val fullMap = screen == "map/fullscreen"
+    val fullMap = screen == "map/fullscreen" || screen=="directions/map"
     val snackbar = remember { SnackbarHostState() }
     fun go(route: String) { navigation.navigate(route) { popUpTo(navigation.graph.startDestinationId) { saveState = true }; launchSingleTop = true; restoreState = true } }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); model.dismissMessage() } }
@@ -114,7 +114,8 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
                 composable("trips") { SafetyTripsScreen(state,feature,features) }
                 composable("whatsapp") { za.co.cttrains.app.whatsapp.WhatsAppScreen({ go("community") },{ go("trips") }) }
                 composable("community") { CommunityScreen(state,feature,features,model) { go("settings") } }
-                composable("directions") { DirectionsScreen({ go("plan") },{ go("map") }) }
+                composable("directions") { DirectionsScreen({ go("plan") },{ navigation.navigate("directions/map") { launchSingleTop=true } }) }
+                composable("directions/map") { DirectionsMapScreen(state,model,feature) { navigation.popBackStack() } }
                 composable("app-updates") { za.co.cttrains.app.updates.UpdatesScreen() }
             }
         }

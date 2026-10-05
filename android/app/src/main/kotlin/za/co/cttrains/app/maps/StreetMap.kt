@@ -191,7 +191,7 @@ private data class ExtraFrame(val pins: String,val shapes: String,val walks: Str
 private data class RailFrame(val stations: String,val routes: String,val location: String,val transfers: String)
 private fun prepareExtra(features: FeatureLayers): ExtraFrame {
     val pins=features.pins.map { p -> Feature.fromGeometry(Point.fromLngLat(p.point.longitude,p.point.latitude)).apply { addStringProperty("id",p.id);addStringProperty("name",p.name);addStringProperty("color",p.service?.color ?: "#8b5bc2") } }
-    val shapes=features.shapes.filter { it.points.size>=2 }.map { shape -> Feature.fromGeometry(LineString.fromLngLats(shape.points.map { Point.fromLngLat(it.longitude,it.latitude) })).apply { addStringProperty("color",if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color) } }
+    val shapes=features.shapes.filter { it.points.size>=2 }.map { shape -> Feature.fromGeometry(LineString.fromLngLats(shape.points.map { Point.fromLngLat(it.longitude,it.latitude) })).apply { addStringProperty("color",if(shape.source.startsWith("Saved directions")) "#1478B8" else if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color) } }
     val walks=features.walks.map { leg -> Feature.fromGeometry(LineString.fromLngLats(leg.points.map { Point.fromLngLat(it.longitude,it.latitude) })) }
     val badges=features.badges.map { b -> Feature.fromGeometry(Point.fromLngLat(b.point.longitude,b.point.latitude)).apply { addStringProperty("label",b.compact) } }
     return ExtraFrame(FeatureCollection.fromFeatures(pins).toJson(),FeatureCollection.fromFeatures(shapes).toJson(),FeatureCollection.fromFeatures(walks).toJson(),FeatureCollection.fromFeatures(badges).toJson())

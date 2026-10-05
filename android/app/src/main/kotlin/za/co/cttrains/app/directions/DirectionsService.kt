@@ -121,6 +121,7 @@ class DirectionsService: Service() {
             c.stopService(Intent(c,DirectionsService::class.java))
             DirectionsRuntime.state.value=DirectionsState()
             c.getSystemService(NotificationManager::class.java).cancel(DirectionsNotifications.ID)
+            c.getSystemService(NotificationManager::class.java).cancel(1911)
             CoroutineScope(Dispatchers.IO).launch { DirectionsStore(c.applicationContext).clearStopped() }
         }
     }
