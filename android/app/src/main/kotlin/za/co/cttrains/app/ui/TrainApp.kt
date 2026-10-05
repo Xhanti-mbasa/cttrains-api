@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class,androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package za.co.cttrains.app.ui
 
@@ -47,6 +47,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import za.co.cttrains.app.scheduling.openStreetMapStationUrl
+import za.co.cttrains.app.directions.*
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 private val FullDate = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.ENGLISH)
 private val FetchTime = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLISH).withZone(CapeTownZone)
@@ -55,6 +58,17 @@ private val FetchTime = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLI
 fun TrainApp(state: TrainState, model: TrainViewModel) {
     val features: za.co.cttrains.app.FeatureViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val feature by features.state.collectAsStateWithLifecycle()
+    val liveFix by remember { DirectionsRuntime.state.map { if(it.running && it.session?.paused!=true) it.fix else null }.distinctUntilChanged() }.collectAsStateWithLifecycle(initialValue=null)
+    var directionPositionShown by remember { mutableStateOf(false) }
+    LaunchedEffect(liveFix) {
+        if(liveFix!=null) {
+            liveFix?.let { model.directionsPosition(za.co.cttrains.app.location.CurrentPosition(it.point.latitude,it.point.longitude,it.accuracy.toFloat(),it.at)) }
+            directionPositionShown=true
+        } else if(directionPositionShown) {
+            model.directionsPosition(null)
+            directionPositionShown=false
+        }
+    }
     val navigation = rememberNavController()
     var toolsOpen by remember { mutableStateOf(false) }
     val backStack by navigation.currentBackStackEntryAsState()
@@ -67,7 +81,7 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
     LaunchedEffect(feature.error) { feature.error?.let { snackbar.showSnackbar(it) } }
     LaunchedEffect(state.requestedScreen) { state.requestedScreen?.let { go(it); model.navigationHandled() } }
     Scaffold(
-        topBar = { if (!fullMap) CenterAlignedTopAppBar(title = {
+        topBar = { if (!fullMap) Column { CenterAlignedTopAppBar(title = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Outlined.Train, null, tint = MaterialTheme.colorScheme.primary)
                 Text("CT Trains", fontWeight = FontWeight.Bold)
@@ -75,7 +89,7 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
         }, actions = {
             IconButton(onClick = { go("alerts") }) { Icon(Icons.Outlined.NotificationsActive, "Service alerts") }
             TextButton(onClick = { toolsOpen = true }) { Icon(Icons.Outlined.MoreHoriz, null);Text("Tools") }
-        }) },
+        });DirectionsCompactBanner { go("directions") } } },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = { if (!fullMap) NavigationBar {
             listOf(Triple("map", "Map", Icons.Outlined.Map), Triple("plan", "Plan", Icons.Outlined.Route),
@@ -93,17 +107,19 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
                 composable("plan") { PlanScreen(state, model, wide,feature,features) { journey -> model.selectJourney(journey);features.showTrainMap(); go("map") } }
                 composable("saved") { SavedScreen(state, model) { go("plan") } }
                 composable("upcoming") { UpcomingScreen(state, model) }
-                composable("settings") { AboutScreen(state, model,feature,features,{ go("buses") },{ go("trips") },{ go("community") },{ go("whatsapp") }) }
+                composable("settings") { AboutScreen(state, model,feature,features,{ go("buses") },{ go("trips") },{ go("community") },{ go("whatsapp") },{ go("directions") },{ go("app-updates") }) }
                 composable("budget") { BudgetScreen(state, model) { go("plan") } }
                 composable("alerts") { AlertsScreen(state, model) }
                 composable("buses") { BusScreen(feature,features,{ go("trips") }) { service,route -> model.selectJourney(null);features.showBusMap(service,route);go("map") } }
                 composable("trips") { SafetyTripsScreen(state,feature,features) }
                 composable("whatsapp") { za.co.cttrains.app.whatsapp.WhatsAppScreen({ go("community") },{ go("trips") }) }
                 composable("community") { CommunityScreen(state,feature,features,model) { go("settings") } }
+                composable("directions") { DirectionsScreen({ go("plan") },{ go("map") }) }
+                composable("app-updates") { za.co.cttrains.app.updates.UpdatesScreen() }
             }
         }
     }
-    if (toolsOpen) TransitToolsSheet({ toolsOpen = false }, { toolsOpen = false; go("alerts") }, { toolsOpen = false; go("budget") },{ toolsOpen=false;go("buses") },{ toolsOpen=false;go("trips") },{ toolsOpen=false;go("community") },{ toolsOpen=false;go("whatsapp") })
+    if (toolsOpen) TransitToolsSheet({ toolsOpen = false }, { toolsOpen = false; go("alerts") }, { toolsOpen = false; go("budget") },{ toolsOpen=false;go("buses") },{ toolsOpen=false;go("trips") },{ toolsOpen=false;go("community") },{ toolsOpen=false;go("whatsapp") },{ toolsOpen=false;go("directions") },{ toolsOpen=false;go("app-updates") })
     ImportedFiles(feature,features)
 }
 
@@ -377,7 +393,7 @@ private fun SavedScreen(state: TrainState, model: TrainViewModel, onPlan: () -> 
 }
 
 @Composable
-private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.cttrains.app.FeatureState,features: za.co.cttrains.app.FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit,onWhatsApp: ()->Unit) {
+private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.cttrains.app.FeatureState,features: za.co.cttrains.app.FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit,onWhatsApp: ()->Unit,onDirections: ()->Unit,onUpdates: ()->Unit) {
     val uri = LocalUriHandler.current
     var confirmClear by remember { mutableStateOf(false) }
     var confirmProfile by remember { mutableStateOf(false) }
@@ -385,13 +401,15 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.
         Text("Your app, your data", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Notice("An independent, community app for Cape Town rail commuters. Timetables come from CT Trains. This app is not affiliated with CT Trains, PRASA or Metrorail.", Icons.Outlined.Train)
         FeatureStatus(feature)
+        FilledTonalButton(onClick=onDirections,modifier=Modifier.fillMaxWidth()) { Text("Journey directions & Live Updates") }
+        OutlinedButton(onClick=onUpdates,modifier=Modifier.fillMaxWidth()) { Text("App updates · GitHub") }
         BetaSettings(feature,features,onBuses,onTrips,onCommunity,onWhatsApp)
         ProfileSettings(feature,features)
         HostedSettings(feature,features)
         Card(shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Appearance", style = MaterialTheme.typography.titleLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("System", "Light", "Dark").forEach { theme -> FilterChip(selected = state.preferences.theme == theme, onClick = { model.setTheme(theme) }, label = { Text(theme) }) }
                 }
                 if (Build.VERSION.SDK_INT >= 31) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -406,10 +424,10 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.
                 Text("Your last 12 searches are stored on this device for up to 14 days. If a refresh fails, the same route, date and departure time can use its saved result. Saved routes stay until you remove them.")
                 Text("An anonymous UUID identifies this installation locally. Personal records and optional account tokens are encrypted with Android Keystore in Room. Public station positions and scheduling timestamps remain readable inside the private database. No analytics or device identifiers. Google profile and hosted Matrix accounts are optional and independent.", style = MaterialTheme.typography.bodyMedium)
                 Text("Searches send the route, date, time and IP to their timetable source. Online maps reveal the viewed area and IP to OpenFreeMap or City of Cape Town imagery hosting. Explicit place searches go to OpenStreetMap Nominatim or Photon. Offline map mode disables map tile requests; timetable and hosted communication checks have their own controls.", style = MaterialTheme.typography.bodyMedium)
-                Text("Locate me samples Android location while the app is open. Only an explicitly started live-trip session continues with a visible notification, for at most two hours. Encrypted trip updates go to your private Matrix room; public reports go to the selected community room. Friend positions are retained briefly and disappear from the map after five minutes without a fresh update.", style = MaterialTheme.typography.bodyMedium)
+                Text("Locate me samples Android location while the app is open. Active directions run locally with a visible notification for up to four hours; no GPS history is saved or uploaded. Separate, optional live sharing runs for at most two hours and sends encrypted updates to your private Matrix room. Public reports go to the selected community room. Friend positions disappear from the map after five minutes without a fresh update.", style = MaterialTheme.typography.bodyMedium)
                 Text("Calendar handoff opens your calendar app for review. The app cannot read your calendar. Optional Health Connect step totals are read only after separate permission; no health data is uploaded. Trip files reveal the itinerary you review before sharing. Encrypted profile backups are stored only at the file location you choose.", style = MaterialTheme.typography.bodyMedium)
                 Text("Downloaded maps and map-area bounds are public cache data and are not encrypted. Manage and delete them from the Map download button.", style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("online" to "Online", "offline" to "Offline", "stations" to "Stations").forEach { (mode, title) -> FilterChip(state.preferences.mapMode == mode, { model.setMapMode(mode) }, label = { Text(title) }) } }
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf("online" to "Online", "offline" to "Offline", "stations" to "Stations").forEach { (mode, title) -> FilterChip(state.preferences.mapMode == mode, { model.setMapMode(mode) }, label = { Text(title) }) } }
                 OutlinedButton(onClick = model::forgetLocation) { Text("Forget sampled location") }
                 OutlinedButton(onClick = { confirmProfile = true }) { Icon(Icons.Outlined.DeleteForever, null); Spacer(Modifier.width(8.dp)); Text("Delete all local personal data") }
                 OutlinedButton(onClick = { confirmClear = true }) { Icon(Icons.Outlined.DeleteOutline, null); Spacer(Modifier.width(8.dp)); Text("Clear cached timetables") }

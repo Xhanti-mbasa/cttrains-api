@@ -103,6 +103,7 @@ import za.co.cttrains.core.*
                         Text("Leave $leave · arrive $arrive · 5-minute boarding buffer",style=MaterialTheme.typography.bodySmall)
                     } else Text("Calculate the selected walks for a door-to-door arrival estimate.",style=MaterialTheme.typography.bodySmall)
                     TextButton(onClick={ model.selectJourney(null);m.selectBus(j);onMap() },enabled=board!=null || alight!=null) { Text("View journey map") }
+                    za.co.cttrains.app.directions.DirectionsButton({ za.co.cttrains.app.directions.DirectionsPlans.bus(j,JourneyComparison.requestedAt(dateText,j.departure.time),s.walks,timetable.fetchedAt) }) { model.selectJourney(null);m.selectBus(j);model.openDirections() }
                 } }
             }
         }

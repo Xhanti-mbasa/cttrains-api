@@ -25,13 +25,14 @@ fun TransitTools(onAlerts: () -> Unit, onBudget: () -> Unit) {
 }
 
 @Composable
-fun TransitToolsSheet(onDismiss: () -> Unit, onAlerts: () -> Unit, onBudget: () -> Unit,onBuses: ()->Unit={},onTrips: ()->Unit={},onCommunity: ()->Unit={},onWhatsApp: ()->Unit={}) {
+fun TransitToolsSheet(onDismiss: () -> Unit, onAlerts: () -> Unit, onBudget: () -> Unit,onBuses: ()->Unit={},onTrips: ()->Unit={},onCommunity: ()->Unit={},onWhatsApp: ()->Unit={},onDirections: ()->Unit={},onUpdates: ()->Unit={}) {
     ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp).navigationBarsPadding()) {
         TransitTools(onAlerts, onBudget)
+        FilledTonalButton(onClick=onDirections,modifier=Modifier.fillMaxWidth()) { Text("Journey directions · live notifications") }
+        OutlinedButton(onClick=onUpdates,modifier=Modifier.fillMaxWidth()) { Text("App updates · GitHub") }
         OutlinedButton(onClick=onBuses,modifier=Modifier.fillMaxWidth()) { Text("Golden Arrow & MyCiTi · beta") }
         OutlinedButton(onClick=onTrips,modifier=Modifier.fillMaxWidth()) { Text("Safety trips · files & sharing") }
         OutlinedButton(onClick=onCommunity,modifier=Modifier.fillMaxWidth()) { Text("Community reports, chat & friends") }
         OutlinedButton(onClick=onWhatsApp,modifier=Modifier.fillMaxWidth()) { Text("WhatsApp updates · alpha") }
     } }
 }
-

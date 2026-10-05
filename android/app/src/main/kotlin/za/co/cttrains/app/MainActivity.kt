@@ -20,6 +20,8 @@ class MainActivity : ComponentActivity() {
         features.importIntent(intent)
         model.openScheduled(intent.getStringExtra("journey_id"))
         if(intent.getBooleanExtra("community",false)) model.openCommunity()
+        if(intent.getBooleanExtra("directions",false)) model.openDirections()
+        if(intent.getBooleanExtra("app_updates",false)) model.openAppUpdates()
         setContent {
             val state = model.state.collectAsStateWithLifecycle().value
             TrainTheme(state.preferences) { TrainApp(state, model) }
@@ -31,6 +33,8 @@ class MainActivity : ComponentActivity() {
         ViewModelProvider(this)[TrainViewModel::class.java].openScheduled(intent.getStringExtra("journey_id"))
         ViewModelProvider(this)[FeatureViewModel::class.java].importIntent(intent)
         if(intent.getBooleanExtra("community",false)) ViewModelProvider(this)[TrainViewModel::class.java].openCommunity()
+        if(intent.getBooleanExtra("directions",false)) ViewModelProvider(this)[TrainViewModel::class.java].openDirections()
+        if(intent.getBooleanExtra("app_updates",false)) ViewModelProvider(this)[TrainViewModel::class.java].openAppUpdates()
     }
     override fun onStop() {
         ViewModelProvider(this)[TrainViewModel::class.java].apply { forgetLocation(); offlineMaps.foreground(false) }

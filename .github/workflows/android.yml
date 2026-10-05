@@ -115,6 +115,7 @@ jobs:
           mkdir -p dist
           filename="CT-Trains-${VERSION}-${SIGNING_MODE}.apk"
           cp "$apk" "dist/$filename"
+          python3 scripts/write-update-manifest.py --apk "dist/$filename" --output dist/update.json
           (cd dist && sha256sum "$filename" > "$filename.sha256")
           "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --print-certs "$apk" > "${RUNNER_TEMP}/cttrains-certificates.txt"
           python3 - <<'PY'
@@ -172,7 +173,7 @@ jobs:
       - name: Native storage, timetable, backup and settings tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 36
           arch: x86_64
           target: google_apis
           profile: pixel_2
@@ -215,4 +216,3 @@ jobs:
           SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
           SIGNING_MODE: ${{ needs.build.outputs.signing }}
         run: bash android/scripts/publish-release.sh
-

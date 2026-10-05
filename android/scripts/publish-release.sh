@@ -11,8 +11,8 @@ if git show-ref --verify --quiet "refs/tags/$TAG"; then
 fi
 
 shopt -s nullglob
-assets=(release-assets/*.apk release-assets/*.sha256 release-assets/signing-certificate.txt)
-[[ ${#assets[@]} -eq 3 && -f release-assets/signing-certificate.txt ]] || { echo 'Expected one APK, checksum and signing certificate fingerprints.' >&2; exit 1; }
+assets=(release-assets/*.apk release-assets/*.sha256 release-assets/signing-certificate.txt release-assets/update.json)
+[[ ${#assets[@]} -eq 4 && -f release-assets/signing-certificate.txt && -f release-assets/update.json ]] || { echo 'Expected one APK, checksum, signing certificate fingerprints and update manifest.' >&2; exit 1; }
 (cd release-assets && sha256sum -c ./*.sha256)
 
 prerelease=true
@@ -30,6 +30,8 @@ trap 'rm -f -- "$notes"' EXIT
         printf '**Development signing:** installable test APK, signed with an Android debug key. The key can differ between workflow runs; uninstall an older debug-signed APK before installing if Android reports a signature mismatch.\n'
     fi
     printf '\nDownload the APK below. Its SHA-256 checksum and public signing certificate fingerprints are provided alongside it.\n'
+    printf '\nIn-app GitHub updates use `update.json` and require the same signing key as the installed app. Configure the four signing secrets with a persistent key for compatible upgrades; per-run development keys cannot update an existing installation. Private repositories also need a device-configured Contents: read-only token.\n'
+    printf '\nActive directions support Android 16 Live Updates, with a standard ongoing notification on older versions. Now Bar placement remains controlled by Samsung firmware and user settings. Scheduled transit times are not live vehicle arrivals.\n'
     printf '\nBus operators, community reports and live trip sharing are optional beta features in Settings. Timetables are published schedules; confirm current operation and boarding points. Live sharing requires separate hosted Matrix accounts and device validation.\n'
 } > "$notes"
 

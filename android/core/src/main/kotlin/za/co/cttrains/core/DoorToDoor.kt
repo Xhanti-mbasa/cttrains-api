@@ -6,7 +6,7 @@ import java.time.*
 import kotlin.math.*
 
 @Serializable data class WalkEndpoint(val id: String,val label: String,val point: GeoPoint)
-@Serializable data class WalkingLeg(val from: WalkEndpoint,val to: WalkEndpoint,val distanceMeters: Double,val durationSeconds: Double,val points: List<GeoPoint>,val fetchedAt: Long,val source: String="FOSSGIS / OSRM · OpenStreetMap") {
+@Serializable data class WalkingLeg(val from: WalkEndpoint,val to: WalkEndpoint,val distanceMeters: Double,val durationSeconds: Double,val points: List<GeoPoint>,val fetchedAt: Long,val source: String="FOSSGIS / OSRM · OpenStreetMap",val instructions: List<WalkInstruction> = emptyList()) {
     val minutes: Int get()=ceil(durationSeconds/60).toInt()
     val key: String get()=WalkingRoutes.key(from,to)
 }
@@ -18,7 +18,7 @@ object WalkingRoutes {
     fun key(a: WalkEndpoint,b: WalkEndpoint)="${a.id}:${a.point.latitude},${a.point.longitude}>${b.id}:${b.point.latitude},${b.point.longitude}"
     fun url(a: WalkEndpoint,b: WalkEndpoint): String {
         require(a.point.valid && b.point.valid && NearbySuggestions.distance(a.point,b.point)<=20000)
-        return BASE+"${a.point.longitude},${a.point.latitude};${b.point.longitude},${b.point.latitude}?overview=full&geometries=geojson&steps=false&radiuses=75;75"
+        return BASE+"${a.point.longitude},${a.point.latitude};${b.point.longitude},${b.point.latitude}?overview=full&geometries=geojson&steps=true&radiuses=75;75"
     }
     fun parse(raw: String,a: WalkEndpoint,b: WalkEndpoint,now: Long): WalkingLeg {
         require(raw.toByteArray().size<=1024*1024)
@@ -34,7 +34,20 @@ object WalkingRoutes {
         require(NearbySuggestions.distance(points.first(),a.point)<=120 && NearbySuggestions.distance(points.last(),b.point)<=120)
         val direct=NearbySuggestions.distance(a.point,b.point)
         require(meters>=max(0.0,direct-150) && meters<=direct*8+1500)
-        return WalkingLeg(a,b,meters,seconds,points,now)
+        var covered=0.0
+        val instructions=r["legs"]?.jsonArray.orEmpty().flatMap { it.jsonObject["steps"]?.jsonArray.orEmpty() }.take(1000).mapNotNull { value ->
+            val step=value.jsonObject;val maneuver=step["maneuver"]?.jsonObject ?: return@mapNotNull null
+            val loc=maneuver["location"]?.jsonArray ?: return@mapNotNull null
+            if(loc.size!=2) return@mapNotNull null
+            val point=GeoPoint(loc[1].jsonPrimitive.double,loc[0].jsonPrimitive.double)
+            val type=maneuver["type"]?.jsonPrimitive?.content.orEmpty();val modifier=maneuver["modifier"]?.jsonPrimitive?.content.orEmpty()
+            val road=step["name"]?.jsonPrimitive?.content.orEmpty().take(150)
+            val text=when(type) { "arrive"->"Arrive at ${b.label}";"depart"->"Head ${modifier.ifBlank { "along the path" }}";"turn","end of road"->"Turn ${modifier.ifBlank { "onto the next path" }}";"fork"->"Keep ${modifier.ifBlank { "on the path" }}";"roundabout","rotary"->"Follow the roundabout";else->"Continue ${modifier.ifBlank { "on the path" }}" }+(if(road.isNotBlank() && type!="arrive") " on $road" else "")
+            val at=covered;val segment=step["distance"]?.jsonPrimitive?.doubleOrNull
+            if(segment!=null && segment.isFinite() && segment>=0) covered+=segment
+            if(!point.valid || at>meters+150) null else WalkInstruction(point,text.take(300),at)
+        }
+        return WalkingLeg(a,b,meters,seconds,points,now,instructions=instructions)
     }
     fun nearest(point: GeoPoint,stations: List<StationPosition>): StationPosition?=stations.filter { it.mapped }.minByOrNull { NearbySuggestions.distance(point,GeoPoint(it.latitude!!,it.longitude!!)) }
     fun endpoint(station: StationPosition)=WalkEndpoint("station:${stationKey(station.name)}",station.name,GeoPoint(station.latitude!!,station.longitude!!))

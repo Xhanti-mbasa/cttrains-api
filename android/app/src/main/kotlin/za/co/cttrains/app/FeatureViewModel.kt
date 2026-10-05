@@ -360,7 +360,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
     fun stopLive() { getApplication<Application>().stopService(Intent(getApplication(),TripLiveService::class.java));viewModelScope.launch(handler) { store.liveCircle()?.let { store.saveCircle(it.copy(sharing=false)) } } }
     fun phase(phase: String)=viewModelScope.launch(handler) { require(phase in CircleUpdates.phases);store.liveCircle()?.let { store.saveCircle(it.copy(phase=phase)) } }
     fun removeFriend(id: String)=viewModelScope.launch(handler) { stopLive();store.update { it.copy(friends=it.friends.filterNot { f->f.id==id }) };store.saveWatched(store.watched().filterNot { it.id==id }) }
-    fun reset() { za.co.cttrains.app.whatsapp.WhatsAppReader.configure(getApplication(),null); jobs.values.forEach { it.cancel() };timetableJob?.cancel();walkJob?.cancel();syncJob?.cancel();stopNearby();WalkLearningService.stop(getApplication());stopLive();files.clearPrivatePhotos();BusRefreshWorker.configure(getApplication(),BetaPreferences());mutable.value=FeatureState() }
+    fun reset() { za.co.cttrains.app.directions.DirectionsService.stop(getApplication());za.co.cttrains.app.updates.UpdateWork.reset(getApplication());za.co.cttrains.app.whatsapp.WhatsAppReader.configure(getApplication(),null); jobs.values.forEach { it.cancel() };timetableJob?.cancel();walkJob?.cancel();syncJob?.cancel();stopNearby();WalkLearningService.stop(getApplication());stopLive();files.clearPrivatePhotos();BusRefreshWorker.configure(getApplication(),BetaPreferences());mutable.value=FeatureState() }
     private fun action(failure: String,block: suspend ()->Unit)=viewModelScope.launch(handler) {
         if(state.value.busy) return@launch
         mutable.update { it.copy(busy=true,error=null) }

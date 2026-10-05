@@ -128,6 +128,9 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun useRoute(route: SavedRoute) = edit { it.copy(from = route.from, to = route.to, date = LocalDate.now(CapeTownZone).toString()) }
     fun openMap()=mutableState.update { it.copy(requestedScreen="map") }
+    fun openDirections()=mutableState.update { it.copy(requestedScreen="directions") }
+    fun openAppUpdates()=mutableState.update { it.copy(requestedScreen="app-updates") }
+    fun directionsPosition(point: CurrentPosition?)=mutableState.update { it.copy(currentPosition=point) }
     fun presentPlannedJourney(query: SearchQuery,journey: Journey,checked: Long,cached: Boolean,fares: String?,sourceId: String=state.value.preferences.sourceId,openMap: Boolean=true) {
         searchJob?.cancel()
         mutableState.update { it.copy(from=query.from,to=query.to,

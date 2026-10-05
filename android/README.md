@@ -150,6 +150,12 @@ See [the 1.5 quality-of-life notes](docs/QUALITY_OF_LIFE_1_5.md) for map fixes, 
 See [the 1.6 final touch-up notes](docs/FINAL_TOUCHUPS_1_6.md) for journey focus, segment labels, address suggestions, operator planning and route steps.
 
 
+## Active directions and GitHub updates (1.9)
+
+Choose a timed journey in Plan, then tap **Directions** for walking guidance, boarding, changes, and the final walk. Explicitly started directions use a location foreground service with pause/stop controls, Android 16 Live Updates and an ordinary ongoing notification on older Android. Samsung controls eligibility and Now Bar placement. Boarding/getting off require confirmation; scheduled times are not live vehicle arrivals. GPS stays in memory, with no directions location history.
+
+**Tools / Settings → App updates · GitHub** checks published release manifests and stages the next APK while the installed app remains available. Checksums, package/version, Android requirements and cryptographic APK signatures must pass before Android's installation confirmation. This is app-level staging, not system A/B slots or automatic rollback. Compatible upgrades require a persistent signing key; private repositories require a device-configured Contents: read-only token. See the bundled [directions and updates guide](docs/DIRECTIONS_AND_UPDATES.md) for phone settings and publisher setup.
+
 ## Journey planner and comparison (1.8)
 
 Plan has a single **Mode of transport** selector for Trains, Golden Arrow, MyCiTi or Compare. Switching keeps the same From/To saved places or stops. Walking requires explicit routing consent. Published direct MyCiTi trips use exact stop IDs and ordered timed calls. The comparison starts at the same leave-after time, includes access/final walks, wait and a five-minute boarding buffer, and excludes departures the traveller cannot catch. Missing walks leave door-to-door duration unknown. Fastest found describes only complete options among the checked routes, not a citywide optimum. At most six candidate bus routes and three boarding/alighting pairs per route are checked; bus transfers and intermodal routing are not implemented.

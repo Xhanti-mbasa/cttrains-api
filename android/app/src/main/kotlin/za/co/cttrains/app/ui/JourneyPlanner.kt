@@ -28,6 +28,7 @@ import za.co.cttrains.core.*
 
 @Composable fun JourneyPlanner(train: TrainState,model: TrainViewModel,s: FeatureState,m: FeatureViewModel,onSettings: ()->Unit) {
     val planner: JourneyPlannerModel=androidx.lifecycle.viewmodel.compose.viewModel()
+    val directions: za.co.cttrains.app.directions.DirectionsModel=androidx.lifecycle.viewmodel.compose.viewModel()
     val result by planner.state.collectAsStateWithLifecycle()
     var mode by rememberSaveable { mutableStateOf("PRASA") }
     var selected by rememberSaveable { mutableStateOf(TransportService.values().map { it.name }) }
@@ -146,7 +147,11 @@ import za.co.cttrains.core.*
                     } }
                 }
                 items(section.options.take(if(mode=="compare") 3 else 12),key={ it.id }) { option ->
-                    PlannerJourneyCard(option,option.id==fastest,s,model,m,onSchedule={
+                    PlannerJourneyCard(option,option.id==fastest,s,model,m,onDirections={ directions.preview({ za.co.cttrains.app.directions.DirectionsPlans.option(option,train,s) }) {
+                        if(option.rail!=null) { m.showTrainMap();m.usePlannedWalks(option.walks);model.presentPlannedJourney(option.query!!,option.rail,option.fetchedAt,option.cached,null,option.sourceId,false) }
+                        else { model.selectJourney(null);m.selectBus(option.bus!!);m.usePlannedWalks(option.walks) }
+                        model.openDirections()
+                    } },onSchedule={
                         model.presentPlannedJourney(option.query!!,option.rail!!,option.fetchedAt,option.cached,option.fares.firstOrNull()?.let { "Single ${money(it.cents)}" },option.sourceId,false);scheduled=option
                     },onView={
                         if(option.rail!=null) { m.showTrainMap();m.usePlannedWalks(option.walks);model.presentPlannedJourney(option.query!!,option.rail,option.fetchedAt,option.cached,option.fares.firstOrNull()?.let { "Single ${money(it.cents)}" },option.sourceId) }
@@ -242,7 +247,7 @@ import za.co.cttrains.core.*
     }
 }
 
-@Composable internal fun PlannerJourneyCard(option: PlannerOption,fastest: Boolean,s: FeatureState,model: TrainViewModel,m: FeatureViewModel,onSchedule: ()->Unit,onView: ()->Unit) {
+@Composable internal fun PlannerJourneyCard(option: PlannerOption,fastest: Boolean,s: FeatureState,model: TrainViewModel,m: FeatureViewModel,onDirections: ()->Unit={},onSchedule: ()->Unit,onView: ()->Unit) {
     var details by rememberSaveable(option.id) { mutableStateOf(false) }
     var selectFare by remember { mutableStateOf(false) }
     var fare by remember(option.id) { mutableStateOf(option.fares.firstOrNull()) }
@@ -256,6 +261,7 @@ import za.co.cttrains.core.*
         Text(fare?.let { "Fare ${money(it.cents)} · ${it.label}" } ?: "Single fare unknown",style=MaterialTheme.typography.bodyMedium)
         FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             TextButton(onClick=onView) { Text("View map") }
+            TextButton(onClick=onDirections,modifier=Modifier.testTag("journey-directions")) { Text("Directions") }
             TextButton(onClick={ details=!details }) { Text(if(details) "Hide details" else "Trip details") }
             if(option.service==TransportService.PRASA) TextButton(onClick=onSchedule) { Text("Save & reminders") }
             if(option.service!=TransportService.PRASA) TextButton(onClick={ selectFare=true }) { Text("Choose fare") }

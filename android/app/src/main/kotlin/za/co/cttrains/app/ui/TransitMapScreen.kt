@@ -172,6 +172,7 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
             Text(if (failed) "Street map unavailable. Station map is still usable." else "Download a street map first. Station positions remain available offline.", style = MaterialTheme.typography.bodySmall)
             if (failed) TextButton(onClick = { failed = false; retry++ }) { Text("Retry street map") }
         }
+        if(state.selectedJourney!=null || feature.selectedBus!=null) za.co.cttrains.app.directions.DirectionsButton({ za.co.cttrains.app.directions.DirectionsPlans.selected(state,feature) },model::openDirections)
         Box(Modifier.then(if(fullScreen) Modifier.weight(1f) else Modifier.height(homeMapHeight)).fillMaxWidth()) {
             Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(if(fullScreen) 0.dp else 28.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 if (useStreets) key(state.preferences.mapMode, savedArea?.id, retry,feature.extras.beta.mapStyle) { StreetMap(renderState, if (state.preferences.mapMode == "offline") model.offlineMaps.definition(savedArea?.id) else null, model.mapViewport, visibleTransfers, model::selectStation, model::selectTransfer, { failed = true }, Modifier.fillMaxSize(),feature.extras.beta.mapStyle,layers,{ features.selectPin(it) },features::drop) }
