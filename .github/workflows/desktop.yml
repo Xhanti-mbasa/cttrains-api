@@ -1,0 +1,146 @@
+name: Desktop build and publish
+on:
+  push:
+    branches: [feat/desktop-hosting, main]
+    tags: ['desktop-v*']
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  pull_request:
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: desktop/requirements*.txt
+      - name: Install desktop build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb xauth python3-tk
+          python -m pip install -r desktop/requirements-build.txt
+      - name: Service and privacy tests
+        working-directory: desktop
+        run: python -m unittest discover -s tests -p test_services.py -v
+      - name: Native desktop tests
+        working-directory: desktop
+        run: xvfb-run -a python -m unittest discover -s tests -p test_desktop.py -v
+      - name: Real Matrix, database, relay and proxy integration
+        working-directory: desktop
+        env:
+          PYTHONPATH: '.:tests'
+        run: python tests/integration.py
+      - name: Build Linux executable
+        working-directory: desktop
+        run: python -m PyInstaller --noconfirm --clean --onefile --name CT-Trains-Desktop --add-data assets:assets --collect-data tzdata main.py
+      - name: Launch packaged app
+        working-directory: desktop
+        run: |
+          dist/CT-Trains-Desktop --version
+          timeout 45s xvfb-run -a dist/CT-Trains-Desktop --smoke-test --data-dir "$RUNNER_TEMP/ctdesktop-smoke" --screenshot desktop-preview.png
+      - name: Test packaged relay process
+        working-directory: desktop
+        run: |
+          python - <<'PY'
+          import subprocess, tempfile, time
+          from pathlib import Path
+          from ctdesktop.matrix import request_json
+          with tempfile.TemporaryDirectory() as root:
+              Path(root, "relay-admin.token").write_text("packaged-test-token")
+              process = subprocess.Popen(["dist/CT-Trains-Desktop", "--relay", root])
+              try:
+                  for _ in range(50):
+                      try:
+                          assert request_json("http://127.0.0.1:8787", "/v1/health")["ok"]
+                          break
+                      except Exception:
+                          time.sleep(0.1)
+                  else:
+                      raise AssertionError("Packaged relay did not become healthy")
+                  invite = request_json("http://127.0.0.1:8787", "/admin/invitations", "POST", {"name":"Packaged test","duration":60}, "packaged-test-token")
+                  request_json("http://127.0.0.1:8787", "/v1/location", "POST", {"consent":True,"latitude":-33.9,"longitude":18.4,"accuracy":15,"sent_at":time.time()}, invite["publisher_token"])
+                  assert request_json("http://127.0.0.1:8787", "/v1/location", token=invite["reader_token"])["status"] == "recent"
+                  print("PASS: packaged binary relay, invitation and position")
+              finally:
+                  process.terminate()
+                  process.wait(timeout=10)
+          PY
+      - name: Package Linux download
+        working-directory: desktop
+        run: |
+          mkdir -p bundle/CT-Trains-Desktop
+          cp dist/CT-Trains-Desktop bundle/CT-Trains-Desktop/
+          cp README.md assets/HELP.txt assets/cttrains.svg packaging/install-linux.sh bundle/CT-Trains-Desktop/
+          chmod +x bundle/CT-Trains-Desktop/install-linux.sh
+          tar -C bundle -czf CT-Trains-Desktop-0.1.0-linux-x86_64.tar.gz CT-Trains-Desktop
+          sha256sum CT-Trains-Desktop-0.1.0-linux-x86_64.tar.gz > CT-Trains-Desktop-0.1.0-linux-x86_64.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cttrains-desktop-linux
+          path: |
+            desktop/CT-Trains-Desktop-0.1.0-linux-x86_64.tar.gz
+            desktop/CT-Trains-Desktop-0.1.0-linux-x86_64.tar.gz.sha256
+            desktop/desktop-preview.png
+          if-no-files-found: error
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r desktop/requirements-build.txt
+      - working-directory: desktop
+        run: python -m unittest discover -s tests -p test_services.py -v
+      - working-directory: desktop
+        run: python -m PyInstaller --noconfirm --clean --onefile --name CT-Trains-Desktop --add-data "assets;assets" --collect-data tzdata main.py
+      - working-directory: desktop
+        run: |
+          .\dist\CT-Trains-Desktop.exe --version
+          New-Item -ItemType Directory bundle
+          Copy-Item dist\CT-Trains-Desktop.exe,README.md,assets\HELP.txt bundle\
+          Compress-Archive -Path bundle\* -DestinationPath CT-Trains-Desktop-0.1.0-windows-x86_64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cttrains-desktop-windows
+          path: desktop/CT-Trains-Desktop-0.1.0-windows-x86_64.zip
+          if-no-files-found: error
+  publish:
+    needs: [linux, windows]
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/feat/desktop-hosting' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/desktop-v'))
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cttrains-desktop-*
+          merge-multiple: true
+          path: release
+      - name: Publish tested desktop prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+          TAG_REF: ${{ github.ref }}
+        run: |
+          tag="desktop-v0.1.0-build.${RUN_NUMBER}"
+          if [[ "$TAG_REF" == refs/tags/desktop-v* ]]; then tag="${TAG_REF#refs/tags/}"; fi
+          cat > notes.md <<'EOF'
+          Linux desktop companion with private Matrix/Synapse hosting, PostgreSQL, explicit HTTPS setup, Android-compatible sealed friend-trip viewing, and an independent opt-in location relay.
+          Download the Linux tar.gz, extract, and run CT-Trains-Desktop. install-linux.sh adds it to the application menu. Matrix hosting needs Docker Engine and Compose v2.
+          Android 1.9 friends use Matrix. The independent REST location relay is for future clients. DNS/HTTPS must be configured for phone access. Windows includes the viewer/relay companion; Linux is the tested hosting preset.
+          Required service/privacy, native desktop, real Matrix/PostgreSQL/relay/Caddy integration and packaged Linux launch tests passed before this release was created.
+          EOF
+          gh release create "$tag" release/* --repo "$REPO" --target "$SHA" --prerelease --title "CT Trains Desktop 0.1.0 alpha" --notes-file notes.md
