@@ -98,6 +98,12 @@ class RelayTests(unittest.TestCase):
         for _ in range(30): self.state.limit(self.reader)
         with self.assertRaises(RuntimeError): self.state.limit(self.reader)
 
+    def test_expiry_proactively_erases_gps(self):
+        self.state.publish(self.publisher, self.position)
+        self.now += 61
+        self.state.expire()
+        self.assertEqual(self.state.positions, {})
+
     def test_duration_limit(self):
         for duration in (0, 7201, True, "3600"):
             with self.assertRaises(ValueError): self.state.issue("Person", duration)
@@ -162,6 +168,10 @@ class CircleTests(unittest.TestCase):
 
     def test_nan_gps(self):
         with self.assertRaises(ValueError): open_update(self.link, event(self.link, self.now, point={"latitude": float("nan"), "longitude": 18}), now=self.now)
+
+    def test_stopped_update_does_not_retain_position(self):
+        update = open_update(self.link, event(self.link, self.now, phase="Stopped"), now=self.now)
+        self.assertIsNone(update["point"])
 
     def test_bad_trip(self):
         invalid = self.link | {"trip": self.link["trip"] | {"steps": [{"kind": "leave", "label": "x", "at": 0}]}}

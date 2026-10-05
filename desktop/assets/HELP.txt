@@ -2,7 +2,8 @@ GET STARTED
 
 1. Install Docker Engine and Docker Compose v2. The desktop app and independent location relay do not need Docker.
    Linux: https://docs.docker.com/engine/install/
-   Rootless Docker is supported. Run the desktop as your normal OS user.
+   Run the desktop as your normal OS user with access to Docker Engine.
+   The integrated HTTPS proxy uses standard Linux Docker host networking; for a rootless daemon use a separate host HTTPS proxy.
 
 2. In Servers, choose the Matrix hostname carefully: matrix.your-domain.com for phones, localhost for desktop testing only.
    This name becomes part of every Matrix user ID and cannot be changed later.

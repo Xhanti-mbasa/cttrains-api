@@ -375,6 +375,8 @@ class Desktop(tk.Tk):
                 if generation != self.watch_generation or not self.watching_until:
                     return
                 updates, errors = value
+                active = {friend["id"] for friend in self.friends}
+                updates = {key: update for key, update in updates.items() if key in active}
                 self.latest.update(updates)
                 self.sequences.update({key: update["sequence"] for key, update in updates.items()})
                 self.update_friend_table()

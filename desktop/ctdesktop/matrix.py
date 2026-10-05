@@ -157,4 +157,7 @@ def open_update(link, event, last_sequence=-1, now=None):
         number = value.get("accuracy")
         if type(number) not in (int, float) or not math.isfinite(number) or not 0 <= number <= 5000:
             raise ValueError("Invalid GPS accuracy.")
+    if value["phase"] == "Stopped":
+        value["point"] = None
+        value["accuracy"] = None
     return value

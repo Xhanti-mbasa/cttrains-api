@@ -94,6 +94,13 @@ class RelayState:
             position = self.positions.get(grant["id"])
             return {"name": grant["name"], "expires_at": grant["expires_at"], "position": position, "status": "recent" if position else "unknown"}
 
+    def expire(self):
+        with self.lock:
+            now = self.clock()
+            active = {g["id"] for g in self.grants if not g["revoked"] and g["expires_at"] > now}
+            self.positions = {key: value for key, value in self.positions.items()
+                              if key in active and value["sent_at"] > now - 300}
+
     def revoke(self, token):
         grant = self.auth(token, "publisher")
         with self.lock:
@@ -111,6 +118,9 @@ class RelayServer(ThreadingHTTPServer):
         self.state, self.admin_token = state, admin_token
         self.slots = threading.BoundedSemaphore(24)
         super().__init__(address, Handler)
+
+    def service_actions(self):
+        self.state.expire()
 
     def process_request(self, request, address):
         if not self.slots.acquire(blocking=False):
