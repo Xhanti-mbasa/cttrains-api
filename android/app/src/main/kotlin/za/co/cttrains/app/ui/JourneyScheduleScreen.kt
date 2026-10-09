@@ -48,6 +48,9 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
     val context = LocalContext.current
     val uri = LocalUriHandler.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val features: FeatureViewModel=androidx.lifecycle.viewmodel.compose.viewModel()
+    val feature by features.state.collectAsStateWithLifecycle()
+    var repeatEdit by remember { mutableStateOf<CommuteRoutine?>(null) }
     var removing by remember { mutableStateOf<ScheduledJourney?>(null) }
     LaunchedEffect(Unit) { while (true) { delay(60_000); now = System.currentTimeMillis() } }
     val upcoming = state.scheduled.filter { it.departureAt > now }
@@ -56,6 +59,27 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
         item {
             Text("Your journeys", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             Text("A little planning. A calmer commute.", Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        item { Text("Recurring journeys",style=MaterialTheme.typography.titleLarge);Text("Choose Repeat on a train or bus journey to set its weekdays.",style=MaterialTheme.typography.bodySmall) }
+        items(feature.extras.routines,key={ "routine:${it.id}" }) { routine->
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                Row { Text(routine.name,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);Switch(routine.enabled,{ features.toggleRoutine(routine.id) }) }
+                Text("${routine.origin?.label ?: routine.query.from} → ${routine.destination?.label ?: routine.query.to} · ${routine.query.time}")
+                Text(routine.days.sorted().joinToString { RoutineDayLabels[it-1] },style=MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    TextButton(onClick={ repeatEdit=routine }) { Text("Edit recurrence") }
+                    TextButton(onClick={
+                        val date=CommuteRoutines.dates(routine.copy(enabled=true),now).firstOrNull()?.toString() ?: java.time.LocalDate.now(CapeTownZone).toString()
+                        features.plannerMode(routine.service)
+                        features.place(routine.origin,true,if(routine.service==TransportService.PRASA) routine.query.from else null);features.place(routine.destination,false,if(routine.service==TransportService.PRASA) routine.query.to else null)
+                        model.edit { it.copy(from=routine.query.from,to=routine.query.to,date=date,time=routine.query.time,requestedScreen="plan") }
+                    }) { Text("Plan next journey") }
+                    TextButton(onClick={ features.removeRoutine(routine.id) }) { Text("Remove recurrence") }
+                }
+            } }
+        }
+        items(feature.extras.trips.filter { it.id.startsWith("routine-") && it.steps.last().at>now },key={ "bus-repeat:${it.id}" }) { trip->
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) { Text("Recurring bus itinerary",style=MaterialTheme.typography.titleMedium);Text(TripFiles.text(trip));ShareJourneyButton(features) { trip } } }
         }
         if (upcoming.isEmpty()) item {
             Card(shape = RoundedCornerShape(24.dp)) {
@@ -96,6 +120,8 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalButton(onClick = { model.openScheduled(item.id, "plan") }) { Text("Details") }
                         OutlinedButton(onClick = { model.openScheduled(item.id, "map") }) { Text("Map") }
+                        TextButton(onClick={ repeatEdit=CommuteRoutine(java.util.UUID.randomUUID().toString(),"${item.query.from} → ${item.query.to}",item.query.copy(time=item.journey.departure),setOf(1,2,3,4,5),item.sourceId,item.accessMinutes,item.bufferMinutes,item.reminderMinutes,createdAt=now) }) { Text("Repeat journey") }
+                        ShareJourneyButton(features) { TripFiles.fromJourney(item.query,item.journey,feature.extras.localName,item.accessMinutes,item.bufferMinutes,item.leaveFrom,"Destination",0,now,item.fetchedAt) }
                         TextButton(onClick = {
                             try { context.startActivity(android.content.Intent.createChooser(calendarIntent(item), "Add journey to calendar")) }
                             catch (_: ActivityNotFoundException) { model.showMessage("Install a calendar app to add this event.") }
@@ -114,6 +140,7 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
         }
         item { Text("Notifications use Android background scheduling and may be delayed by battery controls. Calendar reminders are managed separately in your calendar app.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
+    repeatEdit?.let { RoutineEditor(it,features) { repeatEdit=null } }
     removing?.let { item ->
         AlertDialog(onDismissRequest = { removing = null }, title = { Text("Remove this journey?") }, text = { Text("Its app reminder will be cancelled. Calendar events you added remain in your calendar.") },
             confirmButton = { TextButton(onClick = { model.removeJourney(item.id); removing = null }) { Text("Remove") } }, dismissButton = { TextButton(onClick = { removing = null }) { Text("Keep") } })
@@ -145,6 +172,8 @@ fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewM
     var backupMinutes by rememberSaveable { mutableStateOf(listOf<String>()) }
     var backupSeverity by rememberSaveable { mutableStateOf(listOf<String>()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var repeat by rememberSaveable { mutableStateOf(false) }
+    var repeatDays by remember { mutableStateOf(setOf(1,2,3,4,5)) }
     var saving by remember { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
         reminder = allowed && notificationsAllowed(context)
@@ -190,6 +219,8 @@ fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewM
                 Text("Android may delay notifications under battery controls; these are not exact alarms.", style = MaterialTheme.typography.bodySmall)
             }
             HorizontalDivider()
+            Row(verticalAlignment=Alignment.CenterVertically) { Text("Repeat this journey",Modifier.weight(1f));Switch(repeat,{ repeat=it }) }
+            if(repeat) { WeekdayChoices(repeatDays) { repeatDays=it };Text("Each travel date gets its own timetable check. Manage days and reminders in Journeys.",style=MaterialTheme.typography.bodySmall) }
             Text("When should you leave?", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(leaveFrom, { if (it.length <= 80) leaveFrom = it }, label = { Text("Building / office / campus (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             TextButton(onClick={
@@ -214,10 +245,14 @@ fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewM
                 val a = access.toIntOrNull(); val b = buffer.toIntOrNull()
                 val r = if (reminder) if (custom) customMinutes.toIntOrNull() else lead else null
                 val backups = if (reminder) backupMinutes.mapIndexed { i, v -> BackupReminder(v.toIntOrNull() ?: 0, backupSeverity[i]) } else emptyList()
-                if (a == null || b == null || (reminder && r == null)) error = "Enter valid whole minutes."
+                if (repeat && repeatDays.isEmpty()) error="Choose at least one weekday."
+                else if (a == null || b == null || (reminder && r == null)) error = "Enter valid whole minutes."
                 else {
                     saving = true; error = null
-                    model.schedule(query, journey, r, a, b, leaveFrom, severity, backups) { failure -> saving = false; if (failure == null) onDismiss() else error = failure }
+                    model.schedule(query, journey, r, a, b, leaveFrom, severity, backups) { failure -> saving = false; if (failure == null) {
+                        if(repeat) features.saveRoutine(CommuteRoutine(java.util.UUID.randomUUID().toString(),"${origin?.label ?: query.from} → ${feature.destination?.label ?: query.to}".take(100),query.copy(time=journey.departure),repeatDays,trains.result?.entry?.sourceId ?: trains.preferences.sourceId,a,b,r,origin,feature.destination,createdAt=System.currentTimeMillis()))
+                        onDismiss()
+                    } else error = failure }
                 }
             }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (saving) "Saving…" else "Save journey") }
         }

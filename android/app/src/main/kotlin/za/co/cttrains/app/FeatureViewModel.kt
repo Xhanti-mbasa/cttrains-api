@@ -25,7 +25,7 @@ data class FeatureState(val extras: LocalExtras = LocalExtras(),val snapshots: M
     val ready: Boolean=false,val access: WalkEndpoint?=null,val destination: WalkEndpoint?=null,
     val walks: List<WalkingLeg> = emptyList(),val walkBusy: Boolean=false,val walkError: String?=null,val walksCached: Boolean=false,
     val chatService: TransportService?=null,val syncing: Boolean=false,val nearby: List<RoomMessage> = emptyList(),val nearbySharing: Boolean=false,val selectedBus: BusJourney?=null,
-    val boardingStation: String?=null,val arrivalStation: String?=null)
+    val boardingStation: String?=null,val arrivalStation: String?=null,val plannerMode: String="PRASA")
 
 @OptIn(kotlinx.coroutines.FlowPreview::class)
 class FeatureViewModel(app: Application): AndroidViewModel(app) {
@@ -43,6 +43,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
     private val lastAttempts=mutableMapOf<TransportService,Long>()
     private var timetableJob: Job?=null
     private var timetableService: TransportService?=null
+    private var lastRoutines: List<CommuteRoutine>?=null
     private val handler=CoroutineExceptionHandler { _,_ -> message("Couldn’t update local data. Try again or restore a backup.") }
     init {
         viewModelScope.launch(handler+Dispatchers.IO) { store.store.cleanLargeValues() }
@@ -50,6 +51,7 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
             val old=state.value.extras.beta
             mutable.update { it.copy(extras=extras,ready=true) }
             if(old!=extras.beta) BusRefreshWorker.configure(app,extras.beta)
+            if(lastRoutines!=extras.routines) { lastRoutines.orEmpty().filter { oldRoutine->extras.routines.firstOrNull { it.id==oldRoutine.id }!=oldRoutine }.forEach { RoutineScheduler.cancelOccurrences(app,it.id) };lastRoutines=extras.routines;RoutineScheduler.configure(app,extras.routines) }
             listOf(TransportService.GOLDEN_ARROW,TransportService.MYCITI).forEach { service ->
                 if(!extras.beta.enabled(service)) { if(state.value.selectedBus?.timetable?.service==service) mutable.update { it.copy(selectedBus=null,mapService=null,mapRoute=null,walks=emptyList()) };jobs.remove(service)?.cancel();if(timetableService==service) timetableJob?.cancel() }
                 else if(!old.enabled(service)) refresh(service)
@@ -162,9 +164,10 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
         val current=state.value
         val preferred=if(start) current.boardingStation else current.arrivalStation
         val spot=MarkedSpot(UUID.randomUUID().toString(),name.trim(),null,endpoint.point,tag,endpoint.label.take(500),createdAt=System.currentTimeMillis(),preferredStation=preferred)
-        store.update { it.copy(spots=(it.spots+spot).takeLast(100)) }
+        store.update { it.copy(spots=SavedAddresses.upsert(it.spots,spot)) }
+        val saved=store.extras().spots.first { it.point==spot.point && it.name==spot.name }
         val active=if(start) state.value.access else state.value.destination
-        if(active==endpoint) place(WalkEndpoint("spot:${spot.id}",spot.name,spot.point),start,preferred)
+        if(active==endpoint) place(WalkEndpoint("spot:${saved.id}",saved.name,saved.point),start,saved.preferredStation)
         message("${spot.name} saved on this device.")
     }
     fun swapPlaces() {
@@ -212,8 +215,29 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
         val old=store.extras().spots.firstOrNull { it.id==pin.spotId }
         val photo=photoUri?.let { files.addPhoto(it) } ?: old?.photo
         val spot=MarkedSpot(old?.id ?: UUID.randomUUID().toString(),name.trim(),service,pin.point,tag.trim(),note.trim(),photo,old?.createdAt ?: System.currentTimeMillis(),old?.preferredStation)
-        store.update { it.copy(spots=(it.spots.filterNot { p -> p.id==spot.id }+spot).takeLast(100)) };selectPin(null);message("Spot saved on this device.")
+        store.update { it.copy(spots=SavedAddresses.upsert(it.spots,spot)) };selectPin(null);message("Spot saved on this device.")
     }
+    fun plannerMode(service: TransportService) { mutable.update { it.copy(plannerMode=service.name) } }
+    fun saveSpotStation(id: String,station: String?)=viewModelScope.launch(handler) {
+        store.update { it.copy(spots=it.spots.map { spot->if(spot.id==id) spot.copy(preferredStation=station) else spot }) }
+        mutable.update { it.copy(boardingStation=if(it.access?.id=="spot:$id") station else it.boardingStation,arrivalStation=if(it.destination?.id=="spot:$id") station else it.arrivalStation,walks=emptyList()) }
+    }
+    fun saveAddress(label: String,endpoint: WalkEndpoint,existingId: String?=null,station: String?=null)=action("Couldn’t save this address.") {
+        require(label.length in 1..100 && endpoint.point.valid)
+        val old=store.extras().spots.firstOrNull { it.id==existingId }
+        val spot=MarkedSpot(old?.id ?: UUID.randomUUID().toString(),label,null,endpoint.point,if(label in SavedAddresses.labels) label else old?.tag ?: "Custom",endpoint.label.take(500),old?.photo,old?.createdAt ?: System.currentTimeMillis(),station ?: old?.preferredStation)
+        store.update { it.copy(spots=SavedAddresses.upsert(it.spots,spot)) }
+        val saved=store.extras().spots.first { it.point==spot.point && it.name==label }
+        mutable.update { value->value.copy(access=if(value.access?.id=="spot:${saved.id}") WalkEndpoint("spot:${saved.id}",saved.name,saved.point) else value.access,destination=if(value.destination?.id=="spot:${saved.id}") WalkEndpoint("spot:${saved.id}",saved.name,saved.point) else value.destination,walks=emptyList()) }
+        message("$label address saved.")
+    }
+    fun saveRoutine(routine: CommuteRoutine)=action("Couldn’t save this recurring journey.") {
+        CommuteRoutines.validate(routine)
+        store.update { it.copy(routines=(it.routines.filterNot { row->row.id==routine.id }+routine).takeLast(30)) }
+        message("Recurring journey saved. Timetables are checked for each travel date.")
+    }
+    fun toggleRoutine(id: String)=viewModelScope.launch(handler) { store.update { it.copy(routines=it.routines.map { row->if(row.id==id) row.copy(enabled=!row.enabled) else row }) } }
+    fun removeRoutine(id: String)=viewModelScope.launch(handler) { store.update { it.copy(routines=it.routines.filterNot { row->row.id==id }) } }
     fun removeSpot(id: String)=viewModelScope.launch(handler) { store.update { it.copy(spots=it.spots.filterNot { s -> s.id==id }) };selectPin(null) }
     suspend fun placeSuggestions(query: String)=places.suggestions(query)
     fun selectPlace(place: PlaceSuggestion) { selectPin(MapPin("new",place.label.take(100),place.point,null,"Photon search result · © OpenStreetMap contributors")) }

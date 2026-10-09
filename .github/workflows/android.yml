@@ -131,6 +131,8 @@ jobs:
           pathlib.Path('dist/signing-certificate.txt').write_text('\n'.join(lines) + '\n')
           print('\n'.join(lines))
           PY
+      - name: Include APK verification utility for compatible local signing
+        run: cp "${ANDROID_HOME}/build-tools/35.0.0/lib/apksigner.jar" dist/apksigner.jar
       - uses: actions/upload-artifact@v4
         with:
           name: cttrains-release-apk

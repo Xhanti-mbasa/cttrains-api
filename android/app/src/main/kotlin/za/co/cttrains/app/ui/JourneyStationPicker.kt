@@ -61,7 +61,7 @@ internal fun stationDistance(station: StationPosition,point: GeoPoint): String {
     ModalBottomSheet(onDismissRequest=onDismiss,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         LazyColumn(Modifier.fillMaxWidth().imePadding(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             item { Text("Save this place",style=MaterialTheme.typography.titleLarge);Text(place.label,style=MaterialTheme.typography.bodySmall) }
-            item { FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf("Home","Work","Campus","Friend","Custom").forEach { label -> FilterChip(tag==label,{ tag=label },label={ Text(label) }) } } }
+            item { FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { listOf("Home","Work","School","Friend","Custom").forEach { label -> FilterChip(tag==label,{ tag=label },label={ Text(label) }) } } }
             item { OutlinedTextField(name,{ name=it.take(100) },label={ Text("Place name · defaults to $tag") },singleLine=true,modifier=Modifier.fillMaxWidth()) }
             item { Text("Saved locally with your chosen station. You can change the station for any journey.",style=MaterialTheme.typography.bodySmall) }
             item { Button(onClick={ onSave(name.trim().ifBlank { tag },tag) },enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text("Save place") } }

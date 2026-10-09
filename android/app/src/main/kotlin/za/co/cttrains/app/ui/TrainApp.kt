@@ -105,7 +105,8 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
                 composable("map") { TransitMapScreen(state, model, onExpand = { navigation.navigate("map/fullscreen") { launchSingleTop = true } }, onPlan = { go("plan") },feature=feature,features=features,onBuses={ go("buses") }) }
                 composable("map/fullscreen") { TransitMapScreen(state, model, fullScreen = true, onClose = { navigation.popBackStack() }, onPlan = { go("plan") },feature=feature,features=features,onBuses={ go("buses") }) }
                 composable("plan") { PlanScreen(state, model, wide,feature,features) { journey -> model.selectJourney(journey);features.showTrainMap(); go("map") } }
-                composable("saved") { SavedScreen(state, model) { go("plan") } }
+                composable("saved") { SavedScreen(state, model,feature,features,{ go("places") }) { go("plan") } }
+                composable("places") { SavedAddressesScreen(state,model,feature,features) { go("plan") } }
                 composable("upcoming") { UpcomingScreen(state, model) }
                 composable("settings") { AboutScreen(state, model,feature,features,{ go("buses") },{ go("trips") },{ go("community") },{ go("whatsapp") },{ go("directions") },{ go("app-updates") }) }
                 composable("budget") { BudgetScreen(state, model) { go("plan") } }
@@ -372,8 +373,12 @@ private fun TimeDropdown(label: String, values: List<Int>, selected: Int, modifi
 }
 
 @Composable
-private fun SavedScreen(state: TrainState, model: TrainViewModel, onPlan: () -> Unit) {
+private fun SavedScreen(state: TrainState, model: TrainViewModel,feature: za.co.cttrains.app.FeatureState,features: za.co.cttrains.app.FeatureViewModel,onPlaces: ()->Unit,onPlan: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().widthIn(max = 700.dp), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item { Text("Saved places",style=MaterialTheme.typography.headlineMedium);
+            OutlinedButton(onClick=onPlaces,modifier=Modifier.fillMaxWidth()) { Text("Home, Work & School · manage addresses") }
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { za.co.cttrains.core.SavedAddresses.labels.forEach { label->val spot=feature.extras.spots.firstOrNull { za.co.cttrains.core.SavedAddresses.role(it)==label };AssistChip(onClick={ if(spot==null) onPlaces() else { features.place(za.co.cttrains.core.WalkEndpoint("spot:${spot.id}",spot.name,spot.point),false,spot.preferredStation);spot.preferredStation?.let { station->model.edit { it.copy(to=station) } };onPlan() } },label={ Text(if(spot==null) "Set $label" else label) }) } }
+        }
         item { Text("Favourite stations", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
         if (state.preferences.favoriteStations.isEmpty()) item { Text("Star a station from the map or station search to keep it here.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(state.preferences.favoriteStations, key = { "station-$it" }) { name ->

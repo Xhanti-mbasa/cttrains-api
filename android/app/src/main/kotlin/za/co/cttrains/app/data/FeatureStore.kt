@@ -18,6 +18,7 @@ import za.co.cttrains.core.*
     val reports: List<ReceivedReport> = emptyList(), val queued: List<QueuedReport> = emptyList(),
     val busFavorites: List<BusFavorite> = emptyList(), val priceCorrections: List<BusPriceCorrection> = emptyList(),
     val places: List<SavedPlace> = emptyList(),
+    val routines: List<CommuteRoutine> = emptyList(),
     val walkSamples: List<WalkSample> = emptyList(),
     val busStopLinks: List<BusStopLink> = emptyList(),
 )

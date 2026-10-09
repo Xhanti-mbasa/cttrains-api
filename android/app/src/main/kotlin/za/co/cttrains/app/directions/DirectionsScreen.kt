@@ -38,6 +38,9 @@ import za.co.cttrains.core.*
     val c=LocalContext.current
     var permissions by remember { mutableStateOf<String?>(null) }
     var setup by remember { mutableStateOf(false) }
+    var voice by remember { mutableStateOf(DirectionSpeech.enabled(c)) }
+    val previewSpeech=remember { DirectionSpeech(c) { permissions=it } }
+    DisposableEffect(Unit) { onDispose { previewSpeech.close() } }
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { values ->
         if(values[Manifest.permission.ACCESS_FINE_LOCATION]==true || values[Manifest.permission.ACCESS_COARSE_LOCATION]==true) {
             permissions=if(Build.VERSION.SDK_INT>=33 && values[Manifest.permission.POST_NOTIFICATIONS]!=true) "Notifications are disabled. Allow them for Live Updates and the Now Bar." else null
@@ -59,6 +62,11 @@ import za.co.cttrains.core.*
         if(plan!=null) {
             item {
                 Text(plan.title,style=MaterialTheme.typography.titleLarge)
+                Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("Spoken directions",Modifier.weight(1f));Switch(voice,{ voice=it;DirectionSpeech.enabled(c,it);if(!it) previewSpeech.stop();if(state.running) m.command("voice") })
+                }
+                Text("Step changes, mapped walking instructions and approaching stops. Uses your phone’s speech voice and media volume.",style=MaterialTheme.typography.bodySmall)
+                TextButton(onClick={ if(state.running && session!=null) m.command("speech") else previewSpeech.speak(plan.steps.firstOrNull()?.let { it.title+". "+it.detail } ?: plan.title) },modifier=Modifier.testTag("repeat-direction")) { Text("Read current instruction") }
                 Text(plan.notice,style=MaterialTheme.typography.bodySmall)
                 Text(if(plan.sourceCheckedAt>0) "Timetable checked ${java.time.Instant.ofEpochMilli(plan.sourceCheckedAt).atZone(CapeTownZone).toLocalDateTime()}" else "Timetable source date unavailable · check before travelling",style=MaterialTheme.typography.labelSmall)
                 if(session==null || !state.running) {

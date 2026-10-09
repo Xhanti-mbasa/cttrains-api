@@ -30,7 +30,7 @@ import za.co.cttrains.core.*
     val planner: JourneyPlannerModel=androidx.lifecycle.viewmodel.compose.viewModel()
     val directions: za.co.cttrains.app.directions.DirectionsModel=androidx.lifecycle.viewmodel.compose.viewModel()
     val result by planner.state.collectAsStateWithLifecycle()
-    var mode by rememberSaveable { mutableStateOf("PRASA") }
+    var mode by rememberSaveable(s.plannerMode) { mutableStateOf(s.plannerMode) }
     var selected by rememberSaveable { mutableStateOf(TransportService.values().map { it.name }) }
     var picker by remember { mutableStateOf<Boolean?>(null) }
     var stationPicker by remember { mutableStateOf<Boolean?>(null) }
@@ -98,7 +98,7 @@ import za.co.cttrains.core.*
                 OutlinedButton(onClick={ datePicker=true },modifier=Modifier.weight(1f)) { Column { Text("Travel date",style=MaterialTheme.typography.labelSmall);Text(date) } }
                 OutlinedButton(onClick={ timePicker=true },modifier=Modifier.weight(1f)) { Column { Text("Leave after",style=MaterialTheme.typography.labelSmall);Text(time) } }
             }
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+            FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 TextButton(onClick={ if(onlineWalks) onlineWalks=false else consent=true }) { Text(if(onlineWalks) "Walking estimates: on" else "Enable walking estimates") }
                 TextButton(onClick={ advanced=!advanced }) { Text(if(advanced) "Less" else "Options") }
             }
@@ -211,7 +211,7 @@ import za.co.cttrains.core.*
     OutlinedCard(onClick=onClick,modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) { Text(label,style=MaterialTheme.typography.labelSmall);Text(value,style=MaterialTheme.typography.bodyLarge) } }
 }
 
-@Composable private fun JourneyPlacePicker(train: TrainState,model: TrainViewModel,s: FeatureState,m: FeatureViewModel,start: Boolean,onDismiss: ()->Unit,onSelect: (WalkEndpoint)->Unit) {
+@Composable internal fun JourneyPlacePicker(train: TrainState,model: TrainViewModel,s: FeatureState,m: FeatureViewModel,start: Boolean,onDismiss: ()->Unit,onSelect: (WalkEndpoint)->Unit) {
     var query by remember { mutableStateOf("") }
     var online by remember { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<PlaceSuggestion>>(emptyList()) }
@@ -249,6 +249,7 @@ import za.co.cttrains.core.*
 
 @Composable internal fun PlannerJourneyCard(option: PlannerOption,fastest: Boolean,s: FeatureState,model: TrainViewModel,m: FeatureViewModel,onDirections: ()->Unit={},onSchedule: ()->Unit,onView: ()->Unit) {
     var details by rememberSaveable(option.id) { mutableStateOf(false) }
+    var repeatEdit by remember { mutableStateOf<CommuteRoutine?>(null) }
     var selectFare by remember { mutableStateOf(false) }
     var fare by remember(option.id) { mutableStateOf(option.fares.firstOrNull()) }
     val clock=remember { DateTimeFormatter.ofPattern("HH:mm").withZone(CapeTownZone) }
@@ -262,8 +263,10 @@ import za.co.cttrains.core.*
         FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             TextButton(onClick=onView) { Text("View map") }
             TextButton(onClick=onDirections,modifier=Modifier.testTag("journey-directions")) { Text("Directions") }
+            ShareJourneyButton(m) { val state=model.state.value;JourneySharing.itinerary(za.co.cttrains.app.directions.DirectionsPlans.option(option,state,s),option.service,s.extras.localName,System.currentTimeMillis()) }
             TextButton(onClick={ details=!details }) { Text(if(details) "Hide details" else "Trip details") }
             if(option.service==TransportService.PRASA) TextButton(onClick=onSchedule) { Text("Save & reminders") }
+            if(option.service!=TransportService.PRASA) TextButton(onClick={ val b=option.bus!!;repeatEdit=CommuteRoutine(java.util.UUID.randomUUID().toString(),"${s.access?.label ?: option.board} → ${s.destination?.label ?: option.alight}".take(100),SearchQuery(option.board,option.alight,java.time.Instant.ofEpochMilli(option.estimate.departureAt).atZone(CapeTownZone).toLocalDate().toString(),b.departure.time),setOf(1,2,3,4,5),option.service.name,option.walks.firstOrNull { it.to.id.startsWith("bus:") }?.minutes ?: 0,5,origin=s.access ?: b.board?.let { WalkEndpoint("bus:${option.service.name}:${it.id}",it.name.take(100),it.point) },destination=s.destination ?: b.alight?.let { WalkEndpoint("bus:${option.service.name}:${it.id}",it.name.take(100),it.point) },createdAt=System.currentTimeMillis(),service=option.service,busRoute=b.timetable.route,boardCallId=b.departure.id,alightCallId=b.arrival.id) }) { Text("Repeat journey") }
             if(option.service!=TransportService.PRASA) TextButton(onClick={ selectFare=true }) { Text("Choose fare") }
         }
         if(details) {
@@ -274,6 +277,7 @@ import za.co.cttrains.core.*
             if(option.notice.isNotBlank()) Text(option.notice,style=MaterialTheme.typography.bodySmall)
         }
     } }
+    repeatEdit?.let { RoutineEditor(it,m) { repeatEdit=null } }
     if(selectFare) ModalBottomSheet(onDismissRequest={ selectFare=false },sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         val rows=s.snapshots[option.service]?.fares.orEmpty()
         var filter by remember { mutableStateOf("") }

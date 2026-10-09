@@ -19,6 +19,7 @@ data class ScheduledJourney(
     val reminderMinutes: Int? = null, val accessMinutes: Int = 20, val bufferMinutes: Int = 5, val fares: String? = null,
     val leaveFrom: String = "", val reminderBasis: String = "departure", val reminderSeverity: String = "standard",
     val backupReminders: List<BackupReminder> = emptyList(), val reminderToken: String = "",
+    val routineId: String? = null,
     val reminderStage: Int = 0, val nextReminderAt: Long? = null, val remindersStopped: Boolean = false,
 ) {
     val departureAt: Long get() = LocalDate.parse(query.date).atTime(LocalTime.parse(journey.departure))

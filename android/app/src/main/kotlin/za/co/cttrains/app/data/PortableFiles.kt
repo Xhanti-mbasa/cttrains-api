@@ -86,6 +86,7 @@ class PortableFiles(private val context: Context, private val features: FeatureS
                     require(e.localName.length<=80 && e.spots.size<=100 && e.trips.size<=100 && e.friends.size<=20 && e.reports.size<=300 && e.queued.size<=100)
                     require(e.busStopLinks.size<=200 && e.busStopLinks.all { it.service!=TransportService.PRASA && it.routeId.length in 1..500 && it.callId.length in 1..180 && it.stopId.length in 1..300 && it.confirmedAt in 1..now+30_000 })
                     require(e.walkSamples.size<=200 && e.walkSamples.all { it.key.length<=500 && it.seconds in 20..7200 && it.distanceMeters in 50.0..30000.0 && it.recordedAt in 1..now+30_000 && it.startedAt in 0..it.recordedAt && (it.steps==null || it.steps in 0L..100_000L) && it.stepsCheckedAt in 0..now+30_000 })
+                    require(e.routines.size<=30);e.routines.forEach(CommuteRoutines::validate)
                     e.trips.forEach(TripFiles::validate)
                     e.spots.forEach { require(it.point.valid && it.name.length in 1..100 && it.note.length<=500 && it.tag.length<=80 && (it.preferredStation?.length?.let { length -> length in 1..180 } ?: true)); it.photo?.let(::photo) }
                     require(e.spots.mapNotNull { it.photo }.all { it in p.photos })

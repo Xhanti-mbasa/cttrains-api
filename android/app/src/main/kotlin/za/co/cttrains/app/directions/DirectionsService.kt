@@ -21,6 +21,7 @@ class DirectionsService: Service() {
     private var observedStep: String?=null
     private val alerted=mutableSetOf<String>()
     private val commands=Mutex()
+    private val speech by lazy { DirectionSpeech(this) { note->DirectionsRuntime.state.update { it.copy(error=note) } } }
     private val listener=object: LocationListener {
         override fun onLocationChanged(p: Location) { fix=DirectionFix(GeoPoint(p.latitude,p.longitude),p.accuracy.toDouble(),p.time) }
         override fun onProviderDisabled(provider: String) { fix=null }
@@ -29,6 +30,8 @@ class DirectionsService: Service() {
     }
     override fun onBind(intent: Intent?)=null
     override fun onStartCommand(intent: Intent?,flags: Int,startId: Int): Int {
+        if(intent?.action=="voice") { if(!DirectionSpeech.enabled(this)) speech.stop();return START_NOT_STICKY }
+        if(intent?.action=="speech") { val v=DirectionsRuntime.state.value; speech.speak(v.guidance?.let { it.title+". "+it.detail } ?: v.session?.step?.title.orEmpty());return START_NOT_STICKY }
         if(intent?.action=="stop") { stop(this);return START_NOT_STICKY }
         if(intent?.action!="start") {
             scope.launch {
@@ -98,10 +101,12 @@ class DirectionsService: Service() {
         // Do not overwrite a Next/Pause command while geometry was computed off the main thread.
         if(DirectionsRuntime.state.value.session?.plan?.id!=s.plan.id) return
         DirectionsRuntime.state.update { it.copy(session=s,guidance=g,fix=currentFix?.takeIf { f->now-f.at in 0..45_000 },running=true) }
+        speech.guidance(s,g,DirectionSpeech.enabled(this))
         getSystemService(NotificationManager::class.java).notify(DirectionsNotifications.ID,DirectionsNotifications.build(this,s,g))
     }
     override fun onDestroy() {
         runCatching { getSystemService(LocationManager::class.java).removeUpdates(listener) }
+        speech.close()
         scope.cancel()
         getSystemService(NotificationManager::class.java).cancel(DirectionsNotifications.ID)
         DirectionsRuntime.state.update { it.copy(running=false,fix=null,session=it.session?.copy(paused=true)) }

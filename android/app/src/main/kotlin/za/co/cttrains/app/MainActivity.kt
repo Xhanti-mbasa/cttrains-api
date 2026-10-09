@@ -19,6 +19,7 @@ class MainActivity : ComponentActivity() {
         val features = ViewModelProvider(this)[FeatureViewModel::class.java]
         features.importIntent(intent)
         model.openScheduled(intent.getStringExtra("journey_id"))
+        if(intent.getBooleanExtra("journeys",false)) model.edit { it.copy(requestedScreen="upcoming") }
         if(intent.getBooleanExtra("community",false)) model.openCommunity()
         if(intent.getBooleanExtra("directions",false)) model.openDirections()
         if(intent.getBooleanExtra("app_updates",false)) model.openAppUpdates()
@@ -32,6 +33,7 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         ViewModelProvider(this)[TrainViewModel::class.java].openScheduled(intent.getStringExtra("journey_id"))
         ViewModelProvider(this)[FeatureViewModel::class.java].importIntent(intent)
+        if(intent.getBooleanExtra("journeys",false)) ViewModelProvider(this)[TrainViewModel::class.java].edit { it.copy(requestedScreen="upcoming") }
         if(intent.getBooleanExtra("community",false)) ViewModelProvider(this)[TrainViewModel::class.java].openCommunity()
         if(intent.getBooleanExtra("directions",false)) ViewModelProvider(this)[TrainViewModel::class.java].openDirections()
         if(intent.getBooleanExtra("app_updates",false)) ViewModelProvider(this)[TrainViewModel::class.java].openAppUpdates()
