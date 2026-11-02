@@ -27,6 +27,7 @@ class SimplePlannerUiTest {
         app.onNodeWithText("Settings").performClick()
         app.onNodeWithTag("my-profile").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         app.onNodeWithText("My profile").assertIsDisplayed()
-        app.onNodeWithTag("add-custom-place").performScrollTo().assertIsDisplayed()
+        app.onNodeWithTag("saved-addresses").performScrollToNode(hasTestTag("add-custom-place"))
+        app.onNodeWithTag("add-custom-place").assertIsDisplayed()
     }
 }
