@@ -45,8 +45,11 @@ class PreferredStationsUiTest {
         app.waitUntil(15000) { features.state.value.extras.spots.first { it.id==work.id }.preferredStation=="Salt River" }
         app.onNodeWithTag("boarding-station").performScrollTo().assertTextContains("Board at · Salt River")
         app.onNodeWithTag("journey-planner").performScrollToNode(hasTestTag("final-spot:${home.id}"))
+        UiScreenshots.save("debug-before-final-spot")
+        val chip=app.onNodeWithTag("final-spot:${home.id}").fetchSemanticsNode().boundsInRoot
         app.onNodeWithTag("final-spot:${home.id}").performClick()
-        app.waitUntil(15000) { features.state.value.destination?.id=="spot:${home.id}" }
+        try { app.waitUntil(15000) { features.state.value.destination?.id=="spot:${home.id}" } }
+        catch(e: Throwable) { UiScreenshots.save("debug-after-final-spot");throw AssertionError("chip=$chip\n"+app.onRoot().printToString(),e) }
         app.onNodeWithTag("journey-planner").performScrollToNode(hasTestTag("arrival-station"))
         app.onNodeWithTag("arrival-station").assertTextContains("Get off at · Unibell")
         app.runOnIdle { assertEquals("spot:${work.id}",features.state.value.access?.id);assertEquals("spot:${home.id}",features.state.value.destination?.id);assertEquals("Salt River",train.state.value.from);assertEquals("Unibell",train.state.value.to) }
