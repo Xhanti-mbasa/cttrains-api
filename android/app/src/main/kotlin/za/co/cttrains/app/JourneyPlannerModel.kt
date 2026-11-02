@@ -99,11 +99,15 @@ class JourneyPlannerModel(app: Application): AndroidViewModel(app) {
         val saved=buses.store.snapshot(service)
         val needsCatalogue=service==TransportService.GOLDEN_ARROW && (saved==null || saved.routes.map { it.title.firstOrNull() }.distinct().size<2)
         val snapshot=if(saved==null || needsCatalogue) buses.refresh(service) else saved
+        // A saved place's usual stop replaces "nearest stop" for that operator; walks still start at the place itself.
+        fun usual(e: WalkEndpoint)=extras.spots.firstOrNull { e.id=="spot:${it.id}" }?.preferredStops?.get(service.name)?.let { id -> snapshot.stops.firstOrNull { it.id==id } }
+        val fromPoint=usual(r.from)?.point ?: r.from.point
+        val toPoint=usual(r.to)?.point ?: r.to.point
         val date=LocalDate.parse(r.date);val day=date.dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase)
-        val routes=withContext(Dispatchers.Default) { BusDiscovery.routes(snapshot,r.from.point,r.to.point,date,extras.busStopLinks,r.maxWalkMeters.toDouble()) }
+        val routes=withContext(Dispatchers.Default) { BusDiscovery.routes(snapshot,fromPoint,toPoint,date,extras.busStopLinks,r.maxWalkMeters.toDouble()) }
         if(routes.isEmpty()) {
             if(service==TransportService.GOLDEN_ARROW) {
-                val candidates=withContext(Dispatchers.Default) { BusDiscovery.goldenCandidates(snapshot,r.from.point,r.to.point,date,r.maxWalkMeters.toDouble()) }
+                val candidates=withContext(Dispatchers.Default) { BusDiscovery.goldenCandidates(snapshot,fromPoint,toPoint,date,r.maxWalkMeters.toDouble()) }
                 val checked=mutableListOf<GoldenTimetableCandidate>()
                 for(route in candidates) {
                     currentCoroutineContext().ensureActive()
@@ -121,9 +125,9 @@ class JourneyPlannerModel(app: Application): AndroidViewModel(app) {
         for(route in routes.take(6)) {
             currentCoroutineContext().ensureActive()
             val pair=try { buses.timetable(service,route,day) } catch(e: Exception) { if(e is CancellationException) throw e;failed++;continue }
-            val journeys=withContext(Dispatchers.Default) { BusDiscovery.journeys(pair.first,snapshot,r.from.point,r.to.point,date,r.time,extras.busStopLinks,r.maxWalkMeters.toDouble()) }
+            val journeys=withContext(Dispatchers.Default) { BusDiscovery.journeys(pair.first,snapshot,fromPoint,toPoint,date,r.time,extras.busStopLinks,r.maxWalkMeters.toDouble()) }
             val combinations=journeys.groupBy { it.board!!.id to it.alight!!.id }.entries.sortedBy { (_,v) ->
-                NearbySuggestions.distance(r.from.point,v.first().board!!.point)+NearbySuggestions.distance(r.to.point,v.first().alight!!.point)
+                NearbySuggestions.distance(fromPoint,v.first().board!!.point)+NearbySuggestions.distance(toPoint,v.first().alight!!.point)
             }.take(3)
             for((_,trips) in combinations) {
                 val first=trips.first()

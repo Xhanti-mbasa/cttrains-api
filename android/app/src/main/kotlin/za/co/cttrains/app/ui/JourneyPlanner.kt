@@ -42,6 +42,7 @@ import za.co.cttrains.core.*
     // Any mix of services; choosing all of them shows every plan, grouped into jumpable sections.
     var selected by rememberSaveable(s.plannerMode) { mutableStateOf(ModeOrder.map { it.name }.filter { s.plannerMode=="compare" || it==s.plannerMode }.ifEmpty { listOf(TransportService.PRASA.name) }) }
     var manualService by rememberSaveable { mutableStateOf<String?>(null) }
+    var openCandidates by rememberSaveable { mutableStateOf(listOf<String>()) }
     val listState=rememberLazyListState()
     val scope=rememberCoroutineScope()
     val sectionIndex=remember { mutableMapOf<TransportService,Int>() }
@@ -83,6 +84,7 @@ import za.co.cttrains.core.*
         item {
             JourneyPlaceField("From",from?.label ?: "Choose your start") { picker=true }
             if(rail && s.access!=null) JourneyStationField(true,board,from,train,{ stationPicker=true },{ m.place(null,true) })
+            UsualStops(s.access,services,s,m)
             if(s.access!=null && !s.access.id.startsWith("spot:")) TextButton(onClick={ savePlace=true }) { Text("Save start as Home, Work or another place") }
         }
         item {
@@ -91,6 +93,7 @@ import za.co.cttrains.core.*
         item {
             JourneyPlaceField("To",to?.label ?: "Choose your destination") { picker=false }
             if(rail && s.destination!=null) JourneyStationField(false,arrive,to,train,{ stationPicker=false },{ m.place(null,false) })
+            UsualStops(s.destination,services,s,m)
             if(s.destination!=null && !s.destination.id.startsWith("spot:")) TextButton(onClick={ savePlace=false }) { Text("Save destination as Home, Work or another place") }
             if(rail && s.destination==null) train.stations.firstOrNull { it.mapped && stationKey(it.name)==arrive?.let(::stationKey) }?.let { station ->
                 val nearby=remember(station,s.extras.spots) { StationChoices.nearbyPlaces(station,s.extras.spots) }
@@ -150,7 +153,7 @@ import za.co.cttrains.core.*
             if(!s.extras.beta.enabled(service)) {
                 sectionIndex[service]=index
                 item(key="section:${service.name}") {
-                    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) { PlannerSectionTitle(service,null);Text("${service.title} is switched off in Beta features.",style=MaterialTheme.typography.bodyMedium);TextButton(onClick=onSettings) { Text("Enable in Beta features") } } }
+                    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) { PlannerSectionTitle(service,null);Text("${service.title} is off on this phone.",style=MaterialTheme.typography.bodyMedium);Button(onClick={ m.beta { if(service==TransportService.MYCITI) it.copy(myCiti=true) else it.copy(goldenArrow=true) } },modifier=Modifier.testTag("turn-on:${service.name}")) { Text("Turn on ${service.title}") } } }
                 }
                 index++
             } else if(section!=null) {
@@ -159,12 +162,24 @@ import za.co.cttrains.core.*
                 index++
                 if(section.options.isEmpty()) {
                     item {
-                        Text(section.issue ?: "No supported journey found.",style=MaterialTheme.typography.bodyMedium)
+                        Text(if(section.candidates.isNotEmpty()) "No exact bus times could be confirmed for these places." else section.issue ?: "No journey found for these places and time.",style=MaterialTheme.typography.bodyMedium)
                         if(service!=TransportService.PRASA) TextButton(onClick={ manualService=service.name;m.chooseBus(service) }) { Text("Manual bus setup") }
                     }
                     index++
                 }
-                items(section.candidates,key={ "candidate:${it.timetable.route.id}" }) { candidate ->
+                if(section.candidates.isNotEmpty()) {
+                    item(key="candidates:${service.name}") {
+                        val open=service.name in openCandidates
+                        OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                            Text("${section.candidates.size} ${service.title} ${if(section.candidates.size==1) "route passes" else "routes pass"} near both places",style=MaterialTheme.typography.titleSmall)
+                            Text(section.candidates.take(4).joinToString("\n") { "• "+it.timetable.route.title },style=MaterialTheme.typography.bodySmall)
+                            if(open) section.issue?.let { Text(it,style=MaterialTheme.typography.labelSmall) }
+                            TextButton(onClick={ openCandidates=if(open) openCandidates-service.name else openCandidates+service.name },modifier=Modifier.testTag("candidates:${service.name}")) { Text(if(open) "Hide timetables" else "Show timetables") }
+                        } }
+                    }
+                    index++
+                }
+                if(service.name in openCandidates) items(section.candidates,key={ "candidate:${it.timetable.route.id}" }) { candidate ->
                     val timetable=candidate.timetable
                     val uri=LocalUriHandler.current
                     OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -178,7 +193,7 @@ import za.co.cttrains.core.*
                         }
                     } }
                 }
-                index+=section.candidates.size
+                if(service.name in openCandidates) index+=section.candidates.size
                 items(section.options,key={ it.id }) { option ->
                     PlannerJourneyCard(option,option.id==fastest,s,model,m,onDirections={ directions.preview({ za.co.cttrains.app.directions.DirectionsPlans.option(option,train,s) }) {
                         if(option.rail!=null) { m.showTrainMap();m.usePlannedWalks(option.walks);model.presentPlannedJourney(option.query!!,option.rail,option.fetchedAt,option.cached,null,option.sourceId,false) }
@@ -206,7 +221,7 @@ import za.co.cttrains.core.*
             val chosen=if(start) m.state.value.boardingStation else m.state.value.arrivalStation
             val suggestion=chosen ?: StationChoices.ranked(endpoint.point,train.stations,train.catalog.stations).firstOrNull()?.name
             suggestion?.let { name -> model.edit { if(start) it.copy(from=name) else it.copy(to=name) } }
-            if(rail && chosen==null) stationPicker=start
+            if(rail && chosen==null && endpoint.id.startsWith("spot:")) stationPicker=start
         }
         finalStation=null
         picker=null
@@ -287,36 +302,104 @@ internal fun findLabel(services: Set<TransportService>): String=when {
 
 @Composable internal fun JourneyPlacePicker(train: TrainState,model: TrainViewModel,s: FeatureState,m: FeatureViewModel,start: Boolean,onDismiss: ()->Unit,onSelect: (WalkEndpoint)->Unit) {
     var query by remember { mutableStateOf("") }
-    var online by remember { mutableStateOf(false) }
+    var online by rememberSaveable { mutableStateOf(true) }
     var suggestions by remember { mutableStateOf<List<PlaceSuggestion>>(emptyList()) }
     var issue by remember { mutableStateOf<String?>(null) }
-    val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants -> if(grants.values.any { it }) model.locateOnce() }
-    val places=remember(train.stations,s.extras.spots,s.snapshots,s.extras.beta.goldenArrow,s.extras.beta.myCiti) {
-        val saved=s.extras.spots.map { WalkEndpoint("spot:${it.id}",it.name,it.point) }
+    var waitingForLocation by remember { mutableStateOf(false) }
+    val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if(grants.values.any { it }) model.locateOnce() else { waitingForLocation=false;issue="Location is off. Search for where you are instead." }
+    }
+    // Current location: once a fix arrives, use it; the planner finds the nearest stations and stops itself.
+    LaunchedEffect(waitingForLocation,train.currentPosition) {
+        val p=train.currentPosition
+        if(waitingForLocation && p!=null) { waitingForLocation=false;onSelect(WalkEndpoint("current","Current location",GeoPoint(p.latitude,p.longitude))) }
+    }
+    val saved=remember(s.extras.spots) { s.extras.spots.map { WalkEndpoint("spot:${it.id}",it.name,it.point) } }
+    val places=remember(train.stations,saved,s.snapshots,s.extras.beta.goldenArrow,s.extras.beta.myCiti) {
         val rail=train.stations.filter { it.mapped }.map(WalkingRoutes::endpoint)
         val bus=s.snapshots.filterKeys(s.extras.beta::enabled).flatMap { (service,source) -> source.stops.map { WalkEndpoint("bus:${service.name}:${it.id}",it.name,it.point) } }
         saved+rail+bus
     }
-    val local=remember(places,query,s.extras.spots) { places.asSequence().filter { p ->
-        p.label.contains(query,true) || s.extras.spots.any { p.id=="spot:${it.id}" && (it.tag.contains(query,true) || it.note.contains(query,true)) }
-    }.take(40).toList() }
-    LaunchedEffect(query,online) {
+    val ranked=remember(places,query,s.extras.spots) {
+        if(query.isBlank()) emptyList() else places.mapNotNull { p ->
+            val spot=s.extras.spots.firstOrNull { p.id=="spot:${it.id}" }
+            val best=listOfNotNull(FuzzyPlaces.score(query,p.label),spot?.let { FuzzyPlaces.score(query,it.tag) },spot?.note?.takeIf(String::isNotBlank)?.let { FuzzyPlaces.score(query,it) }).maxOrNull()
+            best?.let { p to it+(if(spot!=null) 60 else 0) }
+        }.sortedByDescending { it.second }.distinctBy { it.first.id }.take(40)
+    }
+    // Addresses and suburbs (e.g. "Bella Vista") come from OpenStreetMap unless a place already matches exactly.
+    val exact=ranked.any { it.second>=1000 }
+    LaunchedEffect(query,online,exact) {
         suggestions=emptyList();issue=null
-        if(online && query.trim().length>=3) { delay(850);try { suggestions=m.placeSuggestions(query) } catch(e: Exception) { if(e is CancellationException) throw e;issue="Online suggestions unavailable. Saved stops and places are still searchable." } }
+        if(online && !exact && query.trim().length>=3) {
+            delay(450)
+            try { suggestions=m.placeSuggestions(query) } catch(e: Exception) { if(e is CancellationException) throw e;issue="Address search is unavailable right now. Stations, stops and your places still work." }
+        }
     }
     ModalBottomSheet(onDismissRequest=onDismiss,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         LazyColumn(Modifier.fillMaxWidth().imePadding(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             item {
-                Text(if(start) "Where do you leave from?" else "Where do you want to go?",style=MaterialTheme.typography.titleLarge)
-                OutlinedTextField(query,{ query=it.take(120) },label={ Text("Search places, stations or stops") },singleLine=true,modifier=Modifier.fillMaxWidth())
-                TextButton(onClick={ online=!online }) { Text(if(online) "Online suggestions on · Photon" else "Enable online address suggestions") }
-                if(online) Text("Typed searches are sent to Photon. Results use OpenStreetMap data.",style=MaterialTheme.typography.labelSmall)
-                train.currentPosition?.let { p -> TextButton(onClick={ onSelect(WalkEndpoint("current","Current location",GeoPoint(p.latitude,p.longitude))) }) { Text("Current location · accuracy ${p.accuracyMeters.toInt()} m") } }
-                TextButton(onClick={ permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION)) }) { Text("Refresh my location") }
+                Text(if(start) "Where are you?" else "Where do you want to go?",style=MaterialTheme.typography.titleLarge)
+                OutlinedTextField(query,{ query=it.take(120) },label={ Text("Search places, stations or stops") },placeholder={ Text("e.g. Bella Vista, Bellville, Home") },singleLine=true,modifier=Modifier.fillMaxWidth())
+                FilledTonalButton(onClick={
+                    val p=train.currentPosition
+                    if(p!=null) onSelect(WalkEndpoint("current","Current location",GeoPoint(p.latitude,p.longitude)))
+                    else { waitingForLocation=true;permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION)) }
+                },enabled=!waitingForLocation,modifier=Modifier.fillMaxWidth().padding(top=8.dp).testTag("use-current-location")) { Text(if(waitingForLocation) "Finding your location…" else "Use current location") }
+                if(query.isBlank() && saved.isNotEmpty()) {
+                    Text("Your places",style=MaterialTheme.typography.labelLarge,modifier=Modifier.padding(top=8.dp))
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { saved.forEach { p -> AssistChip(onClick={ onSelect(p) },label={ Text(p.label) },modifier=Modifier.testTag("quick-place:${p.id}")) } }
+                }
                 issue?.let { Text(it,style=MaterialTheme.typography.bodySmall) }
             }
-            items(suggestions,key={ "place:${it.id}" }) { p -> ListItem(headlineContent={ Text(p.label) },supportingContent={ Text("Online place") },modifier=Modifier.clickable { onSelect(WalkEndpoint("place:${p.id}",p.label.take(100),p.point)) }) }
-            items(local,key={ it.id }) { p -> ListItem(headlineContent={ Text(p.label) },supportingContent={ Text(if(p.id.startsWith("spot:")) "Saved place" else if(p.id.startsWith("station:")) "Train station" else "Bus stop") },modifier=Modifier.clickable { onSelect(p) }) }
+            items(ranked,key={ it.first.id }) { (p,_) -> ListItem(headlineContent={ Text(p.label) },supportingContent={ Text(placeKind(p)) },modifier=Modifier.clickable { onSelect(p) }) }
+            items(suggestions,key={ "place:${it.id}" }) { p ->
+                val hint=remember(p.id,s.snapshots,train.stations) { nearbyHint(p.point,train,s) }
+                ListItem(headlineContent={ Text(p.label) },supportingContent={ Text(hint.ifBlank { "Address" }) },modifier=Modifier.clickable { onSelect(WalkEndpoint("place:${p.id}",p.label.take(100),p.point)) })
+            }
+            if(query.trim().length>=3 && ranked.isEmpty() && suggestions.isEmpty() && issue==null) item { Text(if(online) "Searching…" else "No match among stations, stops and your places.",style=MaterialTheme.typography.bodySmall) }
+            item {
+                TextButton(onClick={ online=!online }) { Text(if(online) "Address search on · turn off" else "Turn on address search for suburbs and streets") }
+                if(online) Text("Typed searches go to Photon (OpenStreetMap data), limited to the Cape Town area.",style=MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+private fun placeKind(p: WalkEndpoint)=when {
+    p.id.startsWith("spot:")->"Your place"
+    p.id.startsWith("station:")->"Train station"
+    p.id.startsWith("bus:")->"${TransportService.values().firstOrNull { p.id.startsWith("bus:${it.name}:") }?.title ?: "Bus"} stop"
+    else->"Place"
+}
+
+/** e.g. "Near Bellville station 1.2 km · Erica Square (Golden Arrow) 300 m" */
+private fun nearbyHint(point: GeoPoint,train: TrainState,s: FeatureState): String {
+    val station=StationChoices.ranked(point,train.stations,train.catalog.stations).firstOrNull()?.let { "${it.name} station ${stationDistance(it,point)}" }
+    val stops=s.snapshots.filterKeys(s.extras.beta::enabled).mapNotNull { (service,data) -> NearbyStops.nearest(point,data.stops,1,1500.0).firstOrNull()?.let { (stop,meters) -> "${stop.name} (${service.title}) $meters m" } }
+    val all=listOfNotNull(station)+stops
+    return if(all.isEmpty()) "" else "Near "+all.joinToString(" · ")
+}
+
+/** Lets a saved place use a chosen stop for each bus operator instead of "nearest". */
+@Composable private fun UsualStops(place: WalkEndpoint?,services: Set<TransportService>,s: FeatureState,m: FeatureViewModel) {
+    val spot=place?.let { p -> s.extras.spots.firstOrNull { p.id=="spot:${it.id}" } } ?: return
+    var choosing by remember { mutableStateOf<TransportService?>(null) }
+    services.filter { it!=TransportService.PRASA && s.extras.beta.enabled(it) }.forEach { service ->
+        val usual=spot.preferredStops[service.name]?.let { id -> s.snapshots[service]?.stops?.firstOrNull { it.id==id } }
+        TextButton(onClick={ choosing=service },modifier=Modifier.testTag("usual-stop:${service.name}")) {
+            Text(if(usual!=null) "Usual ${service.title} stop · ${usual.name}" else "Choose your usual ${service.title} stop for ${spot.name}")
+        }
+    }
+    choosing?.let { service ->
+        val near=remember(service,spot.point,s.snapshots[service]) { NearbyStops.nearest(spot.point,s.snapshots[service]?.stops.orEmpty(),10,3000.0) }
+        ModalBottomSheet(onDismissRequest={ choosing=null },sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
+            LazyColumn(contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                item { Text("Usual ${service.title} stop for ${spot.name}",style=MaterialTheme.typography.titleLarge);Text("Closest first. Trips from or to ${spot.name} will use this stop.",style=MaterialTheme.typography.bodySmall) }
+                if(near.isEmpty()) item { Text("No ${service.title} stops within 3 km yet. Run one ${service.title} search to load its stops.",style=MaterialTheme.typography.bodyMedium) }
+                items(near,key={ it.first.id }) { (stop,meters) -> ListItem(headlineContent={ Text(stop.name) },supportingContent={ Text("$meters m away") },modifier=Modifier.clickable { m.choosePreferredStop(spot.id,service,stop.id);choosing=null }) }
+                item { TextButton(onClick={ m.choosePreferredStop(spot.id,service,null);choosing=null }) { Text("Automatic · nearest suitable stop") } }
+            }
         }
     }
 }
@@ -329,21 +412,23 @@ internal fun findLabel(services: Set<TransportService>): String=when {
     val clock=remember { DateTimeFormatter.ofPattern("HH:mm").withZone(CapeTownZone) }
     Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
         if(fastest) Text("Fastest complete option found",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
-        Text(option.estimate.totalMinutes?.let { "$it min door to door" } ?: "${option.rideMinutes} min on board · walking time unknown",style=MaterialTheme.typography.titleMedium)
+        Text("${clock.format(Instant.ofEpochMilli(option.estimate.departureAt))}${option.estimate.arrivalAt?.let { " → "+clock.format(Instant.ofEpochMilli(it)) }.orEmpty()}  ·  ${option.estimate.totalMinutes?.let { "$it min" } ?: "${option.rideMinutes} min on board"}",style=MaterialTheme.typography.titleMedium)
         Text("${option.board} → ${option.alight}",style=MaterialTheme.typography.bodyMedium)
-        Text("Board ${clock.format(Instant.ofEpochMilli(option.estimate.departureAt))}${option.estimate.arrivalAt?.let { " · arrive ${clock.format(Instant.ofEpochMilli(it))}" }.orEmpty()}",style=MaterialTheme.typography.bodySmall)
-        Text("Walk ${option.estimate.walkingMinutes?.let { "$it min" } ?: "unknown"} · wait ${option.estimate.waitingMinutes?.let { "$it min + 5 min buffer" } ?: "unknown"}",style=MaterialTheme.typography.bodySmall)
-        Text(fare?.let { "Fare ${money(it.cents)} · ${it.label}" } ?: "Single fare unknown",style=MaterialTheme.typography.bodyMedium)
+        Text(listOfNotNull(option.estimate.walkingMinutes?.let { "Walk $it min" },fare?.let { money(it.cents) }).joinToString(" · ").ifBlank { option.service.title },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             TextButton(onClick=onView) { Text("View map") }
             TextButton(onClick=onDirections,modifier=Modifier.testTag("journey-directions")) { Text("Directions") }
-            ShareJourneyButton(m) { val state=model.state.value;JourneySharing.itinerary(za.co.cttrains.app.directions.DirectionsPlans.option(option,state,s),option.service,s.extras.localName,System.currentTimeMillis()) }
             TextButton(onClick={ details=!details }) { Text(if(details) "Hide details" else "Trip details") }
-            if(option.service==TransportService.PRASA) TextButton(onClick=onSchedule) { Text("Save & reminders") }
-            if(option.service!=TransportService.PRASA) TextButton(onClick={ val b=option.bus!!;repeatEdit=CommuteRoutine(java.util.UUID.randomUUID().toString(),"${s.access?.label ?: option.board} → ${s.destination?.label ?: option.alight}".take(100),SearchQuery(option.board,option.alight,java.time.Instant.ofEpochMilli(option.estimate.departureAt).atZone(CapeTownZone).toLocalDate().toString(),b.departure.time),setOf(1,2,3,4,5),option.service.name,option.walks.firstOrNull { it.to.id.startsWith("bus:") }?.minutes ?: 0,5,origin=s.access ?: b.board?.let { WalkEndpoint("bus:${option.service.name}:${it.id}",it.name.take(100),it.point) },destination=s.destination ?: b.alight?.let { WalkEndpoint("bus:${option.service.name}:${it.id}",it.name.take(100),it.point) },createdAt=System.currentTimeMillis(),service=option.service,busRoute=b.timetable.route,boardCallId=b.departure.id,alightCallId=b.arrival.id) }) { Text("Repeat journey") }
-            if(option.service!=TransportService.PRASA) TextButton(onClick={ selectFare=true }) { Text("Choose fare") }
         }
         if(details) {
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                ShareJourneyButton(m) { val state=model.state.value;JourneySharing.itinerary(za.co.cttrains.app.directions.DirectionsPlans.option(option,state,s),option.service,s.extras.localName,System.currentTimeMillis()) }
+                if(option.service==TransportService.PRASA) TextButton(onClick=onSchedule) { Text("Save & reminders") }
+                if(option.service!=TransportService.PRASA) TextButton(onClick={ val b=option.bus!!;repeatEdit=CommuteRoutine(java.util.UUID.randomUUID().toString(),"${s.access?.label ?: option.board} → ${s.destination?.label ?: option.alight}".take(100),SearchQuery(option.board,option.alight,java.time.Instant.ofEpochMilli(option.estimate.departureAt).atZone(CapeTownZone).toLocalDate().toString(),b.departure.time),setOf(1,2,3,4,5),option.service.name,option.walks.firstOrNull { it.to.id.startsWith("bus:") }?.minutes ?: 0,5,origin=s.access ?: b.board?.let { WalkEndpoint("bus:${option.service.name}:${it.id}",it.name.take(100),it.point) },destination=s.destination ?: b.alight?.let { WalkEndpoint("bus:${option.service.name}:${it.id}",it.name.take(100),it.point) },createdAt=System.currentTimeMillis(),service=option.service,busRoute=b.timetable.route,boardCallId=b.departure.id,alightCallId=b.arrival.id) }) { Text("Repeat journey") }
+                if(option.service!=TransportService.PRASA) TextButton(onClick={ selectFare=true }) { Text("Choose fare") }
+            }
+            Text("Walk ${option.estimate.walkingMinutes?.let { "$it min" } ?: "unknown"} · wait ${option.estimate.waitingMinutes?.let { "$it min + 5 min buffer" } ?: "unknown"}",style=MaterialTheme.typography.bodySmall)
+            Text(fare?.let { "Fare ${money(it.cents)} · ${it.label}" } ?: "Single fare unknown",style=MaterialTheme.typography.bodySmall)
             option.walks.forEach { leg -> PlannerWalk(leg,s,m) }
             option.rail?.legs?.forEach { leg -> Text("Train ${leg.train} · ${leg.departure.name} ${leg.departure.time} → ${leg.arrival.name} ${leg.arrival.time}",style=MaterialTheme.typography.bodySmall) }
             option.bus?.let { j -> Text("${j.timetable.route.title}\nBoard ${j.departure.name} · get off ${j.arrival.name}",style=MaterialTheme.typography.bodySmall) }
