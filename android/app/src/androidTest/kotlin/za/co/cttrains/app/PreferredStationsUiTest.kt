@@ -46,7 +46,9 @@ class PreferredStationsUiTest {
         app.onNodeWithTag("boarding-station").performScrollTo().assertTextContains("Board at · Salt River")
         app.onNodeWithTag("journey-planner").performScrollToNode(hasTestTag("final-spot:${home.id}"))
         app.onNodeWithTag("final-spot:${home.id}").performClick()
-        app.onNodeWithTag("arrival-station").performScrollTo().assertTextContains("Get off at · Unibell")
+        app.waitUntil(15000) { features.state.value.destination?.id=="spot:${home.id}" }
+        app.onNodeWithTag("journey-planner").performScrollToNode(hasTestTag("arrival-station"))
+        app.onNodeWithTag("arrival-station").assertTextContains("Get off at · Unibell")
         app.runOnIdle { assertEquals("spot:${work.id}",features.state.value.access?.id);assertEquals("spot:${home.id}",features.state.value.destination?.id);assertEquals("Salt River",train.state.value.from);assertEquals("Unibell",train.state.value.to) }
         UiScreenshots.save("work-salt-river-unibell-home")
         app.onNodeWithText("Swap From and To").performScrollTo().performClick()
