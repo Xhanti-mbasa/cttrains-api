@@ -74,6 +74,11 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
     private var fitted: Journey? = null
     private var fittedTrace: JourneyTrace? = null
     private var closed = false
+    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+        // Keep the surrounding scrolling page, pull-to-refresh and sheets from taking the map's taps and drags.
+        if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) parent?.requestDisallowInterceptTouchEvent(true)
+        return super.dispatchTouchEvent(event)
+    }
     init {
         if (viewport.modeKey != modeKey) { val retain=viewport.modeKey?.startsWith("online:")==true && modeKey.startsWith("online:");viewport.modeKey = modeKey; if(!retain) viewport.camera = null; viewport.fittedJourney = null; viewport.fittedTrace = null;viewport.featureFocus=null;focused=null;viewport.featureFit=null;fittedFeature=null }
         fitted = viewport.fittedJourney; fittedTrace = viewport.fittedTrace
@@ -95,13 +100,14 @@ private class TransitStreetView(context: Context, private val region: OfflineReg
                 ready.setLatLngBoundsForCameraTarget(region.bounds)
             }
             ready.addOnMapClickListener { point ->
+                // Finger-sized hit area in dp (was 20 raw pixels, about 7 dp on modern phones), picking the closest feature.
                 val p = ready.projection.toScreenLocation(point)
-                val changes = ready.queryRenderedFeatures(RectF(p.x - 24, p.y - 24, p.x + 24, p.y + 24), "rail-transfers")
-                if (changes.isNotEmpty()) { transfer(changes.first().getNumberProperty("number").toInt()); return@addOnMapClickListener true }
-                val extra=ready.queryRenderedFeatures(RectF(p.x-20,p.y-20,p.x+20,p.y+20),"extra-pins").firstOrNull()
-                features.pins.firstOrNull { it.id==extra?.getStringProperty("id") }?.let { pin(it);return@addOnMapClickListener true }
-                val hits = ready.queryRenderedFeatures(RectF(p.x - 20, p.y - 20, p.x + 20, p.y + 20), "rail-stations")
-                hits.firstOrNull()?.getStringProperty("name")?.let { select(it); true } ?: false
+                val slop = TOUCH_SLOP_DP * resources.displayMetrics.density
+                fun nearest(vararg layers: String) = ready.queryRenderedFeatures(RectF(p.x - slop, p.y - slop, p.x + slop, p.y + slop), *layers)
+                    .minByOrNull { f -> (f.geometry() as? org.maplibre.geojson.Point)?.let { g -> val s = ready.projection.toScreenLocation(LatLng(g.latitude(), g.longitude())); kotlin.math.hypot(s.x - p.x, s.y - p.y) } ?: Float.MAX_VALUE }
+                nearest("rail-transfers", "rail-transfer-numbers")?.getNumberProperty("number")?.let { transfer(it.toInt()); return@addOnMapClickListener true }
+                nearest("extra-pins", "extra-labels")?.getStringProperty("id")?.let { id -> features.pins.firstOrNull { it.id == id }?.let { pin(it); return@addOnMapClickListener true } }
+                nearest("rail-stations", "rail-labels")?.getStringProperty("name")?.let { select(it); true } ?: false
             }
             val loaded = Style.OnStyleLoaded { style ->
                 if (closed) return@OnStyleLoaded
@@ -213,3 +219,5 @@ private fun prepareRail(state: TrainState,changes: List<TransferPoint>,routeStat
         } } }
     return RailFrame(FeatureCollection.fromFeatures(stations).toJson(),FeatureCollection.fromFeatures(routes).toJson(),FeatureCollection.fromFeatures(location).toJson(),FeatureCollection.fromFeatures(pins).toJson())
 }
+
+private const val TOUCH_SLOP_DP = 24f

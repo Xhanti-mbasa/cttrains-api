@@ -1,17 +1,25 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class,androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class,androidx.compose.foundation.layout.ExperimentalLayoutApi::class,androidx.compose.foundation.ExperimentalFoundationApi::class)
 package za.co.cttrains.app.ui
 
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -19,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -30,8 +39,13 @@ import za.co.cttrains.core.*
     val planner: JourneyPlannerModel=androidx.lifecycle.viewmodel.compose.viewModel()
     val directions: za.co.cttrains.app.directions.DirectionsModel=androidx.lifecycle.viewmodel.compose.viewModel()
     val result by planner.state.collectAsStateWithLifecycle()
-    var mode by rememberSaveable(s.plannerMode) { mutableStateOf(s.plannerMode) }
-    var selected by rememberSaveable { mutableStateOf(TransportService.values().map { it.name }) }
+    // Any mix of services; choosing all of them shows every plan, grouped into jumpable sections.
+    var selected by rememberSaveable(s.plannerMode) { mutableStateOf(ModeOrder.map { it.name }.filter { s.plannerMode=="compare" || it==s.plannerMode }.ifEmpty { listOf(TransportService.PRASA.name) }) }
+    var manualService by rememberSaveable { mutableStateOf<String?>(null) }
+    val listState=rememberLazyListState()
+    val scope=rememberCoroutineScope()
+    val sectionIndex=remember { mutableMapOf<TransportService,Int>() }
+    val navOffset=with(LocalDensity.current) { 60.dp.roundToPx() }
     var picker by remember { mutableStateOf<Boolean?>(null) }
     var stationPicker by remember { mutableStateOf<Boolean?>(null) }
     var savePlace by remember { mutableStateOf<Boolean?>(null) }
@@ -43,30 +57,28 @@ import za.co.cttrains.core.*
     var autoWalk by rememberSaveable { mutableStateOf(true) }
     var datePicker by remember { mutableStateOf(false) }
     var timePicker by remember { mutableStateOf(false) }
-    var manual by rememberSaveable { mutableStateOf(false) }
     var scheduled by remember { mutableStateOf<PlannerOption?>(null) }
     var date by rememberSaveable(train.date) { mutableStateOf(train.date) }
     var time by rememberSaveable(train.time) { mutableStateOf(train.time) }
     val from=s.access ?: train.stations.firstOrNull { it.mapped && stationKey(it.name)==stationKey(train.from) }?.let(WalkingRoutes::endpoint)
     val to=s.destination ?: train.stations.firstOrNull { it.mapped && stationKey(it.name)==stationKey(train.to) }?.let(WalkingRoutes::endpoint)
-    val services=if(mode=="compare") TransportService.values().filter { it.name in selected }.toSet() else setOf(TransportService.valueOf(mode))
+    val services=ModeOrder.filter { it.name in selected }.toSet()
+    val mode=if(services.size==1) services.first().name else "compare"
     val rail=TransportService.PRASA in services
     val board=if(s.access==null) train.from else s.boardingStation
     val arrive=if(s.destination==null) train.to else s.arrivalStation
     LaunchedEffect(from,to,board,arrive,date,time,mode,selected,onlineWalks,maxWalk,autoWalk,train.preferences.sourceId,s.extras.beta.goldenArrow,s.extras.beta.myCiti) { planner.clear() }
     fun runSearch() { if(from!=null && to!=null) planner.find(PlannerRequest(from,to,date,time,services,onlineWalks,if(autoWalk) 5000 else maxWalk,board,arrive),train) }
-    if(manual && mode!="compare" && mode!="PRASA") {
+    val manualBus=manualService?.let { name -> TransportService.values().firstOrNull { it.name==name } }?.takeIf { it!=TransportService.PRASA }
+    if(manualBus!=null) {
         Column(Modifier.fillMaxSize()) {
-            TextButton(onClick={ manual=false }) { Text("Back to journey planner") }
-            BusPlanner(train,model,s,m,TransportService.valueOf(mode)) { model.openMap() }
+            TextButton(onClick={ manualService=null }) { Text("Back to journey planner") }
+            BusPlanner(train,model,s,m,manualBus) { model.openMap() }
         }
-    } else LazyColumn(Modifier.fillMaxSize().testTag("journey-planner"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+    } else LazyColumn(Modifier.fillMaxSize().testTag("journey-planner"),state=listState,contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
             Text("Plan your journey",style=MaterialTheme.typography.titleLarge)
-            ModeOfTransport(mode) { mode=it;manual=false }
-            if(mode=="compare") FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                TransportService.values().forEach { service -> FilterChip(service.name in selected,{ selected=if(service.name in selected) selected-service.name else selected+service.name },label={ Text(service.title) }) }
-            }
+            ModeOfTransport(services) { chosen -> selected=ModeOrder.filter { it in chosen }.map { it.name } }
         }
         item {
             JourneyPlaceField("From",from?.label ?: "Choose your start") { picker=true }
@@ -114,23 +126,43 @@ import za.co.cttrains.core.*
             }
             val valid=from!=null && to!=null && from!=to && runCatching { LocalDate.parse(date);LocalTime.parse(time) }.isSuccess && services.isNotEmpty()
             Button(onClick={ runSearch() },enabled=valid && !result.loading,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)) {
-                Text(if(result.loading) "Finding routes…" else if(mode=="compare") "Compare routes" else when(mode) { "PRASA"->"Find trains";"MYCITI"->"Find MyCiTi routes";else->"Find Golden Arrow routes" })
+                Text(if(result.loading) "Finding routes…" else findLabel(services))
             }
             if(!onlineWalks) Text("Timetables can be checked now. Enable walking estimates to calculate access and final walks.",style=MaterialTheme.typography.bodySmall)
         }
-        if(result.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth());Text(result.progress,style=MaterialTheme.typography.labelSmall) }
-        result.error?.let { error -> item { Text(error,color=MaterialTheme.colorScheme.error) } }
+        // Fixed items above: header, from, swap, to, date & search. Counted so section chips can jump.
+        var index=5
+        sectionIndex.clear()
+        if(result.loading) { item { LinearProgressIndicator(Modifier.fillMaxWidth());Text(result.progress,style=MaterialTheme.typography.labelSmall) };index++ }
+        result.error?.let { error -> item { Text(error,color=MaterialTheme.colorScheme.error) };index++ }
         val complete=result.sections.values.flatMap { it.options }.filter { it.estimate.totalMinutes!=null && it.service!=TransportService.GOLDEN_ARROW }
         val fastest=if(!result.loading) complete.minByOrNull { it.estimate.totalMinutes!! }?.id else null
+        if(services.size>1 && (result.sections.isNotEmpty() || result.loading)) {
+            stickyHeader(key="planner-sections") {
+                PlannerSectionBar(services.toList(),result.sections,s,onTop={ scope.launch { listState.animateScrollToItem(0) } }) { service ->
+                    sectionIndex[service]?.let { target -> scope.launch { listState.animateScrollToItem(target,-navOffset) } }
+                }
+            }
+            index++
+        }
         services.forEach { service ->
             val section=result.sections[service]
-            if(!s.extras.beta.enabled(service)) item {
-                Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) { Text("${service.title} is disabled",style=MaterialTheme.typography.titleMedium);TextButton(onClick=onSettings) { Text("Enable in Beta features") } } }
+            if(!s.extras.beta.enabled(service)) {
+                sectionIndex[service]=index
+                item(key="section:${service.name}") {
+                    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) { PlannerSectionTitle(service,null);Text("${service.title} is switched off in Beta features.",style=MaterialTheme.typography.bodyMedium);TextButton(onClick=onSettings) { Text("Enable in Beta features") } } }
+                }
+                index++
             } else if(section!=null) {
-                item { Text(service.title,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold) }
-                if(section.options.isEmpty()) item {
-                    Text(section.issue ?: "No supported journey found.",style=MaterialTheme.typography.bodyMedium)
-                    if(service!=TransportService.PRASA) TextButton(onClick={ mode=service.name;manual=true;m.chooseBus(service) }) { Text("Manual bus setup") }
+                sectionIndex[service]=index
+                item(key="section:${service.name}") { PlannerSectionTitle(service,section.options.size) }
+                index++
+                if(section.options.isEmpty()) {
+                    item {
+                        Text(section.issue ?: "No supported journey found.",style=MaterialTheme.typography.bodyMedium)
+                        if(service!=TransportService.PRASA) TextButton(onClick={ manualService=service.name;m.chooseBus(service) }) { Text("Manual bus setup") }
+                    }
+                    index++
                 }
                 items(section.candidates,key={ "candidate:${it.timetable.route.id}" }) { candidate ->
                     val timetable=candidate.timetable
@@ -141,12 +173,13 @@ import za.co.cttrains.core.*
                         Text("${timetable.day} · ${if(candidate.cached) "Saved timetable" else "Checked"} ${checked(timetable.fetchedAt)}",style=MaterialTheme.typography.labelSmall)
                         Text("${timetable.trips.count { trip->trip.calls.lastOrNull()?.time.orEmpty()>=time }} published trips remaining in this timetable. Your roadside boarding time is not supplied.",style=MaterialTheme.typography.bodySmall)
                         FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                            TextButton(onClick={ mode=service.name;manual=true;m.chooseBus(service);m.timetable(timetable.route,timetable.day) }) { Text("Choose published timed stops") }
+                            TextButton(onClick={ manualService=service.name;m.chooseBus(service);m.timetable(timetable.route,timetable.day) }) { Text("Choose published timed stops") }
                             TextButton(onClick={ uri.openUri(timetable.route.url) }) { Text("View operator PDF") }
                         }
                     } }
                 }
-                items(section.options.take(if(mode=="compare") 3 else 12),key={ it.id }) { option ->
+                index+=section.candidates.size
+                items(section.options,key={ it.id }) { option ->
                     PlannerJourneyCard(option,option.id==fastest,s,model,m,onDirections={ directions.preview({ za.co.cttrains.app.directions.DirectionsPlans.option(option,train,s) }) {
                         if(option.rail!=null) { m.showTrainMap();m.usePlannedWalks(option.walks);model.presentPlannedJourney(option.query!!,option.rail,option.fetchedAt,option.cached,null,option.sourceId,false) }
                         else { model.selectJourney(null);m.selectBus(option.bus!!);m.usePlannedWalks(option.walks) }
@@ -158,11 +191,12 @@ import za.co.cttrains.core.*
                         else { model.selectJourney(null);m.selectBus(option.bus!!);m.usePlannedWalks(option.walks);model.openMap() }
                     })
                 }
-                if(section.options.isNotEmpty() && section.issue!=null) item { Text(section.issue,style=MaterialTheme.typography.labelSmall) }
+                index+=section.options.size
+                if(section.options.isNotEmpty() && section.issue!=null) { item { Text(section.issue,style=MaterialTheme.typography.labelSmall) };index++ }
             }
         }
         if(result.sections.isNotEmpty()) item { Text("Fastest found applies only to complete, timed routes checked here. Bus transfers and unconfirmed survey points are excluded from that claim.",style=MaterialTheme.typography.bodySmall) }
-        if(mode!="compare" && mode!="PRASA" && s.extras.beta.enabled(TransportService.valueOf(mode))) item { TextButton(onClick={ manual=true;m.chooseBus(TransportService.valueOf(mode)) }) { Text("Manual bus setup · boarding & drop-off stops") } }
+        if(mode!="compare" && mode!="PRASA" && s.extras.beta.enabled(TransportService.valueOf(mode))) item { TextButton(onClick={ manualService=mode;m.chooseBus(TransportService.valueOf(mode)) }) { Text("Manual bus setup · boarding & drop-off stops") } }
     }
     picker?.let { start -> JourneyPlacePicker(train,model,s,m,start,{ picker=null;finalStation=null }) { endpoint ->
         if(endpoint.id.startsWith("station:")) { m.place(null,start);model.edit { if(start) it.copy(from=endpoint.label) else it.copy(to=endpoint.label) } }
@@ -195,15 +229,55 @@ import za.co.cttrains.core.*
     if(consent) AlertDialog(onDismissRequest={ consent=false },title={ Text("Calculate mapped walking routes?") },text={ Text("FOSSGIS / OSRM receives the selected start, destination and candidate stop coordinates. This checks foot paths and caches them locally. Published transit times remain scheduled estimates.") },confirmButton={ TextButton(onClick={ onlineWalks=true;consent=false }) { Text("Enable estimates") } },dismissButton={ TextButton(onClick={ consent=false }) { Text("Keep timetable only") } })
 }
 
-@Composable internal fun ModeOfTransport(mode: String,onMode: (String)->Unit) {
-    var open by remember { mutableStateOf(false) }
-    val label=if(mode=="compare") "Compare" else TransportService.valueOf(mode).title
-    Box(Modifier.fillMaxWidth()) {
-        OutlinedButton(onClick={ open=true },modifier=Modifier.fillMaxWidth()) { Text("Mode of transport · $label") }
-        DropdownMenu(open,{ open=false }) {
-            TransportService.values().forEach { service -> DropdownMenuItem(text={ Text(service.title) },onClick={ onMode(service.name);open=false }) }
-            DropdownMenuItem(text={ Text("Compare") },onClick={ onMode("compare");open=false })
+/** Display order for the mode-of-transport filter. */
+internal val ModeOrder=listOf(TransportService.PRASA,TransportService.MYCITI,TransportService.GOLDEN_ARROW)
+
+internal fun findLabel(services: Set<TransportService>): String=when {
+    services.size==ModeOrder.size -> "Find all routes"
+    services.size==1 -> when(services.first()) { TransportService.PRASA->"Find trains";TransportService.MYCITI->"Find MyCiTi routes";TransportService.GOLDEN_ARROW->"Find Golden Arrow routes" }
+    else -> "Find ${ModeOrder.filter { it in services }.joinToString(" + ") { it.title }} routes"
+}
+
+@Composable internal fun ServiceDot(service: TransportService,size: androidx.compose.ui.unit.Dp=10.dp) {
+    Box(Modifier.size(size).background(Color(android.graphics.Color.parseColor(service.color)),CircleShape))
+}
+
+@Composable internal fun ModeOfTransport(selected: Set<TransportService>,onChange: (Set<TransportService>)->Unit) {
+    val all=selected.size==ModeOrder.size
+    Column(Modifier.fillMaxWidth().padding(top=6.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+        Text("Mode of transport",style=MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            FilterChip(all,{ onChange(ModeOrder.toSet()) },label={ Text("All") },modifier=Modifier.testTag("mode:all"))
+            ModeOrder.forEach { service ->
+                // Keep at least one service chosen.
+                FilterChip(service in selected,{ val next=if(service in selected) selected-service else selected+service;if(next.isNotEmpty()) onChange(next) },
+                    label={ Text(service.title) },leadingIcon={ ServiceDot(service) },modifier=Modifier.testTag("mode:${service.name}"))
+            }
         }
+        Text(when { all->"Every train, MyCiTi and Golden Arrow plan is shown, grouped by service."
+            selected.size>1->"All plans for the chosen services are shown, grouped by service."
+            else->"Choose more than one to see plans side by side." },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable private fun PlannerSectionBar(services: List<TransportService>,sections: Map<TransportService,PlannerSection>,s: FeatureState,onTop: ()->Unit,onJump: (TransportService)->Unit) {
+    Surface(Modifier.fillMaxWidth(),color=MaterialTheme.colorScheme.surface) {
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical=8.dp).testTag("planner-sections"),horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
+            AssistChip(onClick=onTop,label={ Text("↑ Trip") })
+            services.forEach { service ->
+                val count=sections[service]?.options?.size
+                val label=when { !s.extras.beta.enabled(service)->"${service.title} · off";count==null->"${service.title} · …";else->"${service.title} · $count" }
+                AssistChip(onClick={ onJump(service) },label={ Text(label) },leadingIcon={ ServiceDot(service) },modifier=Modifier.testTag("jump:${service.name}"))
+            }
+        }
+    }
+}
+
+@Composable private fun PlannerSectionTitle(service: TransportService,count: Int?) {
+    Row(Modifier.fillMaxWidth().padding(top=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+        ServiceDot(service,12.dp)
+        Text(service.title,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+        if(count!=null) Text(if(count==1) "1 plan" else "$count plans",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
