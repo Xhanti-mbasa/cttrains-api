@@ -33,6 +33,7 @@ class PreferredStationsUiTest {
         runBlocking { features.store.update { it.copy(spots=it.spots.filterNot { p -> p.id.startsWith("preferred-test-") }) } }
     }
     @Test fun workCanUseSaltRiverAndUnibellCanFinishAtHomeThenSwap() {
+        UiScreenshots.closeSystemDialogs()
         app.onNodeWithText("Choose your start").performScrollTo().performClick()
         app.onNodeWithText("Search places, stations or stops").performTextInput("33 Albert Road")
         app.onNode(hasText("Work") and hasClickAction()).performClick()
@@ -45,6 +46,8 @@ class PreferredStationsUiTest {
         app.waitUntil(15000) { features.state.value.extras.spots.first { it.id==work.id }.preferredStation=="Salt River" }
         app.onNodeWithTag("boarding-station").performScrollTo().assertTextContains("Board at · Salt River")
         app.onNodeWithTag("journey-planner").performScrollToNode(hasTestTag("final-spot:${home.id}"))
+        UiScreenshots.closeSystemDialogs()
+        app.waitForIdle()
         app.onNodeWithTag("final-spot:${home.id}").performClick()
         app.waitUntil(15000) { features.state.value.destination?.id=="spot:${home.id}" }
         app.onNodeWithTag("journey-planner").performScrollToNode(hasTestTag("arrival-station"))
