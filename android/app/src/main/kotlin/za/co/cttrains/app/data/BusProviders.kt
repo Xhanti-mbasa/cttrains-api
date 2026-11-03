@@ -21,13 +21,16 @@ interface BusProvider {
     suspend fun timetable(route: BusRouteDocument,day: String): BusTimetable
 }
 
+// MyCiTi embeds all map data in each page; timetable pages are now ~9 MB.
+private const val MYCITI_LIMIT=32*1024*1024
+
 class MyCitiProvider: BusProvider {
     override val service=TransportService.MYCITI
     private val http=SourceHttp()
     private val hosts=setOf("myciti.org.za","www.myciti.org.za")
     override suspend fun snapshot(previous: BusSnapshot?,forceMap: Boolean)=withContext(Dispatchers.Default) {
         val now=System.currentTimeMillis()
-        val base=BusSources.myCitiMap(http.get(BusSources.MYCITI_MAP,hosts=hosts),now)
+        val base=BusSources.myCitiMap(http.get(BusSources.MYCITI_MAP,MYCITI_LIMIT,hosts),now)
         try { val (fares,date)=BusSources.fares(http.get(BusSources.MYCITI_FARES,hosts=hosts),service);base.copy(fares=fares,fareDate=date) }
         catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException) throw e
             base.copy(fares=previous?.fares.orEmpty(),fareDate=previous?.fareDate,faresCheckedAt=previous?.faresCheckedAt ?: 0,notes=listOf("Fare refresh unavailable. Any retained prices use the previous check date.")) }
@@ -35,7 +38,7 @@ class MyCitiProvider: BusProvider {
     override suspend fun timetable(route: BusRouteDocument,day: String)=withContext(Dispatchers.Default) {
         require(BusSources.officialUrl(route.url,service) && day in listOf("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"))
         val url=route.url.toHttpUrl().newBuilder().setQueryParameter("day",day).build().toString()
-        BusSources.myCitiTimetable(http.get(url,hosts=hosts),route,day,System.currentTimeMillis())
+        BusSources.myCitiTimetable(http.get(url,MYCITI_LIMIT,hosts),route,day,System.currentTimeMillis())
     }
 }
 

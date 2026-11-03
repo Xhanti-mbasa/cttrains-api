@@ -26,18 +26,26 @@ import za.co.cttrains.core.*
         onPlan()
     }
     LazyColumn(Modifier.fillMaxSize().testTag("saved-addresses"),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        item { Text("Your places",style=MaterialTheme.typography.headlineMedium);Text("Set an address once, then use it in either direction. Your station is your choice.") }
+        item { Text("My profile",style=MaterialTheme.typography.headlineMedium);Text("Your exact Home, Work and other places. They appear in Plan and on the map; set your usual station once.") }
         items(SavedAddresses.labels) { label->
             val spot=s.extras.spots.firstOrNull { SavedAddresses.role(it)==label }
             AddressCard(label,spot,{ edit(label,spot?.id) },{ spot?.let { use(it,true) } },{ spot?.let { use(it,false) } },{ stationChoice=spot },{ removing=spot })
         }
         items(s.extras.spots.filter { SavedAddresses.role(it)==null },key={ it.id }) { spot->AddressCard(spot.name,spot,{ edit(spot.name,spot.id) },{ use(spot,true) },{ use(spot,false) },{ stationChoice=spot },{ removing=spot }) }
-        item { Text("Add another place by saving an address in Plan, or holding a point on the map.",style=MaterialTheme.typography.bodySmall) }
+        item {
+            OutlinedButton(onClick={ edit("",null) },modifier=Modifier.fillMaxWidth().testTag("add-custom-place")) { Text("Add another place you visit often") }
+            Text("You can also hold a point on the map to save it.",style=MaterialTheme.typography.bodySmall)
+        }
     }
     editing?.let { label->JourneyPlacePicker(train,model,s,m,true,{ editing=null }) { place->target=place;editing=null } }
     target?.let { place->
-        val label=chosenLabel
-        AlertDialog(onDismissRequest={ target=null },title={ Text("Confirm $label address") },text={ Text(place.label+"\n\n${place.point.latitude}, ${place.point.longitude}\nYou can choose a station after saving.") },confirmButton={ TextButton(onClick={ m.saveAddress(label,place,editingId);target=null }) { Text("Save address") } },dismissButton={ TextButton(onClick={ target=null }) { Text("Cancel") } })
+        var name by remember(place) { mutableStateOf(chosenLabel) }
+        val custom=chosenLabel !in SavedAddresses.labels
+        AlertDialog(onDismissRequest={ target=null },title={ Text(if(custom) "Save this place" else "Confirm $chosenLabel address") },text={ Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text(place.label)
+            if(custom) OutlinedTextField(name,{ name=it.take(60) },label={ Text("Name, e.g. Gym or Mom's place") },singleLine=true,modifier=Modifier.fillMaxWidth().testTag("custom-place-name"))
+            Text("You can choose your usual station and bus stops after saving.",style=MaterialTheme.typography.bodySmall)
+        } },confirmButton={ TextButton(onClick={ m.saveAddress(name.trim(),place,editingId);target=null },enabled=name.isNotBlank()) { Text(if(custom) "Save place" else "Save address") } },dismissButton={ TextButton(onClick={ target=null }) { Text("Cancel") } })
     }
     stationChoice?.let { spot->JourneyStationPicker(WalkEndpoint("spot:${spot.id}",spot.name,spot.point),train,s,true,spot.preferredStation,{ stationChoice=null }) { station,_->
         m.saveSpotStation(spot.id,station);stationChoice=null

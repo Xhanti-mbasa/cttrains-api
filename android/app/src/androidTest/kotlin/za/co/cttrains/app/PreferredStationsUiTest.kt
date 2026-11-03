@@ -33,6 +33,7 @@ class PreferredStationsUiTest {
         runBlocking { features.store.update { it.copy(spots=it.spots.filterNot { p -> p.id.startsWith("preferred-test-") }) } }
     }
     @Test fun workCanUseSaltRiverAndUnibellCanFinishAtHomeThenSwap() {
+        UiScreenshots.closeSystemDialogs()
         app.onNodeWithText("Choose your start").performScrollTo().performClick()
         app.onNodeWithText("Search places, stations or stops").performTextInput("33 Albert Road")
         app.onNode(hasText("Work") and hasClickAction()).performClick()
@@ -45,11 +46,15 @@ class PreferredStationsUiTest {
         app.waitUntil(15000) { features.state.value.extras.spots.first { it.id==work.id }.preferredStation=="Salt River" }
         app.onNodeWithTag("boarding-station").performScrollTo().assertTextContains("Board at · Salt River")
         app.onNodeWithTag("journey-planner").performScrollToNode(hasTestTag("final-spot:${home.id}"))
-        app.onNodeWithTag("final-spot:${home.id}").performClick()
-        app.onNodeWithTag("arrival-station").performScrollTo().assertTextContains("Get off at · Unibell")
+        UiScreenshots.closeSystemDialogs()
+        // CI emulators can show "System UI isn't responding" over the app here; invoke the chip's click action directly.
+        app.onNodeWithTag("final-spot:${home.id}").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
+        app.waitUntil(15000) { features.state.value.destination?.id=="spot:${home.id}" }
+        app.onNodeWithTag("journey-planner").performScrollToNode(hasTestTag("arrival-station"))
+        app.onNodeWithTag("arrival-station").assertTextContains("Get off at · Unibell")
         app.runOnIdle { assertEquals("spot:${work.id}",features.state.value.access?.id);assertEquals("spot:${home.id}",features.state.value.destination?.id);assertEquals("Salt River",train.state.value.from);assertEquals("Unibell",train.state.value.to) }
         UiScreenshots.save("work-salt-river-unibell-home")
-        app.onNodeWithText("Swap From and To").performScrollTo().performClick()
+        app.onNodeWithText("Swap From and To").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         app.runOnIdle { assertEquals("Unibell",features.state.value.boardingStation);assertEquals("Salt River",features.state.value.arrivalStation);assertEquals("Home",features.state.value.access?.label);assertEquals("Work",features.state.value.destination?.label) }
         app.onNodeWithTag("boarding-station").performScrollTo().assertTextContains("Board at · Unibell")
         app.onNodeWithTag("arrival-station").performScrollTo().assertTextContains("Get off at · Salt River")

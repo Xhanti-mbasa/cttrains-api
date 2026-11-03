@@ -41,7 +41,8 @@ object SavedAddresses {
         val kind=role(value)
         val previous=spots.firstOrNull { it.id==value.id } ?: kind?.let { label->spots.firstOrNull { role(it)==label } }
         val saved=value.copy(id=previous?.id ?: value.id,createdAt=previous?.createdAt ?: value.createdAt,
-            photo=value.photo ?: previous?.photo,preferredStation=value.preferredStation ?: previous?.preferredStation)
+            photo=value.photo ?: previous?.photo,preferredStation=value.preferredStation ?: previous?.preferredStation,
+            preferredStops=value.preferredStops.ifEmpty { previous?.preferredStops.orEmpty() })
         return (spots.filterNot { it.id==saved.id || (kind!=null && role(it)==kind) }+saved).takeLast(100)
     }
 }

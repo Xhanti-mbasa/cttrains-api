@@ -159,6 +159,11 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
             store.update { e->e.copy(spots=e.spots.map { if(it.id==id) it.copy(preferredStation=name) else it }) }
         }
     }
+    /** Remember (or clear) the usual stop of one bus operator for a saved place. */
+    fun choosePreferredStop(spotId: String,service: TransportService,stopId: String?)=viewModelScope.launch(handler) {
+        require(service!=TransportService.PRASA && (stopId==null || stopId.length in 1..200))
+        store.update { e->e.copy(spots=e.spots.map { if(it.id==spotId) it.copy(preferredStops=if(stopId==null) it.preferredStops-service.name else it.preferredStops+(service.name to stopId)) else it }) }
+    }
     fun saveJourneyPlace(endpoint: WalkEndpoint,start: Boolean,name: String,tag: String)=action("Couldn’t save this place.") {
         require(endpoint.point.valid && name.trim().length in 1..100 && tag.length<=80)
         val current=state.value

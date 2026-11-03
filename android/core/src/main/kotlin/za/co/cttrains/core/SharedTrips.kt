@@ -17,7 +17,9 @@ import kotlinx.serialization.json.Json
 
 @Serializable data class TripStep(val kind: String, val service: TransportService?, val label: String, val at: Long, val platform: String? = null, val route: String? = null)
 @Serializable data class SafetyTrip(val format: String = "cttrains.trip", val version: Int = 1, val id: String, val owner: String, val createdAt: Long, val steps: List<TripStep>, val sourceCheckedAt: Long? = null, val note: String = "Planned times; confirm services and boarding locations.")
-@Serializable data class MarkedSpot(val id: String, val name: String, val service: TransportService?, val point: GeoPoint, val tag: String, val note: String = "", val photo: String? = null, val createdAt: Long, val preferredStation: String? = null)
+@Serializable data class MarkedSpot(val id: String, val name: String, val service: TransportService?, val point: GeoPoint, val tag: String, val note: String = "", val photo: String? = null, val createdAt: Long, val preferredStation: String? = null,
+    /** Usual stop per bus operator (TransportService name → stop id). */
+    val preferredStops: Map<String, String> = emptyMap())
 @Serializable data class PortableEnvelope(val format: String = "cttrains.profile.encrypted", val version: Int = 1, val iterations: Int = 210000, val salt: String, val nonce: String, val ciphertext: String)
 @Serializable data class CircleLink(val format: String = "cttrains.circle", val version: Int = 1, val id: String, val room: String, val ownerId: String, val secret: String, val expiresAt: Long, val trip: SafetyTrip)
 @Serializable data class FriendUpdate(val circleId: String, val sequence: Long, val sentAt: Long, val expiresAt: Long, val phase: String, val point: GeoPoint? = null, val accuracy: Float? = null, val near: String? = null)

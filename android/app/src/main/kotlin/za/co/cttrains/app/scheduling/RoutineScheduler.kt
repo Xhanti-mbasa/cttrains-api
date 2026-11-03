@@ -100,7 +100,8 @@ class RoutineCheck(c: Context,p: WorkerParameters): CoroutineWorker(c,p) {
         if(!notificationsAllowed(applicationContext)) return
         applicationContext.getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("routine-status","Recurring journey checks",NotificationManager.IMPORTANCE_DEFAULT))
         val open=PendingIntent.getActivity(applicationContext,r.id.hashCode(),Intent(applicationContext,MainActivity::class.java).putExtra("journeys",true),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        NotificationManagerCompat.from(applicationContext).notify(r.id.hashCode(),NotificationCompat.Builder(applicationContext,"routine-status").setSmallIcon(R.drawable.ic_train).setContentTitle(r.name).setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(text)).setContentIntent(open).setAutoCancel(true).build())
+        // notificationsAllowed() checked above; permission can still be revoked between the check and the call.
+        try { NotificationManagerCompat.from(applicationContext).notify(r.id.hashCode(),NotificationCompat.Builder(applicationContext,"routine-status").setSmallIcon(R.drawable.ic_train).setContentTitle(r.name).setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(text)).setContentIntent(open).setAutoCancel(true).build()) } catch(_: SecurityException) { }
     }
 }
 
@@ -113,7 +114,7 @@ class RoutineBusReminder(c: Context,p: WorkerParameters): CoroutineWorker(c,p) {
         if(board.at<=System.currentTimeMillis() || !notificationsAllowed(applicationContext)) return Result.success()
         applicationContext.getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("routine-bus","Recurring bus journeys",NotificationManager.IMPORTANCE_DEFAULT))
         val intent=PendingIntent.getActivity(applicationContext,r.id.hashCode(),Intent(applicationContext,MainActivity::class.java).putExtra("journeys",true),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        NotificationManagerCompat.from(applicationContext).notify(r.id.hashCode(),NotificationCompat.Builder(applicationContext,"routine-bus").setSmallIcon(R.drawable.ic_train).setContentTitle("Leave for ${r.name}").setContentText("${r.service.title} · ${r.query.time} · ${r.query.from} → ${r.query.to}").setStyle(NotificationCompat.BigTextStyle().bigText(TripFiles.text(trip))).setContentIntent(intent).setAutoCancel(true).build())
+        try { NotificationManagerCompat.from(applicationContext).notify(r.id.hashCode(),NotificationCompat.Builder(applicationContext,"routine-bus").setSmallIcon(R.drawable.ic_train).setContentTitle("Leave for ${r.name}").setContentText("${r.service.title} · ${r.query.time} · ${r.query.from} → ${r.query.to}").setStyle(NotificationCompat.BigTextStyle().bigText(TripFiles.text(trip))).setContentIntent(intent).setAutoCancel(true).build()) } catch(_: SecurityException) { }
         return Result.success()
     }
 }

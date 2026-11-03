@@ -113,7 +113,7 @@ internal fun shareText(context: android.content.Context,text: String) { context.
             searchState.extras.spots.map { MapPin("spot:${it.id}",it.name,it.point,it.service,"Personal pin",it.id) }
         }
     }
-    var online by rememberSaveable { mutableStateOf(false) }
+    var online by rememberSaveable { mutableStateOf(true) }
     var consent by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<PlaceSuggestion>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -122,7 +122,7 @@ internal fun shareText(context: android.content.Context,text: String) { context.
         results=emptyList();issue=null;loading=false
         if(online && q.trim().length>=3) {
             loading=true
-            try { kotlinx.coroutines.delay(850);results=m.placeSuggestions(q) }
+            try { kotlinx.coroutines.delay(450);results=m.placeSuggestions(q) }
             catch(e: Exception) { if(e is kotlinx.coroutines.CancellationException) throw e;issue="Online suggestions unavailable. Search saved stops or mark a map point." }
             finally { loading=false }
         }
@@ -137,8 +137,8 @@ internal fun shareText(context: android.content.Context,text: String) { context.
             LazyColumn(Modifier.weight(1f,false).heightIn(max=420.dp),contentPadding=PaddingValues(bottom=24.dp)) {
                 items(results,key={ "place:${it.id}" }) { place->ListItem(headlineContent={ Text(place.label) },supportingContent={ Text("Address result · Photon / OpenStreetMap") },modifier=Modifier.clickable { m.selectPlace(place);onDismiss() }) }
                 if(online && !loading && issue==null && q.length>=3 && results.isEmpty()) item { Text("No matching mapped address yet. Try the street and suburb.",style=MaterialTheme.typography.bodySmall) }
-                items(train.catalog.stations.filter { it.contains(q,true) }.take(30),key={ "rail:$it" }) { name->ListItem(headlineContent={ Text(name) },supportingContent={ Text("Train station") },modifier=Modifier.clickable { onStation(name) }) }
-                items(localPins.filter { it.name.contains(q,true) }.take(30),key={ it.id }) { pin->ListItem(headlineContent={ Text(pin.name) },supportingContent={ Text(pin.service?.title ?: "Personal pin") },modifier=Modifier.clickable { m.selectPin(pin);onDismiss() }) }
+                items(if(q.isBlank()) emptyList() else FuzzyPlaces.rank(q,train.catalog.stations,30) { it },key={ "rail:$it" }) { name->ListItem(headlineContent={ Text(name) },supportingContent={ Text("Train station") },modifier=Modifier.clickable { onStation(name) }) }
+                items(if(q.isBlank()) localPins.filter { it.id.startsWith("spot:") }.take(30) else FuzzyPlaces.rank(q,localPins,30) { it.name },key={ it.id }) { pin->ListItem(headlineContent={ Text(pin.name) },supportingContent={ Text(pin.service?.title ?: "Personal pin") },modifier=Modifier.clickable { m.selectPin(pin);onDismiss() }) }
             }
         }
     }

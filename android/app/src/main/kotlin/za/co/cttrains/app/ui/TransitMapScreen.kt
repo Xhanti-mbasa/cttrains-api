@@ -178,7 +178,7 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
                 if (useStreets) key(state.preferences.mapMode, savedArea?.id, retry,feature.extras.beta.mapStyle) { StreetMap(renderState, if (state.preferences.mapMode == "offline") model.offlineMaps.definition(savedArea?.id) else null, model.mapViewport, visibleTransfers, model::selectStation, model::selectTransfer, { failed = true }, Modifier.fillMaxSize(),feature.extras.beta.mapStyle,layers,{ features.selectPin(it) },features::drop) }
                 else OfflineStationMap(renderState.stations, renderState.selectedJourney, renderState.routeTrace, model.mapViewport, visibleTransfers, state.currentPosition, state.from, state.to, model::selectStation, model::selectTransfer,layers,{ features.selectPin(it) },features::drop)
             }
-            Surface(modifier=Modifier.align(Alignment.TopStart).padding(12.dp).fillMaxWidth(if (fullScreen) .82f else .76f), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), tonalElevation = 3.dp,onClick={ optionsOpen=true }) {
+            Surface(modifier=Modifier.align(Alignment.TopStart).padding(12.dp).widthIn(max=if (fullScreen) 280.dp else 240.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), tonalElevation = 3.dp,onClick={ optionsOpen=true }) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Text(if (useStreets) if (state.preferences.mapMode == "offline") savedArea?.name ?: "Downloaded map" else MapStyles.titles[feature.extras.beta.mapStyle] ?: "Streets" else "Offline stops & stations", style = MaterialTheme.typography.labelLarge)
                     Text(if(feature.selectedBus!=null) "${feature.selectedBus.timetable.service.title} · ${feature.selectedBus.minutes} min" else if (state.selectedJourney == null) "${renderState.stations.count { it.mapped }+layers.pins.size} pins · tap for map options" else "${visibleTransfers.size} train changes · tap for map options", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -248,8 +248,8 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
     if (allTransfers || selectedTransfer != null) TransferDetailsSheet(if (allTransfers) transfers else listOfNotNull(selectedTransfer), { allTransfers = false; model.selectTransfer(null) }, { allTransfers = false; model.selectTransfer(null); model.openAlerts() })
 
     state.selectedStation?.let { name ->
-        ModalBottomSheet(onDismissRequest = { model.selectStation(null) }) {
-            Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        ModalBottomSheet(onDismissRequest = { model.selectStation(null) }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -312,19 +312,26 @@ internal fun OfflineStationMap(stations: List<StationPosition>, journey: Journey
             features.shapes.map { shape->val path=Path();shape.points.forEachIndexed { i,p->val xy=projection.point(p.latitude,p.longitude);if(i==0) path.moveTo(xy.x,xy.y) else path.lineTo(xy.x,xy.y) };path to Color(android.graphics.Color.parseColor(if(shape.source.startsWith("Saved directions")) "#1478B8" else if(shape.source.contains("myciti")) TransportService.MYCITI.color else TransportService.GOLDEN_ARROW.color)) }
         }
     }
+    val touch = with(density) { 32.dp.toPx() }
+    val tapHandler by rememberUpdatedState<(Offset) -> Unit>({ tap ->
+        val transfer = transfers.mapNotNull { t -> t.position?.let { t to projected(it.latitude!!, it.longitude!!) } }.minByOrNull { (it.second - tap).getDistance() }
+        val pin = features.pins.minByOrNull { (projected(it.point.latitude, it.point.longitude) - tap).getDistance() }
+        val closest = stations.filter { it.mapped }.minByOrNull { (projected(it.latitude!!, it.longitude!!) - tap).getDistance() }
+        when {
+            transfer != null && (transfer.second - tap).getDistance() < touch -> onTransfer(transfer.first.number)
+            pin != null && (projected(pin.point.latitude, pin.point.longitude) - tap).getDistance() < touch -> onPin(pin)
+            closest != null && (projected(closest.latitude!!, closest.longitude!!) - tap).getDistance() < touch -> onStation(closest.name)
+        }
+    })
+    val longPressHandler by rememberUpdatedState<(Offset) -> Unit>({ tap ->
+        val middle = Offset(size.width / 2f, size.height / 2f)
+        onDrop(projection.coordinate((tap - middle - Offset(pan.x * size.width, pan.y * size.height)) / zoom + middle))
+    })
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize().onSizeChanged { size = it }.transformable(transform)
             .semantics { contentDescription = "Rail station map. Use Search stations for an accessible station list." }
-            .pointerInput(stations, transfers, journey, trace, size, zoom, pan,features.pins) {
-                detectTapGestures(onLongPress={ tap -> val middle=Offset(size.width/2f,size.height/2f);val original=(tap-middle-Offset(pan.x*size.width,pan.y*size.height))/zoom+middle;onDrop(projection.coordinate(original)) },onTap={ tap ->
-                    val transfer = transfers.mapNotNull { t -> t.position?.let { t to projected(it.latitude!!, it.longitude!!) } }.minByOrNull { (it.second - tap).getDistance() }
-                    if (transfer != null && (transfer.second - tap).getDistance() < with(density) { 26.dp.toPx() }) { onTransfer(transfer.first.number); return@detectTapGestures }
-                    val pin=features.pins.minByOrNull { (projected(it.point.latitude,it.point.longitude)-tap).getDistance() }
-                    if(pin!=null && (projected(pin.point.latitude,pin.point.longitude)-tap).getDistance()<with(density) { 24.dp.toPx() }) { onPin(pin);return@detectTapGestures }
-                    val closest = stations.filter { it.mapped }.minByOrNull { (projected(it.latitude!!, it.longitude!!) - tap).getDistance() }
-                    if (closest != null && (projected(closest.latitude!!, closest.longitude!!) - tap).getDistance() < with(density) { 24.dp.toPx() }) onStation(closest.name)
-                })
-            }) {
+            // One long-lived detector: keying it on zoom/pan/size restarted it mid-touch and dropped taps.
+            .pointerInput(Unit) { detectTapGestures(onLongPress={ longPressHandler(it) },onTap={ tapHandler(it) }) }) {
             val grid = 44.dp.toPx()
             var x = 0f; while (x < this.size.width) { drawLine(outline.copy(alpha = .3f), Offset(x, 0f), Offset(x, this.size.height)); x += grid }
             var y = 0f; while (y < this.size.height) { drawLine(outline.copy(alpha = .3f), Offset(0f, y), Offset(this.size.width, y)); y += grid }

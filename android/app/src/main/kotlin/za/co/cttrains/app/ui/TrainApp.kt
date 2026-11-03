@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -108,7 +109,7 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
                 composable("saved") { SavedScreen(state, model,feature,features,{ go("places") }) { go("plan") } }
                 composable("places") { SavedAddressesScreen(state,model,feature,features) { go("plan") } }
                 composable("upcoming") { UpcomingScreen(state, model) }
-                composable("settings") { AboutScreen(state, model,feature,features,{ go("buses") },{ go("trips") },{ go("community") },{ go("whatsapp") },{ go("directions") },{ go("app-updates") }) }
+                composable("settings") { AboutScreen(state, model,feature,features,{ go("buses") },{ go("trips") },{ go("community") },{ go("whatsapp") },{ go("directions") },{ go("app-updates") },{ go("places") }) }
                 composable("budget") { BudgetScreen(state, model) { go("plan") } }
                 composable("alerts") { AlertsScreen(state, model) }
                 composable("buses") { BusScreen(feature,features,{ go("trips") }) { service,route -> model.selectJourney(null);features.showBusMap(service,route);go("map") } }
@@ -399,7 +400,7 @@ private fun SavedScreen(state: TrainState, model: TrainViewModel,feature: za.co.
 }
 
 @Composable
-private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.cttrains.app.FeatureState,features: za.co.cttrains.app.FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit,onWhatsApp: ()->Unit,onDirections: ()->Unit,onUpdates: ()->Unit) {
+private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.cttrains.app.FeatureState,features: za.co.cttrains.app.FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit,onWhatsApp: ()->Unit,onDirections: ()->Unit,onUpdates: ()->Unit,onPlaces: ()->Unit={}) {
     val uri = LocalUriHandler.current
     var confirmClear by remember { mutableStateOf(false) }
     var confirmProfile by remember { mutableStateOf(false) }
@@ -407,6 +408,7 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.
         Text("Your app, your data", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Notice("An independent, community app for Cape Town rail commuters. Timetables come from CT Trains. This app is not affiliated with CT Trains, PRASA or Metrorail.", Icons.Outlined.Train)
         FeatureStatus(feature)
+        Button(onClick=onPlaces,modifier=Modifier.fillMaxWidth().testTag("my-profile")) { Text("My profile · Home, Work & your places") }
         FilledTonalButton(onClick=onDirections,modifier=Modifier.fillMaxWidth()) { Text("Journey directions & Live Updates") }
         OutlinedButton(onClick=onUpdates,modifier=Modifier.fillMaxWidth()) { Text("App updates · GitHub") }
         BetaSettings(feature,features,onBuses,onTrips,onCommunity,onWhatsApp)
