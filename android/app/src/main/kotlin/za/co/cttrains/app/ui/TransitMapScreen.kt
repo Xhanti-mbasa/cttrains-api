@@ -107,14 +107,13 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
     }
     val visibleTransfers=if(renderState.selectedJourney!=null) transfers else emptyList()
     val closest=state.currentPosition?.let { NearbySuggestions.station(GeoPoint(it.latitude,it.longitude),it.accuracyMeters,state.stations) }
-    var lastAuto by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.mapsReady,feature.extras.beta.autoNearby) {
         if(state.mapsReady && feature.extras.beta.autoNearby && state.currentPosition==null &&
             (ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED)) model.locateOnce()
     }
-    LaunchedEffect(state.currentPosition?.capturedAt,feature.extras.beta.autoNearby) {
+    LaunchedEffect(state.currentPosition?.capturedAt,state.stations,state.catalog,feature.access,feature.boardingStation,feature.extras.beta.autoNearby) {
         if(feature.extras.beta.autoNearby) state.currentPosition?.let { features.focus(GeoPoint(it.latitude,it.longitude)) }
-        if(feature.extras.beta.autoNearby && feature.access==null && feature.boardingStation==null && closest!=null && state.selectedJourney==null && (state.from.isBlank() || state.from==lastAuto)) { model.nearbyOrigin(closest.name);lastAuto=closest.name }
+        if(feature.extras.beta.autoNearby && feature.access==null && feature.boardingStation==null && closest!=null && state.selectedJourney==null) { model.defaultNearbyOrigin() }
     }
     val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants.values.any { it }) model.locateOnce() else model.showMessage("Location is optional. You can select stations without it.")
@@ -416,3 +415,4 @@ private fun StationBrowser(state: TrainState, model: TrainViewModel, onDismiss: 
         }
     }
 }
+

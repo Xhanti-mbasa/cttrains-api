@@ -27,8 +27,8 @@ import za.co.cttrains.app.maps.*
 
 data class TrainState(
     val from: String = "", val to: String = "",
-    val date: String = LocalDate.now(CapeTownZone).toString(),
-    val time: String = TravelRules.defaultTime(LocalTime.now(CapeTownZone)),
+    val date: String = SearchDefaults.at().date,
+    val time: String = SearchDefaults.at().time,
     val catalog: StationCatalog = StationCatalog(emptyList()),
     val preferences: Preferences = Preferences(),
     val stationNotice: String? = null,
@@ -53,7 +53,11 @@ data class TrainState(
 
 class TrainViewModel(application: Application) : AndroidViewModel(application) {
     val repository = TrainRepository(application)
-    private val mutableState = MutableStateFlow(TrainState())
+    private val initialDefaults = SearchDefaults.at()
+    private val mutableState = MutableStateFlow(TrainState(date = initialDefaults.date, time = initialDefaults.time))
+    private var manualDate = false
+    private var manualTime = false
+    private var manualOrigin = false
     val state = mutableState.asStateFlow()
     private val storageErrors = kotlinx.coroutines.CoroutineExceptionHandler { _, _ -> showMessage("Local storage could not be opened. You can reset local data in Settings.") }
     private var searchJob: Job? = null
@@ -81,8 +85,8 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
                     val previous = preferences.lastQuery
                     if (!restored && previous != null) {
                         restored = true
-                        // Reuse stations and time; an old travel date must not become today's result.
-                        current.copy(preferences = visiblePreferences, from = previous.from, to = previous.to, time = previous.time, mapsReady = true)
+                        // Only restore stations; yesterday's search time is not a fresh default.
+                        current.copy(preferences = visiblePreferences, from = if (manualOrigin || current.from.isNotBlank()) current.from else previous.from, to = current.to.ifBlank { previous.to }, mapsReady = true)
                     } else { restored = true; current.copy(preferences = visiblePreferences, mapsReady = true) }
                 }
             }
@@ -123,10 +127,45 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun edit(transform: (TrainState) -> TrainState) {
         searchJob?.cancel()
-        mutableState.update { transform(it).copy(result = null, selectedJourney = null, error = null, loading = false) }
+        val current = state.value
+        val changed = transform(current)
+        if (changed.date != current.date) manualDate = true
+        if (changed.time != current.time) manualTime = true
+        if (changed.from != current.from) manualOrigin = true
+        mutableState.value = changed.copy(result = null, selectedJourney = null, error = null, loading = false)
     }
 
-    fun useRoute(route: SavedRoute) = edit { it.copy(from = route.from, to = route.to, date = LocalDate.now(CapeTownZone).toString()) }
+    fun useRoute(route: SavedRoute) { refreshSearchDefaults(); edit { it.copy(from = route.from, to = route.to) } }
+
+    fun refreshSearchDefaults(now: java.time.LocalDateTime = java.time.LocalDateTime.now()) {
+        val defaults = SearchDefaults.at(now)
+        mutableState.update { current ->
+            val date = if (manualDate) current.date else defaults.date
+            // An explicitly chosen future date starts at the beginning of service.
+            val time = if (manualTime) current.time else if (manualDate) {
+                if (date == now.toLocalDate().toString()) TravelRules.defaultTime(now.toLocalTime()) else "06:00"
+            } else defaults.time
+            if (current.date == date && current.time == time) current
+            else current.copy(date = date, time = time, result = null, selectedJourney = null, error = null)
+        }
+    }
+
+    fun chooseDate(value: String) { manualDate = true; edit { it.copy(date = value) }; refreshSearchDefaults() }
+    fun chooseTime(value: String) { manualTime = true; edit { it.copy(time = value) } }
+    fun keepOrigin() { manualOrigin = true }
+
+    fun defaultNearbyOrigin() {
+        if (manualOrigin || state.value.selectedJourney != null || state.value.loading || state.value.result != null) return
+        val current = state.value
+        val fix = current.currentPosition ?: return
+        val age = System.currentTimeMillis() - fix.capturedAt
+        if (age !in 0..120_000 || !fix.accuracyMeters.isFinite() || fix.accuracyMeters > 1000) return
+        val point = GeoPoint(fix.latitude, fix.longitude)
+        if (!point.valid) return
+        val station = StationChoices.ranked(point, current.stations, current.catalog.stations).firstOrNull() ?: return
+        if (NearbySuggestions.distance(point, WalkingRoutes.endpoint(station).point) > 5000) return
+        if (current.from != station.name) mutableState.update { it.copy(from = station.name, error = null) }
+    }
     fun openMap()=mutableState.update { it.copy(requestedScreen="map") }
     fun openDirections()=mutableState.update { it.copy(requestedScreen="directions") }
     fun openAppUpdates()=mutableState.update { it.copy(requestedScreen="app-updates") }
@@ -270,9 +309,10 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun forgetLocation() { locationJob?.cancel(); locationExpiryJob?.cancel(); mutableState.update { it.copy(currentPosition = null, locating = false) } }
-    fun nearbyOrigin(name: String) { if(state.value.from!=name) edit { it.copy(from=name) } }
+    fun nearbyOrigin(name: String) { defaultNearbyOrigin() }
     fun quickDestination(origin: String,destination: String) {
-        edit { it.copy(from=origin,to=destination,date=LocalDate.now(CapeTownZone).toString(),time=TravelRules.defaultTime(LocalTime.now(CapeTownZone))) }
+        refreshSearchDefaults()
+        edit { it.copy(from=origin,to=destination) }
         performSearch(true)
     }
     fun showMessage(message: String) = mutableState.update { it.copy(message = message) }
@@ -300,6 +340,7 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
     fun openScheduled(id: String?, screen: String = "upcoming") = viewModelScope.launch(storageErrors) {
         if (id == null) return@launch
         val item = repository.store.journey(id) ?: return@launch
+        manualDate = true; manualTime = true; manualOrigin = true
         searchJob?.cancel()
         mutableState.update { it.copy(from = item.query.from, to = item.query.to, date = item.query.date, time = item.query.time,
             result = SearchResult(CachedSearch(item.query, listOf(item.journey), item.fetchedAt, item.fares, item.sourceId), true, restoredPlan = true),
@@ -311,7 +352,10 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
         try {
             reminders.cancelAll(); repository.store.clearPersonalData()
             mapViewport.reset()
+            manualDate = false; manualTime = false; manualOrigin = false
+            refreshSearchDefaults()
             mutableState.update { it.copy(from = "", to = "", result = null, selectedJourney = null, selectedStation = null, selectedTransfer = null, alerts = null, alertsLoading = false, alertsError = null, alertsOffline = false, loading = false, error = null, message = "Local profile, favourites, journeys and cache deleted. A new anonymous profile was created.") }
         } catch (_: Exception) { showMessage("Couldn’t finish deleting local data. Please try again.") }
     }
 }
+

@@ -59,8 +59,33 @@ import za.co.cttrains.core.*
     var datePicker by remember { mutableStateOf(false) }
     var timePicker by remember { mutableStateOf(false) }
     var scheduled by remember { mutableStateOf<PlannerOption?>(null) }
-    var date by rememberSaveable(train.date) { mutableStateOf(train.date) }
-    var time by rememberSaveable(train.time) { mutableStateOf(train.time) }
+    val date = train.date
+    val time = train.time
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, s.extras.beta.autoNearby) {
+        fun refresh() {
+            model.refreshSearchDefaults()
+            if (s.extras.beta.autoNearby &&
+                (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                 androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED)) model.locateOnce()
+        }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) refresh()
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(train.currentPosition, train.stations, train.catalog, s.access, s.boardingStation, s.extras.beta.autoNearby) {
+        if (s.extras.beta.autoNearby && s.access == null && s.boardingStation == null) model.defaultNearbyOrigin()
+    }
+    LaunchedEffect(result.loading, result.sections.isEmpty()) {
+        while (!result.loading && result.sections.isEmpty()) {
+            delay(60_000)
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) model.refreshSearchDefaults()
+        }
+    }
     val from=s.access ?: train.stations.firstOrNull { it.mapped && stationKey(it.name)==stationKey(train.from) }?.let(WalkingRoutes::endpoint)
     val to=s.destination ?: train.stations.firstOrNull { it.mapped && stationKey(it.name)==stationKey(train.to) }?.let(WalkingRoutes::endpoint)
     val services=ModeOrder.filter { it.name in selected }.toSet()
@@ -214,6 +239,7 @@ import za.co.cttrains.core.*
         if(mode!="compare" && mode!="PRASA" && s.extras.beta.enabled(TransportService.valueOf(mode))) item { TextButton(onClick={ manualService=mode;m.chooseBus(TransportService.valueOf(mode)) }) { Text("Manual bus setup · boarding & drop-off stops") } }
     }
     picker?.let { start -> JourneyPlacePicker(train,model,s,m,start,{ picker=null;finalStation=null }) { endpoint ->
+        if(start) model.keepOrigin()
         if(endpoint.id.startsWith("station:")) { m.place(null,start);model.edit { if(start) it.copy(from=endpoint.label) else it.copy(to=endpoint.label) } }
         else {
             val explicit=if(!start) finalStation else null
@@ -239,8 +265,8 @@ import za.co.cttrains.core.*
         SaveJourneyPlace(endpoint,s.busy,{ savePlace=null }) { name,tag -> m.saveJourneyPlace(endpoint,start,name,tag);savePlace=null }
     } }
     scheduled?.let { option -> JourneyScheduleSheet(option.query!!,option.rail!!,model,initialAccess=option.walks.firstOrNull { it.from==from }?.minutes ?: if(from?.id?.startsWith("station:")==true) 0 else 20,initialLeaveFrom=from?.label.orEmpty(),accessEndpoint=from,initialWalk=option.walks.firstOrNull { it.from==from }) { scheduled=null } }
-    if(datePicker) TravelDatePicker(date,train.catalog.holidays,{ datePicker=false },trainOnly=mode=="PRASA") { date=it;model.edit { state->state.copy(date=it) };datePicker=false }
-    if(timePicker) DepartureTimePicker(time,{ timePicker=false },trainOnly=mode=="PRASA") { time=it;model.edit { state->state.copy(time=it) };timePicker=false }
+    if(datePicker) TravelDatePicker(date,train.catalog.holidays,{ datePicker=false },trainOnly=mode=="PRASA") { model.chooseDate(it);datePicker=false }
+    if(timePicker) DepartureTimePicker(time,{ timePicker=false },trainOnly=mode=="PRASA") { model.chooseTime(it);timePicker=false }
     if(consent) AlertDialog(onDismissRequest={ consent=false },title={ Text("Calculate mapped walking routes?") },text={ Text("FOSSGIS / OSRM receives the selected start, destination and candidate stop coordinates. This checks foot paths and caches them locally. Published transit times remain scheduled estimates.") },confirmButton={ TextButton(onClick={ onlineWalks=true;consent=false }) { Text("Enable estimates") } },dismissButton={ TextButton(onClick={ consent=false }) { Text("Keep timetable only") } })
 }
 
@@ -473,3 +499,4 @@ private fun nearbyHint(point: GeoPoint,train: TrainState,s: FeatureState): Strin
         }) { Text(if(active) "Stop learning walk" else "Learn this walk · starts now") }
     }
 }
+

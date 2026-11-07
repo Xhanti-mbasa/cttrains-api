@@ -199,8 +199,8 @@ private fun TrainPlanScreen(state: TrainState, model: TrainViewModel, wide: Bool
             stationPicker = null
         }
     }
-    if (datePicker) TravelDatePicker(state.date, state.catalog.holidays, onDismiss = { datePicker = false }) { value -> model.edit { it.copy(date = value) }; datePicker = false }
-    if (timePicker) DepartureTimePicker(state.time, onDismiss = { timePicker = false }) { value -> model.edit { it.copy(time = value) }; timePicker = false }
+    if (datePicker) TravelDatePicker(state.date, state.catalog.holidays, onDismiss = { datePicker = false }) { value -> model.chooseDate(value); datePicker = false }
+    if (timePicker) DepartureTimePicker(state.time, onDismiss = { timePicker = false }) { value -> model.chooseTime(value); timePicker = false }
 }
 
 @Composable
@@ -482,3 +482,4 @@ internal fun SourceSelector(state: TrainState, model: TrainViewModel) {
         Text(if (model.repository.sources.size > 1) "The API and direct source both use CT Trains. Results stay separate; switching clears the current result." else "Community timetable from CT Trains. Check source and fetch date before travelling.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+

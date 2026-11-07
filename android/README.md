@@ -8,6 +8,12 @@ Independent Golden Arrow and MyCiTi switches now add operator routes/stops, publ
 
 Optional Google profile sign-in is implemented but awaits a Web application client ID; the supplied Android ID cannot replace it. See [GOOGLE_SIGN_IN.md](docs/GOOGLE_SIGN_IN.md). CI now publishes exact APK certificate fingerprints with its artifacts/releases.
 
+## Search defaults
+
+Opening or returning to the planner refreshes untouched date/time fields from the device clock. Before 19:00 it uses today and the next supported 15-minute timetable interval (03:00 minimum); from 19:00 it uses tomorrow at 06:00. This is a search starting time, not a guaranteed first departure. Sundays and public holidays still show the existing no-service guidance instead of silently skipping to a different day.
+
+With nearby suggestions enabled and location permission already granted, the planner takes one foreground location sample. A fresh fix can replace the restored departure station with the nearest mapped station in the current catalogue, within 5 km. Missing permission, stale/unavailable location or no nearby station leaves manual selection available. Explicit places, stations, dates and times are preserved; the previous search's time is no longer restored on launch.
+
 ## What works now
 
 - Map-first home with real positions for all 102 bundled stations, tap/search selection, origin/destination controls and favourite stations.
@@ -173,3 +179,4 @@ The optional reader implements the API in [rmyndharis/OpenWA](https://github.com
 The reader only issues GETs for account discovery/connection checks and selected feeds. It caches a bounded, dated, unverified inbox encrypted locally; it does not rewrite official schedules, manage accounts, join groups or automatically send/schedule outgoing messages. Review & share opens Android's share sheet. Foreground checks occur about once a minute while the reader screen is open; optional WorkManager checks run at a minimum fifteen-minute interval subject to Android scheduling. Failures keep dated cached posts and do not fail transit refresh. Pause cancels background checks; disconnect erases credentials/inbox. Credentials and WhatsApp posts are excluded from portable backups and cleared during profile replacement. OpenWA is unofficial and may lead to account restrictions; use the dedicated account you choose, not another person's account.
 
 Parser/contract checks and setup UI are tested. Live channel/account integration requires a real gateway and account and has not been exercised by CI.
+
