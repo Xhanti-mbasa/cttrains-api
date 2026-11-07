@@ -136,6 +136,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: cttrains-release-apk
+          retention-days: 3
+          compression-level: 0
           path: android/dist/*
           if-no-files-found: error
       - name: Upload test and lint reports
@@ -143,6 +145,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-check-reports
+          retention-days: 3
           path: |
             android/core/build/reports/tests/test/
             android/app/build/reports/lint-results-*.html
@@ -187,6 +190,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-device-reports
+          retention-days: 3
           path: |
             android/app/build/reports/androidTests/connected/
             android/app/build/outputs/androidTest-results/connected/

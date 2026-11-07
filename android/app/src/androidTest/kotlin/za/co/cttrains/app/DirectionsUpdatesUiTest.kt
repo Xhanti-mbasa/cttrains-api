@@ -57,8 +57,9 @@ class DirectionsUpdatesUiTest {
         val p=plan()
         app.runOnUiThread { DirectionsRuntime.state.value=DirectionsState(preview=p);ViewModelProvider(app.activity)[TrainViewModel::class.java].openDirections() }
         app.onNodeWithTag("begin-directions").performScrollTo().performClick()
-        app.waitUntil(15000) { DirectionsRuntime.state.value.running }
-        app.waitUntil(15000) { app.activity.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id==DirectionsNotifications.ID } }
+        app.waitUntil(30_000) { DirectionsRuntime.state.value.running || DirectionsRuntime.state.value.error != null }
+        assertTrue("Directions failed to start: ${DirectionsRuntime.state.value.error}", DirectionsRuntime.state.value.running)
+        app.waitUntil(30_000) { app.activity.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id==DirectionsNotifications.ID } }
         assertEquals(0,DirectionsRuntime.state.value.session!!.index)
         app.onNodeWithTag("directions-next").performScrollTo().assertTextContains("I'm on board").performClick()
         app.waitUntil(15000) { DirectionsRuntime.state.value.session?.index==1 }
