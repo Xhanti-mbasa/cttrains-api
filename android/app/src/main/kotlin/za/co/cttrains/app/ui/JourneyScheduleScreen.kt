@@ -135,11 +135,12 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
                         Text(if (item.remindersStopped) "App reminders stopped" else item.pendingReminderAt?.let { "${if (item.reminderStage > 0) "Backup ${item.reminderStage}" else if (item.reminderBasis == "leave") "Leave reminder" else "Train reminder"} at ${JourneyDate.format(Instant.ofEpochMilli(it))} · ${item.activeSeverity}" } ?: "No app reminder", style = MaterialTheme.typography.bodySmall)
                     }
                     if (item.backupReminders.isNotEmpty()) Text("Dismissal backups: " + item.backupReminders.joinToString { "${it.delayMinutes} min · ${it.severity}" }, style = MaterialTheme.typography.bodySmall)
-                    if (item.pendingReminderAt != null) TextButton(onClick = { model.stopJourneyReminders(item.id) }) { Text("I'm leaving / stop app reminders") }
+                    if (item.pendingReminderAt != null) TextButton(onClick = { model.stopJourneyReminders(item.id) }) { Text("I'm leaving / stop leave reminders") }
                     if (tracking == item.id) {
                         TextButton(onClick = { model.stopRideDetection() }) { Text("Stop ride detection") }
-                    } else if (item.canTrackBoarding(now)) {
-                        OutlinedButton(enabled = tracking == null, onClick = {
+                    } else if (item.rideOutcome == null) {
+                        val available = item.canTrackBoarding(now)
+                        OutlinedButton(enabled = tracking == null && available, onClick = {
                             val missing = buildList {
                                 if (androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                                     add(Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -155,7 +156,11 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
                                 trackingPermissions.launch(missing.toTypedArray())
                             }
                         }) { Text("Auto-detect this ride") }
-                        Text("Uses motion and precise GPS on this phone until five minutes after departure.", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            if (available) "Uses motion and precise GPS on this phone until five minutes after departure."
+                            else "Available from 10 minutes before departure.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                     Text("Saved timetable · fetched ${JourneyDate.format(Instant.ofEpochMilli(item.fetchedAt))}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -224,7 +229,7 @@ fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewM
         Column(Modifier.padding(horizontal = 24.dp).navigationBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Make it a plan", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text("${query.from} → ${query.to}\n${query.date} · ${journey.departure}–${journey.arrival}")
-            Text("Save locally. Add to your calendar afterwards if you choose.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Saved on this phone. CT Trains can ask whether you caught the ride after departure. You can add the plan to your calendar afterwards.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Text("Leave reminder", fontWeight = FontWeight.Bold); Text("Based on your building-to-station estimate", style = MaterialTheme.typography.bodySmall) }
                 Switch(checked = reminder, onCheckedChange = { enabled ->

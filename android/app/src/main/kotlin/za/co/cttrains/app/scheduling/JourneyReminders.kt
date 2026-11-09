@@ -75,7 +75,8 @@ class ReminderActionReceiver : BroadcastReceiver() {
                 store.initialize()
                 if (store.preferences.first().profileId != profile) return@launch
                 val updated = store.updateJourney(id) { item ->
-                    if (item.profileId != profile || item.reminderToken != token || item.remindersStopped) null
+                    if (item.profileId != profile || item.reminderToken != token || item.remindersStopped ||
+                        item.departureAt <= System.currentTimeMillis()) null
                     else if (intent.action == "za.co.cttrains.STOP_REMINDERS") item.copy(remindersStopped = true)
                     else JourneyPlanning.afterDismiss(item, stage, token, System.currentTimeMillis())
                 } ?: return@launch

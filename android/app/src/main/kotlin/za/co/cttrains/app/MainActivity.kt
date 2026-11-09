@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun handleRideIntent(model: TrainViewModel, intent: Intent) {
         when (intent.action) {
-            OPEN_RIDES -> model.openRideHistory()
+            OPEN_RIDES -> model.openRideHistory(intent.getStringExtra(RideFollowUps.ID))
             RideFollowUps.REPLAN -> {
                 val id = intent.getStringExtra(RideFollowUps.ID) ?: return
                 val token = intent.getStringExtra(RideFollowUps.TOKEN) ?: return

@@ -47,7 +47,8 @@ internal fun PendingRidePrompt(state: TrainState, model: TrainViewModel) {
             now = System.currentTimeMillis()
         }
     }
-    val item = state.scheduled.lastOrNull { it.profileId == state.preferences.profileId && it.awaitingRideAnswer(now) }
+    val pending = state.scheduled.filter { it.profileId == state.preferences.profileId && it.awaitingRideAnswer(now) }
+    val item = pending.firstOrNull { it.id == state.focusedRideId } ?: pending.lastOrNull()
     if (resumed && item != null) {
         LaunchedEffect(item.id, item.reminderToken) { model.showRidePrompt(item) }
         AlertDialog(

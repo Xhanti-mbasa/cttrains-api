@@ -46,6 +46,7 @@ data class TrainState(
     val currentPosition: CurrentPosition? = null,
     val locating: Boolean = false,
     val requestedScreen: String? = null,
+    val focusedRideId: String? = null,
     val mapsReady: Boolean = false,
     val alerts: AlertSnapshot? = null, val alertsLoading: Boolean = false, val alertsOffline: Boolean = false, val alertsError: String? = null,
     val routeTrace: JourneyTrace? = null, val traceLoading: Boolean = false, val refreshing: Boolean=false, val selectedTransfer: Int? = null,
@@ -368,7 +369,7 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
         if (outcome == RideOutcome.MISSED) openRideDepartures(item, null)
     }
 
-    fun openRideHistory() = mutableState.update { it.copy(requestedScreen = "trips") }
+    fun openRideHistory(id: String?) = mutableState.update { it.copy(requestedScreen = "trips", focusedRideId = id) }
 
     fun suggestRide(suggestion: RideSuggestion) = openRideDepartures(suggestion.sample, suggestion.date)
 
@@ -393,7 +394,11 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
                 for (date in dates) {
                     val cutoff = when {
                         preferredDate != null -> LocalTime.parse(item.journey.departure)
-                        date == today -> now.toLocalTime()
+                        date == today -> {
+                            val afterPlanned = Instant.ofEpochMilli(item.departureAt).atZone(CapeTownZone).plusSeconds(1)
+                            if (afterPlanned.toLocalDate() == today) maxOf(now, afterPlanned).toLocalTime()
+                            else now.toLocalTime()
+                        }
                         else -> LocalTime.of(3, 0)
                     }
                     val quarter = cutoff.withMinute(cutoff.minute / 15 * 15).withSecond(0).withNano(0)

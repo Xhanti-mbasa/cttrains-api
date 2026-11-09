@@ -75,7 +75,8 @@ class LocalTransitStore private constructor(private val context: Context) {
             saveValue("profile", json.encodeToString(prefs))
             if (catalog != null) saveValue("catalog", json.encodeToString(catalog))
             values.forEach { (key, value) -> require(key == "extras" || (key.startsWith("bus-") || key.startsWith("walk-"))); saveValue(key,value) }
-            plans.forEach { item -> val stopped = item.copy(remindersStopped = true, nextReminderAt = null, rideFollowUp = RideFollowUp.DISMISSED)
+            plans.forEach { item -> val stopped = item.copy(remindersStopped = true, nextReminderAt = null,
+                reminderToken = UUID.randomUUID().toString(), rideFollowUp = RideFollowUp.DISMISSED)
                 dao.journey(JourneyEntity(stopped.id,SecureCodec.digest(stopped.identity),stopped.departureAt,codec.encrypt(json.encodeToString(stopped)))) }
             CachePolicy.prune(searches,System.currentTimeMillis()).forEach { putCache(it) }
         } }
