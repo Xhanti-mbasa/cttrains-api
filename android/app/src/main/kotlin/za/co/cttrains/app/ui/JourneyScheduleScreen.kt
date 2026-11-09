@@ -52,15 +52,35 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
     val feature by features.state.collectAsStateWithLifecycle()
     var repeatEdit by remember { mutableStateOf<CommuteRoutine?>(null) }
     var removing by remember { mutableStateOf<ScheduledJourney?>(null) }
-    LaunchedEffect(Unit) { while (true) { delay(60_000); now = System.currentTimeMillis() } }
-    val upcoming = state.scheduled.filter { it.departureAt > now }
-    val past = state.scheduled.filter { it.departureAt <= now }.takeLast(20).reversed()
+    val tracking by RideBoardingService.active.collectAsStateWithLifecycle()
+    var requestedTracking by remember { mutableStateOf<ScheduledJourney?>(null) }
+    val trackingPermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        requestedTracking?.let(model::startRideDetection)
+        requestedTracking = null
+    }
+    LaunchedEffect(Unit) { while (true) { delay(15_000); now = System.currentTimeMillis() } }
+    val upcoming = state.scheduled.filter { it.departureAt > now || it.canTrackBoarding(now) }
+    val suggestion = remember(state.scheduled, state.preferences.profileId, state.catalog.holidays, now) {
+        suggestRecurringRide(state.scheduled.filter { it.profileId == state.preferences.profileId }, now, state.catalog.holidays.toSet())
+    }
+    val past = state.scheduled.filter { it.departureAt <= now && !it.canTrackBoarding(now) }.takeLast(20).reversed()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("Your journeys", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             Text("A little planning. A calmer commute.", Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item { Text("Recurring journeys",style=MaterialTheme.typography.titleLarge);Text("Choose Repeat on a train or bus journey to set its weekdays.",style=MaterialTheme.typography.bodySmall) }
+        suggestion?.let { ride -> item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Suggested ride", style = MaterialTheme.typography.titleMedium)
+                    val day = ride.date.format(DateTimeFormatter.ofPattern("EEEE, d MMM", Locale.ENGLISH))
+                    Text("You usually take the ${ride.sample.journey.departure} from ${ride.sample.query.from} to ${ride.sample.query.to} on ${ride.date.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH)}s.")
+                    Text("Next suggested date · $day")
+                    TextButton(onClick = { model.suggestRide(ride) }) { Text("Set a reminder") }
+                }
+            }
+        } }
         items(feature.extras.routines,key={ "routine:${it.id}" }) { routine->
             Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 Row { Text(routine.name,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium);Switch(routine.enabled,{ features.toggleRoutine(routine.id) }) }
@@ -115,7 +135,33 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
                         Text(if (item.remindersStopped) "App reminders stopped" else item.pendingReminderAt?.let { "${if (item.reminderStage > 0) "Backup ${item.reminderStage}" else if (item.reminderBasis == "leave") "Leave reminder" else "Train reminder"} at ${JourneyDate.format(Instant.ofEpochMilli(it))} · ${item.activeSeverity}" } ?: "No app reminder", style = MaterialTheme.typography.bodySmall)
                     }
                     if (item.backupReminders.isNotEmpty()) Text("Dismissal backups: " + item.backupReminders.joinToString { "${it.delayMinutes} min · ${it.severity}" }, style = MaterialTheme.typography.bodySmall)
-                    if (item.pendingReminderAt != null) TextButton(onClick = { model.stopJourneyReminders(item.id) }) { Text("I'm leaving / stop app reminders") }
+                    if (item.pendingReminderAt != null) TextButton(onClick = { model.stopJourneyReminders(item.id) }) { Text("I'm leaving / stop leave reminders") }
+                    if (tracking == item.id) {
+                        TextButton(onClick = { model.stopRideDetection() }) { Text("Stop ride detection") }
+                    } else if (item.rideOutcome == null) {
+                        val available = item.canTrackBoarding(now)
+                        OutlinedButton(enabled = tracking == null && available, onClick = {
+                            val missing = buildList {
+                                if (androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                    add(Manifest.permission.ACCESS_COARSE_LOCATION)
+                                    add(Manifest.permission.ACCESS_FINE_LOCATION)
+                                }
+                                if (Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                    add(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            }
+                            if (missing.isEmpty()) model.startRideDetection(item)
+                            else {
+                                requestedTracking = item
+                                trackingPermissions.launch(missing.toTypedArray())
+                            }
+                        }) { Text("Auto-detect this ride") }
+                        Text(
+                            if (available) "Uses motion and precise GPS on this phone until five minutes after departure."
+                            else "Available from 10 minutes before departure.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     Text("Saved timetable · fetched ${JourneyDate.format(Instant.ofEpochMilli(item.fetchedAt))}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilledTonalButton(onClick = { model.openScheduled(item.id, "plan") }) { Text("Details") }
@@ -183,7 +229,7 @@ fun JourneyScheduleSheet(query: SearchQuery, journey: Journey, model: TrainViewM
         Column(Modifier.padding(horizontal = 24.dp).navigationBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Make it a plan", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text("${query.from} → ${query.to}\n${query.date} · ${journey.departure}–${journey.arrival}")
-            Text("Save locally. Add to your calendar afterwards if you choose.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Saved on this phone. CT Trains can ask whether you caught the ride after departure. You can add the plan to your calendar afterwards.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Text("Leave reminder", fontWeight = FontWeight.Bold); Text("Based on your building-to-station estimate", style = MaterialTheme.typography.bodySmall) }
                 Switch(checked = reminder, onCheckedChange = { enabled ->

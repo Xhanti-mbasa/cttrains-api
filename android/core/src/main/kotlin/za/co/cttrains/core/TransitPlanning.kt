@@ -21,6 +21,8 @@ data class ScheduledJourney(
     val backupReminders: List<BackupReminder> = emptyList(), val reminderToken: String = "",
     val routineId: String? = null,
     val reminderStage: Int = 0, val nextReminderAt: Long? = null, val remindersStopped: Boolean = false,
+    val rideFollowUp: RideFollowUp = RideFollowUp.LEGACY,
+    val rideOutcome: RideOutcome? = null,
 ) {
     val departureAt: Long get() = LocalDate.parse(query.date).atTime(LocalTime.parse(journey.departure))
         .atZone(CapeTownZone).toInstant().toEpochMilli()

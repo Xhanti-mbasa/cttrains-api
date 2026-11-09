@@ -3,6 +3,7 @@ package za.co.cttrains.app
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.Job
@@ -22,6 +23,8 @@ import java.util.UUID
 import za.co.cttrains.app.location.CurrentPosition
 import za.co.cttrains.app.location.ForegroundLocation
 import za.co.cttrains.app.scheduling.JourneyReminders
+import za.co.cttrains.app.scheduling.RideBoardingService
+import za.co.cttrains.app.scheduling.RideFollowUps
 import za.co.cttrains.app.scheduling.notificationsAllowed
 import za.co.cttrains.app.maps.*
 
@@ -43,6 +46,7 @@ data class TrainState(
     val currentPosition: CurrentPosition? = null,
     val locating: Boolean = false,
     val requestedScreen: String? = null,
+    val focusedRideId: String? = null,
     val mapsReady: Boolean = false,
     val alerts: AlertSnapshot? = null, val alertsLoading: Boolean = false, val alertsOffline: Boolean = false, val alertsError: String? = null,
     val routeTrace: JourneyTrace? = null, val traceLoading: Boolean = false, val refreshing: Boolean=false, val selectedTransfer: Int? = null,
@@ -64,6 +68,7 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
     private var locationJob: Job? = null
     private var locationExpiryJob: Job? = null
     private val reminders = JourneyReminders(application)
+    private var rideDepartureRequest: Pair<ScheduledJourney, LocalDate?>? = null
     val offlineMaps = OfflineMaps(application)
     val mapViewport = MapViewport()
     private var requestedMapMode: String? = null
@@ -105,7 +110,22 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch(storageErrors) { repository.store.stations.collect { stations -> mutableState.update { it.copy(stations = stations) } } }
         viewModelScope.launch(storageErrors) { repository.store.journeys.collect { journeys -> mutableState.update { it.copy(scheduled = journeys) } } }
-        viewModelScope.launch(storageErrors) { repository.store.initialize(); reminders.restoreMissing(repository.store.journeys.first()) }
+        RideFollowUps.watchUnlock(application)
+        viewModelScope.launch(storageErrors) {
+            repository.store.initialize()
+            val plans = repository.store.journeys.first()
+            val now = System.currentTimeMillis()
+            for (plan in plans.filter { it.departureAt + RIDE_GRACE_MS > now }) {
+                val migrated = if (plan.rideFollowUp == RideFollowUp.LEGACY && plan.departureAt > now && !plan.remindersStopped) repository.store.updateJourney(plan.id) {
+                    if (it.reminderToken == plan.reminderToken && it.rideFollowUp == RideFollowUp.LEGACY && !it.remindersStopped) {
+                        it.copy(rideFollowUp = RideFollowUp.PENDING,
+                            reminderToken = it.reminderToken.ifBlank { UUID.randomUUID().toString() })
+                    } else null
+                } else plan
+                if (migrated != null) RideFollowUps.schedule(application, migrated)
+            }
+            reminders.restoreMissing(repository.store.journeys.first())
+        }
         viewModelScope.launch(storageErrors) {
             val saved = runCatching { repository.savedAlerts() }.getOrNull()
             mutableState.update { it.copy(alerts = saved, alertsOffline = saved != null) }
@@ -325,7 +345,7 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
             val result = state.value.result?.entry
             val item = ScheduledJourney(UUID.randomUUID().toString(), prefs.profileId, query, journey,
                 result?.sourceId ?: prefs.sourceId, result?.fetchedAt ?: System.currentTimeMillis(), System.currentTimeMillis(), reminder, access, buffer, result?.fares,
-                leaveFrom.trim(), "leave", severity, if (reminder == null) emptyList() else backups, UUID.randomUUID().toString())
+                leaveFrom.trim(), "leave", severity, if (reminder == null) emptyList() else backups, UUID.randomUUID().toString(), rideFollowUp = RideFollowUp.PENDING)
             val error = JourneyPlanning.validationError(item, System.currentTimeMillis())
             if (error != null) { onResult(error); return@launch }
             val saved = repository.store.saveJourney(item)
@@ -335,8 +355,86 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (error: kotlinx.coroutines.CancellationException) { throw error }
         catch (_: Exception) { onResult("Couldn’t save this journey. Please try again.") }
     }
-    fun removeJourney(id: String) = viewModelScope.launch(storageErrors) { reminders.cancel(id); repository.store.deleteJourney(id) }
+    fun removeJourney(id: String) = viewModelScope.launch(storageErrors) {
+        repository.store.deleteJourney(id)
+        reminders.cancelPlan(id)
+    }
     fun stopJourneyReminders(id: String) = viewModelScope.launch(storageErrors) { repository.store.updateJourney(id) { it.copy(remindersStopped = true) }; reminders.cancel(id) }
+    fun showRidePrompt(item: ScheduledJourney) = viewModelScope.launch(storageErrors) {
+        RideFollowUps.showInApp(getApplication(), item)
+    }
+
+    fun answerRide(id: String, token: String, outcome: RideOutcome?) = viewModelScope.launch(storageErrors) {
+        val item = RideFollowUps.answer(getApplication(), id, token, outcome) ?: return@launch
+        if (outcome == RideOutcome.MISSED) openRideDepartures(item, null)
+    }
+
+    fun openRideHistory(id: String?) = mutableState.update { it.copy(requestedScreen = "trips", focusedRideId = id) }
+
+    fun suggestRide(suggestion: RideSuggestion) = openRideDepartures(suggestion.sample, suggestion.date)
+
+    private fun openRideDepartures(item: ScheduledJourney, date: LocalDate?) {
+        rideDepartureRequest = item to date
+        refreshRideDepartures()
+    }
+
+    fun refreshRideDepartures() {
+        val (item, preferredDate) = rideDepartureRequest ?: return
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch(storageErrors) {
+            val now = Instant.now().atZone(CapeTownZone)
+            val today = now.toLocalDate()
+            mutableState.update { it.copy(requestedScreen = "ride-departures", loading = true, result = null, selectedJourney = null, error = null) }
+            try {
+                val source = repository.sources.firstOrNull { it.id == item.sourceId }?.id ?: "cttrains-web"
+                val holidays = state.value.catalog.holidays
+                val dates = if (preferredDate != null) listOf(preferredDate) else (0L..7L).map { today.plusDays(it) }
+                    .filter { it.dayOfWeek.value != 7 && it.toString() !in holidays }.take(2)
+                var found: SearchResult? = null
+                for (date in dates) {
+                    val cutoff = when {
+                        preferredDate != null -> LocalTime.parse(item.journey.departure)
+                        date == today -> {
+                            val afterPlanned = Instant.ofEpochMilli(item.departureAt).atZone(CapeTownZone).plusSeconds(1)
+                            if (afterPlanned.toLocalDate() == today) maxOf(now, afterPlanned).toLocalTime()
+                            else now.toLocalTime()
+                        }
+                        else -> LocalTime.of(3, 0)
+                    }
+                    val quarter = cutoff.withMinute(cutoff.minute / 15 * 15).withSecond(0).withNano(0)
+                    val query = item.query.copy(date = date.toString(), time = maxOf(quarter, LocalTime.of(3, 0)).toString())
+                    val result = repository.search(query, source)
+                    val future = result.entry.journeys.filter { ride ->
+                        val departure = date.atTime(LocalTime.parse(ride.departure)).atZone(CapeTownZone)
+                        departure.isAfter(now) && !departure.toLocalTime().isBefore(cutoff)
+                    }
+                    found = result.copy(entry = result.entry.copy(journeys = future))
+                    if (future.isNotEmpty()) break
+                }
+                mutableState.update { it.copy(loading = false, result = found) }
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                mutableState.update { it.copy(loading = false, error = "Couldn’t load next departures. Check your connection and try again.") }
+            }
+        }
+    }
+
+    fun startRideDetection(item: ScheduledJourney) {
+        val context = getApplication<Application>()
+        if (!RideBoardingService.canStart(context)) {
+            showMessage("Enable precise location, GPS and ride detection notifications to track this ride.")
+            return
+        }
+        if (!item.canTrackBoarding(System.currentTimeMillis())) {
+            showMessage("Ride detection is available from 10 minutes before departure.")
+            return
+        }
+        runCatching { RideBoardingService.start(context, item) }
+            .onFailure { showMessage("Couldn’t start ride detection. Keep CT Trains open and try again.") }
+    }
+
+    fun stopRideDetection() = RideBoardingService.stop(getApplication())
+
     fun openScheduled(id: String?, screen: String = "upcoming") = viewModelScope.launch(storageErrors) {
         if (id == null) return@launch
         val item = repository.store.journey(id) ?: return@launch
@@ -350,7 +448,8 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearPersonalData() = viewModelScope.launch(storageErrors) {
         searchJob?.cancel(); alertsJob?.cancel(); forgetLocation()
         try {
-            reminders.cancelAll(); repository.store.clearPersonalData()
+            RideBoardingService.stop(getApplication())
+            repository.store.clearPersonalData(); reminders.cancelAll()
             mapViewport.reset()
             manualDate = false; manualTime = false; manualOrigin = false
             refreshSearchDefaults()
