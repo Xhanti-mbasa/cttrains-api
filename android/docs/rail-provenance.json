@@ -1,0 +1,17 @@
+{
+  "source": "OpenStreetMap via Overpass API",
+  "snapshotAt": "2026-10-01T21:01:41Z",
+  "endpoint": "https://overpass-api.de/api/interpreter",
+  "query": "[out:json][timeout:45];way[\"railway\"=\"rail\"][\"service\"!~\"yard|siding|spur\"][\"usage\"!=\"industrial\"](-34.24,18.38,-33.59,19.06);out body geom;",
+  "licence": "ODbL 1.0",
+  "copyright": "\u00a9 OpenStreetMap contributors",
+  "licenceUrl": "https://opendatacommons.org/licenses/odbl/1-0/",
+  "nodes": 15559,
+  "edges": 15775,
+  "anchoredStations": 102,
+  "maxAnchorDistanceMeters": 99,
+  "unanchoredStations": [],
+  "candidateRadiusMeters": 250,
+  "maxCandidatesPerStation": 24,
+  "limitations": "Undirected mapped rail geometry; not official train path, live availability, signalling, platform walking routes or a platform assignment. Gaps remain dashed."
+}

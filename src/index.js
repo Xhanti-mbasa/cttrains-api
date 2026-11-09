@@ -68,6 +68,7 @@ app.use('/lines',     linesRouter);
 app.use('/stations',  stationsRouter);
 app.use('/schedules', schedulesRouter);
 app.use('/updates',   updatesRouter);
+app.use('/mobile/v1', require('./routes/mobile'));
 
 // ── 404 / Error ─────────────────────────────────────────────────────────────
 app.use(notFound);

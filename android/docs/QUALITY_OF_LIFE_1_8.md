@@ -1,0 +1,15 @@
+# CT Trains 1.8
+
+The unified planner restores calendar and time selectors and swaps the complete From/To endpoints, including saved places and current location. The manual bus planner uses the same selectors. Train-only calendars preserve CT Trains' Sunday/holiday restrictions; buses and comparison can select those dates and check the operator's published pattern. Calendar input mode is hidden. Current location can be either endpoint.
+
+Walking options use plain language and **Auto estimate**. Automatic search considers nearby stops within a stated 5 km limit and ranks the mapped walks; users may choose a shorter limit. It does not invent a walking time when routing or cache data is unavailable. Leave reminders offer **Auto estimate leave time** from the selected mapped place to the actual boarding station, preserve the configurable buffer, and preview the resulting leave-by clock. New coordinate requests require consent; existing mapped walks can be reused.
+
+WhatsApp setup has an offline in-app guide under **How to set this up**, an origin-to-`/api` helper, Reader-key account discovery, manual UUID fallback and a ready-account check before saving a connection. A separate HTTPS OpenWA gateway and linked account remain required. Read [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md) for the complete flow.
+
+Golden Arrow's initial timetable HTML omits `__EVENTTARGET`; the client now adds it explicitly. The operator's All response was checked on 2 October 2026 and returned only 73 A documents. B returned 203, C 234, E 92 and W 40. The provider now collects the advertised letter pages when All is incomplete, retaining dated previous data if a refresh fails.
+
+The PDF parser handles continuation pages, weekday annotations printed later in the document, and separate table blocks. It preserves clock-based ordering within each individual trip column. It does not merge morning/afternoon columns or turn via locations into timed stops. A real Belhar–Cape Town PDF is used in Android instrumentation coverage.
+
+Automatic Golden Arrow discovery can surface valid published timetable candidates from surveyed corridors near both selected places. It matches corridor terminal names, not unverified survey route codes. CITY/City Golden Acre survey terminal labels are normalized to Cape Town **for candidate discovery only**. These are visibly provisional suggestions; survey operation, roadside boarding times and the stop-to-PDF association are not automatically verified. Personally confirmed timed-stop associations still provide scheduled options. Bus transfers remain unsupported. The Belhar PDF does not publish a Woodstock roadside time, so the app does not fabricate one or label a missing join as proof no service exists.
+
+Native regressions cover selectors, swapping personal endpoints, setup guide reachability and leave-time arithmetic, alongside existing layout, map, privacy and independent-provider tests. Screenshots are collected from shell-owned emulator storage so Gradle's app cleanup cannot delete them before upload.

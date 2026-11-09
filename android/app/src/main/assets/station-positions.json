@@ -1,0 +1,512 @@
+[
+  {
+    "name": "Akasia Park",
+    "latitude": -33.89467,
+    "longitude": 18.52877
+  },
+  {
+    "name": "Athlone",
+    "latitude": -33.9621447,
+    "longitude": 18.501715
+  },
+  {
+    "name": "Avondale",
+    "latitude": -33.89779,
+    "longitude": 18.59307
+  },
+  {
+    "name": "Belhar",
+    "latitude": -33.9395234,
+    "longitude": 18.6091971
+  },
+  {
+    "name": "Bellville",
+    "latitude": -33.9065,
+    "longitude": 18.6275
+  },
+  {
+    "name": "Blackheath",
+    "latitude": -33.9643149,
+    "longitude": 18.7013007
+  },
+  {
+    "name": "Bonteheuwel",
+    "latitude": -33.9421121,
+    "longitude": 18.5501501
+  },
+  {
+    "name": "Brackenfell",
+    "latitude": -33.88084,
+    "longitude": 18.68864
+  },
+  {
+    "name": "Cape Town",
+    "latitude": -33.922222,
+    "longitude": 18.426389
+  },
+  {
+    "name": "Century City",
+    "latitude": -33.90122,
+    "longitude": 18.51167
+  },
+  {
+    "name": "Chris Hani",
+    "latitude": -34.0547547,
+    "longitude": 18.710128
+  },
+  {
+    "name": "Claremont",
+    "latitude": -33.981667,
+    "longitude": 18.466944
+  },
+  {
+    "name": "Crawford",
+    "latitude": -33.976389,
+    "longitude": 18.501111
+  },
+  {
+    "name": "Dal Josafat",
+    "latitude": -33.70656,
+    "longitude": 18.98036
+  },
+  {
+    "name": "De Grendel",
+    "latitude": -33.89348,
+    "longitude": 18.57872
+  },
+  {
+    "name": "Dieprivier",
+    "latitude": -34.03542,
+    "longitude": 18.46704
+  },
+  {
+    "name": "Du Toit",
+    "latitude": -33.92384,
+    "longitude": 18.8541
+  },
+  {
+    "name": "Eerste River",
+    "latitude": -34.0004792,
+    "longitude": 18.7307571
+  },
+  {
+    "name": "Eikenfontein",
+    "latitude": -33.85708,
+    "longitude": 18.71132
+  },
+  {
+    "name": "Elsies River",
+    "latitude": -33.9105361,
+    "longitude": 18.5691204
+  },
+  {
+    "name": "Esplanade",
+    "latitude": -33.92366,
+    "longitude": 18.44597
+  },
+  {
+    "name": "False Bay",
+    "latitude": -34.10242,
+    "longitude": 18.46878
+  },
+  {
+    "name": "Faure",
+    "latitude": -34.0263459,
+    "longitude": 18.7475473
+  },
+  {
+    "name": "Firgrove",
+    "latitude": -34.0555869,
+    "longitude": 18.792682
+  },
+  {
+    "name": "Fish Hoek",
+    "latitude": -34.1371,
+    "longitude": 18.4324
+  },
+  {
+    "name": "Glencairn",
+    "latitude": -34.16347,
+    "longitude": 18.43203
+  },
+  {
+    "name": "Goodwood",
+    "latitude": -33.9143808,
+    "longitude": 18.547904
+  },
+  {
+    "name": "Harfield Road",
+    "latitude": -33.98842,
+    "longitude": 18.47137
+  },
+  {
+    "name": "Hazendal",
+    "latitude": -33.9523713,
+    "longitude": 18.5019253
+  },
+  {
+    "name": "Heathfield",
+    "latitude": -34.04591,
+    "longitude": 18.46558
+  },
+  {
+    "name": "Heideveld",
+    "latitude": -33.9707576,
+    "longitude": 18.5617311
+  },
+  {
+    "name": "Huguenot",
+    "latitude": -33.73,
+    "longitude": 18.97666667
+  },
+  {
+    "name": "Kalk Bay",
+    "latitude": -34.12627,
+    "longitude": 18.45008
+  },
+  {
+    "name": "Kapteinsklip",
+    "latitude": -34.0670351,
+    "longitude": 18.6207606
+  },
+  {
+    "name": "Kenilworth",
+    "latitude": -33.99529,
+    "longitude": 18.47303
+  },
+  {
+    "name": "Kentemade",
+    "latitude": -33.913,
+    "longitude": 18.49774
+  },
+  {
+    "name": "Khayelitsha",
+    "latitude": -34.0487011,
+    "longitude": 18.6710678
+  },
+  {
+    "name": "Klapmuts",
+    "latitude": -33.8063,
+    "longitude": 18.86973
+  },
+  {
+    "name": "Koeberg Road",
+    "latitude": -33.9258263,
+    "longitude": 18.4785378
+  },
+  {
+    "name": "Kraaifontein",
+    "latitude": -33.84705,
+    "longitude": 18.72395
+  },
+  {
+    "name": "Kuils River",
+    "latitude": -33.9336442,
+    "longitude": 18.6775659
+  },
+  {
+    "name": "Kuyasa",
+    "latitude": -34.0548322,
+    "longitude": 18.6956969
+  },
+  {
+    "name": "Lakeside",
+    "latitude": -34.08842,
+    "longitude": 18.46251
+  },
+  {
+    "name": "Langa",
+    "latitude": -33.9387319,
+    "longitude": 18.528613
+  },
+  {
+    "name": "Lansdowne",
+    "latitude": -33.9868567,
+    "longitude": 18.5036391
+  },
+  {
+    "name": "Lavistown",
+    "latitude": -33.943431,
+    "longitude": 18.5839668
+  },
+  {
+    "name": "Lentegeur",
+    "latitude": -34.034579,
+    "longitude": 18.6114877
+  },
+  {
+    "name": "Lynedoch",
+    "latitude": -33.98131,
+    "longitude": 18.77125
+  },
+  {
+    "name": "Maitland",
+    "latitude": -33.9244694,
+    "longitude": 18.4884923
+  },
+  {
+    "name": "Mandalay",
+    "latitude": -34.0189022,
+    "longitude": 18.6245334
+  },
+  {
+    "name": "Mbekweni",
+    "latitude": -33.67412,
+    "longitude": 18.98545
+  },
+  {
+    "name": "Meltonrose",
+    "latitude": -33.989404,
+    "longitude": 18.720734
+  },
+  {
+    "name": "Mitchells Plain",
+    "latitude": -34.0502623,
+    "longitude": 18.6191363
+  },
+  {
+    "name": "Monte Vista",
+    "latitude": -33.89163,
+    "longitude": 18.54896
+  },
+  {
+    "name": "Mowbray",
+    "latitude": -33.946667,
+    "longitude": 18.473889
+  },
+  {
+    "name": "Muizenberg",
+    "latitude": -34.109569,
+    "longitude": 18.467739
+  },
+  {
+    "name": "Muldersvlei",
+    "latitude": -33.83112,
+    "longitude": 18.82805
+  },
+  {
+    "name": "Mutual",
+    "latitude": -33.92228,
+    "longitude": 18.51307
+  },
+  {
+    "name": "Ndabeni",
+    "latitude": -33.9297884,
+    "longitude": 18.4944519
+  },
+  {
+    "name": "Netreg",
+    "latitude": -33.9527108,
+    "longitude": 18.5635499
+  },
+  {
+    "name": "Newlands",
+    "latitude": -33.97416667,
+    "longitude": 18.4675
+  },
+  {
+    "name": "Nolungile",
+    "latitude": -34.0168523,
+    "longitude": 18.6500052
+  },
+  {
+    "name": "Nonkqubela",
+    "latitude": -34.0276222,
+    "longitude": 18.6634085
+  },
+  {
+    "name": "Nyanga",
+    "latitude": -33.9937528,
+    "longitude": 18.5599133
+  },
+  {
+    "name": "Observatory",
+    "latitude": -33.938056,
+    "longitude": 18.471389
+  },
+  {
+    "name": "Oosterzee",
+    "latitude": -33.89987,
+    "longitude": 18.60704
+  },
+  {
+    "name": "Ottery",
+    "latitude": -34.0127015,
+    "longitude": 18.4955821
+  },
+  {
+    "name": "Paarl",
+    "latitude": -33.76499,
+    "longitude": 18.96473
+  },
+  {
+    "name": "Parow",
+    "latitude": -33.9096806,
+    "longitude": 18.5862094
+  },
+  {
+    "name": "Pentech",
+    "latitude": -33.9348257,
+    "longitude": 18.6461886
+  },
+  {
+    "name": "Philippi",
+    "latitude": -34.0132107,
+    "longitude": 18.5874967
+  },
+  {
+    "name": "Pinelands",
+    "latitude": -33.93944444,
+    "longitude": 18.49055556
+  },
+  {
+    "name": "Plumstead",
+    "latitude": -34.02195,
+    "longitude": 18.46972
+  },
+  {
+    "name": "Retreat",
+    "latitude": -34.06,
+    "longitude": 18.463
+  },
+  {
+    "name": "Rondebosch",
+    "latitude": -33.962222,
+    "longitude": 18.4725
+  },
+  {
+    "name": "Rosebank",
+    "latitude": -33.9547,
+    "longitude": 18.4731
+  },
+  {
+    "name": "Salt River",
+    "latitude": -33.927222,
+    "longitude": 18.465278
+  },
+  {
+    "name": "Sarepta",
+    "latitude": -33.9265297,
+    "longitude": 18.6612385
+  },
+  {
+    "name": "Simonstown",
+    "latitude": -34.1868,
+    "longitude": 18.4253
+  },
+  {
+    "name": "Somerset West",
+    "latitude": -34.0842615,
+    "longitude": 18.8414984
+  },
+  {
+    "name": "Southfield",
+    "latitude": -34.03296,
+    "longitude": 18.48169
+  },
+  {
+    "name": "St James",
+    "latitude": -34.11931,
+    "longitude": 18.45845
+  },
+  {
+    "name": "Steenberg",
+    "latitude": -34.0767,
+    "longitude": 18.4637
+  },
+  {
+    "name": "Stellenbosch",
+    "latitude": -33.93879,
+    "longitude": 18.84963
+  },
+  {
+    "name": "Steurhof",
+    "latitude": -34.02912,
+    "longitude": 18.46888
+  },
+  {
+    "name": "Stikland",
+    "latitude": -33.90449,
+    "longitude": 18.6572
+  },
+  {
+    "name": "Stock Road",
+    "latitude": -34.0141647,
+    "longitude": 18.6061045
+  },
+  {
+    "name": "Strand",
+    "latitude": -34.1154319,
+    "longitude": 18.8318704
+  },
+  {
+    "name": "Sunny Cove",
+    "latitude": -34.14427,
+    "longitude": 18.43713
+  },
+  {
+    "name": "Thornton",
+    "latitude": -33.9188199,
+    "longitude": 18.5330923
+  },
+  {
+    "name": "Tygerberg",
+    "latitude": -33.9074227,
+    "longitude": 18.6016304
+  },
+  {
+    "name": "Unibell",
+    "latitude": -33.9370748,
+    "longitude": 18.6285231
+  },
+  {
+    "name": "Van Der Stel",
+    "latitude": -34.0949516,
+    "longitude": 18.8523933
+  },
+  {
+    "name": "Vasco",
+    "latitude": -33.9111807,
+    "longitude": 18.5586075
+  },
+  {
+    "name": "Vlottenburg",
+    "latitude": -33.96204,
+    "longitude": 18.79988
+  },
+  {
+    "name": "Wellington",
+    "latitude": -33.634722,
+    "longitude": 18.991944
+  },
+  {
+    "name": "Wetton",
+    "latitude": -34.00192758,
+    "longitude": 18.501134846
+  },
+  {
+    "name": "Wittebome",
+    "latitude": -34.01397,
+    "longitude": 18.47077
+  },
+  {
+    "name": "Woltemade",
+    "latitude": -33.9222373,
+    "longitude": 18.5071705
+  },
+  {
+    "name": "Woodstock",
+    "latitude": -33.925278,
+    "longitude": 18.446111
+  },
+  {
+    "name": "Wynberg",
+    "latitude": -34.0047782,
+    "longitude": 18.4713167
+  },
+  {
+    "name": "Ysterplaat",
+    "latitude": -33.92001,
+    "longitude": 18.47671
+  }
+]
