@@ -109,6 +109,11 @@ jobs:
           packages: "platform-tools platforms;android-36 build-tools;35.0.0"
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
+      - name: Reclaim disk space for the Android emulator
+        run: |
+          # This hosted runner only needs the Android and Java toolchains.
+          sudo rm -rf -- /usr/share/dotnet /usr/local/.ghcup /opt/ghc
+          df -h "$HOME"
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -121,7 +126,6 @@ jobs:
           arch: x86_64
           target: google_apis
           profile: pixel_2
-          disk-size: 4G
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: bash android/scripts/check-device.sh
