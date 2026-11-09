@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.time.DayOfWeek
@@ -109,10 +110,10 @@ import za.co.cttrains.core.*
 @Composable private fun DayPicker(day: String,onDay: (String)->Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick={ open=true }) { Text(day) }
+        OutlinedButton(onClick={ open=true },modifier=Modifier.testTag("bus-timetable-day")) { Text(day) }
         DropdownMenu(open,{ open=false }) { DayOfWeek.values().forEach { value ->
             val title=value.name.lowercase().replaceFirstChar(Char::uppercase)
-            DropdownMenuItem(text={ Text(title) },onClick={ onDay(title);open=false })
+            DropdownMenuItem(text={ Text(title) },onClick={ onDay(title);open=false },modifier=Modifier.testTag("bus-timetable-day:$title"))
         } }
     }
 }

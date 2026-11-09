@@ -40,6 +40,12 @@ class TransitLayoutTest {
         }
     }
     private fun list()=app.onNode(hasScrollToIndexAction())
+    private fun chooseDay(day: String) {
+        val picker = hasTestTag("bus-timetable-day")
+        list().performScrollToNode(picker)
+        app.onNode(picker).performClick()
+        app.onNodeWithTag("bus-timetable-day:$day").performClick()
+    }
     private fun screenshot(name: String) {
         UiScreenshots.save(name)
         val file=File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),"ui-screenshots/$name.png").apply { parentFile!!.mkdirs() }
@@ -49,25 +55,26 @@ class TransitLayoutTest {
         show()
         list().performScrollToNode(hasText("Source details"));app.onNodeWithText("Source details").performClick()
         list().performScrollToNode(hasText("Filters"));app.onNodeWithText("Filters").performClick()
-        val today=java.time.LocalDate.now(CapeTownZone).dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase)
-        if(today!="Friday") { list().performScrollToNode(hasText(today));app.onNodeWithText(today).performClick();app.onNodeWithText("Friday").performClick() }
+        chooseDay("Friday")
         list().performScrollToNode(hasText("Airport Industria"));app.onNodeWithText("Airport Industria").assertIsDisplayed()
         list().performScrollToNode(hasText("Load Friday times"));app.onNodeWithText("Load Friday times").assertIsDisplayed()
         screenshot("golden-arrow-large-text-routes")
-        list().performScrollToNode(hasText("Friday"));app.onNodeWithText("Friday").performClick();app.onNodeWithText("Tuesday").performClick()
+        chooseDay("Tuesday")
         list().performScrollToNode(hasText("Load Tuesday times"));app.onNodeWithText("Load Tuesday times").assertIsDisplayed()
     }
     @Test fun changingDayReloadsTheSelectedRoute() {
         var requested: String?=null
         val calls=listOf(BusCall("a","Airport boarding stop","08:00"),BusCall("b","Destination","08:30"))
-        val initial=BusTimetable(source.service,route,"Monday",1,listOf(BusTrip("trip",route.id,"Outbound","Monday",calls)))
+        val today=java.time.LocalDate.now(CapeTownZone).dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase)
+        val nextDay=if(today=="Tuesday") "Wednesday" else "Tuesday"
+        val initial=BusTimetable(source.service,route,today,1,listOf(BusTrip("trip",route.id,"Outbound",today,calls)))
         app.setContent {
             var state by remember { mutableStateOf(FeatureState(extras=LocalExtras(beta=BetaPreferences(goldenArrow=true)),snapshots=mapOf(source.service to source),timetable=initial)) }
             MaterialTheme { BusBrowser(state,{}, {},{ selected,day -> requested=day;state=state.copy(timetable=initial.copy(route=selected,day=day)) },{ _,_-> },{ _,_,_,_-> }, {},{ _,_-> }) }
         }
-        val today=java.time.LocalDate.now(CapeTownZone).dayOfWeek.name.lowercase().replaceFirstChar(Char::uppercase)
-        list().performScrollToNode(hasText(today));app.onNodeWithText(today).performClick();app.onNodeWithText("Tuesday").performClick()
-        app.runOnIdle { assertEquals("Tuesday",requested) }
+        list().performScrollToNode(hasText("08:00 → 08:30"));app.onNodeWithText("08:00 → 08:30").assertIsDisplayed()
+        chooseDay(nextDay)
+        app.runOnIdle { assertEquals(nextDay,requested) }
         list().performScrollToNode(hasText("08:00 → 08:30"));app.onNodeWithText("08:00 → 08:30").assertIsDisplayed()
     }
     @Test fun fareProductsAndBudgetRemainReachableInOneScrollArea() {
