@@ -8,6 +8,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import za.co.cttrains.app.scheduling.RideFollowUps
+import za.co.cttrains.core.RideOutcome
 import za.co.cttrains.app.ui.TrainApp
 import za.co.cttrains.app.ui.TrainTheme
 
@@ -18,6 +20,7 @@ class MainActivity : ComponentActivity() {
         val model = ViewModelProvider(this)[TrainViewModel::class.java]
         val features = ViewModelProvider(this)[FeatureViewModel::class.java]
         features.importIntent(intent)
+        handleRideIntent(model, intent)
         model.openScheduled(intent.getStringExtra("journey_id"))
         if(intent.getBooleanExtra("journeys",false)) model.edit { it.copy(requestedScreen="upcoming") }
         if(intent.getBooleanExtra("community",false)) model.openCommunity()
@@ -31,13 +34,30 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        ViewModelProvider(this)[TrainViewModel::class.java].openScheduled(intent.getStringExtra("journey_id"))
+        val model = ViewModelProvider(this)[TrainViewModel::class.java]
+        handleRideIntent(model, intent)
+        model.openScheduled(intent.getStringExtra("journey_id"))
         ViewModelProvider(this)[FeatureViewModel::class.java].importIntent(intent)
         if(intent.getBooleanExtra("journeys",false)) ViewModelProvider(this)[TrainViewModel::class.java].edit { it.copy(requestedScreen="upcoming") }
         if(intent.getBooleanExtra("community",false)) ViewModelProvider(this)[TrainViewModel::class.java].openCommunity()
         if(intent.getBooleanExtra("directions",false)) ViewModelProvider(this)[TrainViewModel::class.java].openDirections()
         if(intent.getBooleanExtra("app_updates",false)) ViewModelProvider(this)[TrainViewModel::class.java].openAppUpdates()
     }
+    private fun handleRideIntent(model: TrainViewModel, intent: Intent) {
+        when (intent.action) {
+            OPEN_RIDES -> model.openRideHistory()
+            RideFollowUps.REPLAN -> {
+                val id = intent.getStringExtra(RideFollowUps.ID) ?: return
+                val token = intent.getStringExtra(RideFollowUps.TOKEN) ?: return
+                model.answerRide(id, token, RideOutcome.MISSED)
+            }
+        }
+    }
+
+    companion object {
+        const val OPEN_RIDES = "za.co.cttrains.OPEN_RIDES"
+    }
+
     override fun onStop() {
         ViewModelProvider(this)[TrainViewModel::class.java].apply { forgetLocation(); offlineMaps.foreground(false) }
         super.onStop()

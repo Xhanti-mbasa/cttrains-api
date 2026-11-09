@@ -113,7 +113,18 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
                 composable("budget") { BudgetScreen(state, model) { go("plan") } }
                 composable("alerts") { AlertsScreen(state, model) }
                 composable("buses") { BusScreen(feature,features,{ go("trips") }) { service,route -> model.selectJourney(null);features.showBusMap(service,route);go("map") } }
-                composable("trips") { SafetyTripsScreen(state,feature,features) }
+                composable("trips") { SafetyTripsScreen(state,feature,features,model) }
+                composable("ride-departures") {
+                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        item { Text("Next departures", style = MaterialTheme.typography.headlineMedium) }
+                        state.error?.let { error -> item { Text(error); TextButton(onClick = model::refreshRideDepartures) { Text("Try again") } } }
+                        resultItems(state, model, { journey ->
+                            model.selectJourney(journey)
+                            features.showTrainMap()
+                            go("map")
+                        }, onRefresh = model::refreshRideDepartures)
+                    }
+                }
                 composable("whatsapp") { za.co.cttrains.app.whatsapp.WhatsAppScreen({ go("community") },{ go("trips") }) }
                 composable("community") { CommunityScreen(state,feature,features,model) { go("settings") } }
                 composable("directions") { DirectionsScreen({ go("plan") },{ navigation.navigate("directions/map") { launchSingleTop=true } }) }
@@ -124,6 +135,7 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
     }
     if (toolsOpen) TransitToolsSheet({ toolsOpen = false }, { toolsOpen = false; go("alerts") }, { toolsOpen = false; go("budget") },{ toolsOpen=false;go("buses") },{ toolsOpen=false;go("trips") },{ toolsOpen=false;go("community") },{ toolsOpen=false;go("whatsapp") },{ toolsOpen=false;go("directions") },{ toolsOpen=false;go("app-updates") })
     ImportedFiles(feature,features)
+    PendingRidePrompt(state, model)
 }
 
 @Composable
@@ -221,7 +233,7 @@ private fun Results(state: TrainState, model: TrainViewModel, onMap: (Journey) -
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) { resultItems(state, model, onMap) }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.resultItems(state: TrainState, model: TrainViewModel, onMap: (Journey) -> Unit) {
+private fun androidx.compose.foundation.lazy.LazyListScope.resultItems(state: TrainState, model: TrainViewModel, onMap: (Journey) -> Unit, onRefresh: () -> Unit = model::search) {
     if (state.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
     state.result?.let { result ->
         val entry = result.entry
@@ -229,7 +241,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.resultItems(state: Tr
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("${entry.journeys.size} ${if (entry.journeys.size == 1) "journey" else "journeys"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { model.search() }) { Icon(Icons.Outlined.Refresh, "Refresh schedules") }
+                    IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, "Refresh schedules") }
                 }
                 Text("${entry.query.from} → ${entry.query.to} · ${LocalDate.parse(entry.query.date).format(FullDate)}", style = MaterialTheme.typography.bodyMedium)
                 if (result.restoredPlan) Notice("Saved journey · fetched ${FetchTime.format(Instant.ofEpochMilli(entry.fetchedAt))}. Refresh to check the current timetable.", Icons.AutoMirrored.Outlined.EventNote)

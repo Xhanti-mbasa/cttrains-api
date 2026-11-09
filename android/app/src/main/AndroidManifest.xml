@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
@@ -23,6 +24,8 @@
         android:theme="@style/Theme.CTTrains"
         android:usesCleartextTraffic="false">
         <receiver android:name=".scheduling.ReminderActionReceiver" android:exported="false" />
+        <receiver android:name=".scheduling.RideFollowUps$RideActionReceiver" android:exported="false" />
+        <service android:name=".scheduling.RideBoardingService" android:exported="false" android:foregroundServiceType="location" />
         <service android:name=".directions.DirectionsService" android:exported="false" android:foregroundServiceType="location" />
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge" />
         <service android:name=".scheduling.WalkLearningService" android:exported="false" android:foregroundServiceType="location" />

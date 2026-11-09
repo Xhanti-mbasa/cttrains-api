@@ -75,7 +75,7 @@ class LocalTransitStore private constructor(private val context: Context) {
             saveValue("profile", json.encodeToString(prefs))
             if (catalog != null) saveValue("catalog", json.encodeToString(catalog))
             values.forEach { (key, value) -> require(key == "extras" || (key.startsWith("bus-") || key.startsWith("walk-"))); saveValue(key,value) }
-            plans.forEach { item -> val stopped = item.copy(remindersStopped = true, nextReminderAt = null)
+            plans.forEach { item -> val stopped = item.copy(remindersStopped = true, nextReminderAt = null, rideFollowUp = RideFollowUp.DISMISSED)
                 dao.journey(JourneyEntity(stopped.id,SecureCodec.digest(stopped.identity),stopped.departureAt,codec.encrypt(json.encodeToString(stopped)))) }
             CachePolicy.prune(searches,System.currentTimeMillis()).forEach { putCache(it) }
         } }
@@ -154,8 +154,8 @@ class LocalTransitStore private constructor(private val context: Context) {
     suspend fun saveJourney(item: ScheduledJourney): ScheduledJourney {
         initialize()
         return lock.withLock {
-            val old = dao.byIdentity(SecureCodec.digest(item.identity))
-            val saved = item.copy(id = old?.id ?: item.id)
+            val old = dao.byIdentity(SecureCodec.digest(item.identity))?.let(::decodeJourney)
+            val saved = item.copy(id = old?.id ?: item.id, rideOutcome = old?.rideOutcome ?: item.rideOutcome)
             dao.journey(JourneyEntity(saved.id, SecureCodec.digest(saved.identity), saved.departureAt, codec.encrypt(json.encodeToString(saved))))
             saved
         }
