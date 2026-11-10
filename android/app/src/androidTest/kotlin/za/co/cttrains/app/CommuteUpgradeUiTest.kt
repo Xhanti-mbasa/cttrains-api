@@ -1,5 +1,7 @@
 package za.co.cttrains.app
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
@@ -47,6 +49,14 @@ class CommuteUpgradeUiTest {
         runBlocking { features.store.update { it.copy(routines=listOf(r)) } }
         app.waitUntil(15000) { features.state.value.extras.routines.size==1 }
         app.onNodeWithText("Journeys").performClick()
+        val routineKey = "routine:${r.id}"
+        val loadedRoutine = SemanticsMatcher("journey list contains the saved routine") { node ->
+            (node.config.getOrNull(SemanticsProperties.IndexForKey)?.invoke(routineKey) ?: -1) >= 0
+        }
+        app.waitUntil(15_000) {
+            app.onAllNodes(hasTestTag("journeys-screen") and loadedRoutine).fetchSemanticsNodes().isNotEmpty()
+        }
+        app.onNodeWithTag("journeys-screen").performScrollToKey(routineKey)
         app.onNodeWithText("Edit recurrence").performScrollTo().performClick()
         app.onNodeWithTag("repeat-day:6").performClick()
         app.onNodeWithTag("save-routine").performScrollTo().performClick()

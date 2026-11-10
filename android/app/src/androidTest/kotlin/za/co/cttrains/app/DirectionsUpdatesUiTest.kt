@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
 import android.os.Build
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
@@ -69,7 +70,8 @@ class DirectionsUpdatesUiTest {
         UiScreenshots.save("active-directions-paused")
         app.onNodeWithText("Resume GPS").performScrollTo().performClick()
         app.waitUntil(15000) { DirectionsRuntime.state.value.session?.paused==false }
-        app.onNodeWithTag("directions-stop").performScrollTo().performClick()
+        app.onNodeWithTag("directions-stop").performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick) { click -> assertTrue(click()) }
         app.waitUntil(15000) { !DirectionsRuntime.state.value.running && DirectionsRuntime.state.value.session==null }
         app.waitUntil(15000) { app.activity.getSystemService(NotificationManager::class.java).activeNotifications.none { it.id==DirectionsNotifications.ID } }
     }

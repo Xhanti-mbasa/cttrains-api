@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -64,7 +65,7 @@ fun UpcomingScreen(state: TrainState, model: TrainViewModel) {
         suggestRecurringRide(state.scheduled.filter { it.profileId == state.preferences.profileId }, now, state.catalog.holidays.toSet())
     }
     val past = state.scheduled.filter { it.departureAt <= now && !it.canTrackBoarding(now) }.takeLast(20).reversed()
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(Modifier.fillMaxSize().testTag("journeys-screen"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("Your journeys", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
             Text("A little planning. A calmer commute.", Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
