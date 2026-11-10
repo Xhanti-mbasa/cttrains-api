@@ -27,8 +27,9 @@ class JourneyReminders(private val context: Context) {
     private val manager = WorkManager.getInstance(context)
     private fun workName(item: ScheduledJourney) = "journey-${item.id}" + if (item.reminderStage == 0) "" else "-backup-${item.reminderStage}"
     fun schedule(item: ScheduledJourney) {
-        cancel(item.id)
+        cancelPlan(item.id)
         enqueue(item)
+        RideFollowUps.schedule(context, item)
     }
     fun enqueue(item: ScheduledJourney) {
         val at = item.pendingReminderAt ?: return
@@ -38,6 +39,10 @@ class JourneyReminders(private val context: Context) {
             .setInitialDelay((at - System.currentTimeMillis()).coerceAtLeast(0), TimeUnit.MILLISECONDS)
             .addTag("transit-reminders").addTag("journey-${item.id}").addTag("token-${item.reminderToken}").build()
         manager.enqueueUniqueWork(workName(item), ExistingWorkPolicy.REPLACE, request)
+    }
+    fun cancelPlan(id: String) {
+        manager.cancelAllWorkByTag("ride-$id")
+        cancel(id)
     }
     fun cancel(id: String) {
         manager.cancelUniqueWork("journey-$id") // Includes reminders created by earlier app versions.
@@ -70,7 +75,8 @@ class ReminderActionReceiver : BroadcastReceiver() {
                 store.initialize()
                 if (store.preferences.first().profileId != profile) return@launch
                 val updated = store.updateJourney(id) { item ->
-                    if (item.profileId != profile || item.reminderToken != token || item.remindersStopped) null
+                    if (item.profileId != profile || item.reminderToken != token || item.remindersStopped ||
+                        item.departureAt <= System.currentTimeMillis()) null
                     else if (intent.action == "za.co.cttrains.STOP_REMINDERS") item.copy(remindersStopped = true)
                     else JourneyPlanning.afterDismiss(item, stage, token, System.currentTimeMillis())
                 } ?: return@launch
@@ -127,7 +133,7 @@ class JourneyReminderWorker(context: Context, parameters: WorkerParameters) : Co
             .apply { if (backup != null) addAction(0, "Remind again", action("za.co.cttrains.DISMISS_REMINDER")); if (severity == "gentle") setSilent(true) }.build()
         currentCoroutineContext().ensureActive()
         val latest = store.journey(id)
-        if (latest == null || latest.remindersStopped || latest.reminderToken != item.reminderToken || latest.reminderStage != item.reminderStage) return Result.success()
+        if (latest == null || latest.rideOutcome != null || latest.departureAt <= System.currentTimeMillis() || latest.remindersStopped || latest.reminderToken != item.reminderToken || latest.reminderStage != item.reminderStage) return Result.success()
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return Result.success()
         if (notificationsAllowed(applicationContext)) service.notify(item.id.hashCode(), notification)
         Result.success()

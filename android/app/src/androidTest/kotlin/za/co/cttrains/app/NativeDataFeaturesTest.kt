@@ -5,6 +5,9 @@ import androidx.core.content.FileProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
+import java.time.Instant
+import kotlinx.coroutines.flow.first
+import za.co.cttrains.app.scheduling.RideFollowUps
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import org.junit.*
@@ -33,6 +36,24 @@ class NativeDataFeaturesTest {
         assertTrue(row.encryptedValue.length<1000)
         assertFalse(row.encryptedValue.contains("Synthetic storage test"))
         assertTrue(File(context.filesDir,"large-values").listFiles().orEmpty().all { !it.readText().contains("Synthetic storage test") })
+    }
+    @Test fun oldNotificationActionsCannotChangeAReplacedRide() = runBlocking {
+        val now = System.currentTimeMillis()
+        val departed = Instant.ofEpochMilli(now - 10 * 60_000).atZone(CapeTownZone)
+        val departure = departed.toLocalTime().withSecond(0).withNano(0).toString()
+        val arrival = departed.plusMinutes(30).toLocalTime().withSecond(0).withNano(0).toString()
+        val profile = features.store.preferences.first().profileId
+        val plan = ScheduledJourney(
+            "test-ride", profile, SearchQuery("Bellville", "Cape Town", departed.toLocalDate().toString(), departure),
+            Journey(listOf(Leg("Northern", "123", listOf(Stop("Bellville", departure), Stop("Cape Town", arrival))))),
+            "cttrains-web", now, now, reminderToken = "old-revision", rideFollowUp = RideFollowUp.PENDING,
+        )
+        features.store.saveJourney(plan)
+        val saved = features.store.saveJourney(plan.copy(reminderToken = "new-revision"))
+        assertNull(RideFollowUps.answer(context, saved.id, plan.reminderToken, RideOutcome.MISSED))
+        assertEquals(RideOutcome.CONFIRMED, RideFollowUps.answer(context, saved.id, saved.reminderToken, RideOutcome.CONFIRMED)?.rideOutcome)
+        assertNull(RideFollowUps.answer(context, saved.id, saved.reminderToken, RideOutcome.MISSED))
+        assertEquals(RideOutcome.CONFIRMED, features.store.journey(saved.id)?.rideOutcome)
     }
     @Test fun realGoldenArrowPdfExtractsItsColumnsAndWeekdayRestrictions() {
         val encoded=InstrumentationRegistry.getInstrumentation().context.assets.open("golden-arrow-pdf.base64").bufferedReader().use { it.readText() }

@@ -184,7 +184,7 @@ internal fun shareText(context: android.content.Context,text: String) { context.
     }
 }
 
-@Composable fun SafetyTripsScreen(train: TrainState,s: FeatureState,m: FeatureViewModel) {
+@Composable fun SafetyTripsScreen(train: TrainState,s: FeatureState,m: FeatureViewModel, model: za.co.cttrains.app.TrainViewModel) {
     var owner by remember(s.extras.localName) { mutableStateOf(s.extras.localName.ifBlank { "Traveller" }) }
     var origin by rememberSaveable { mutableStateOf("Home / office / campus") }
     var destination by rememberSaveable { mutableStateOf("Destination") }
@@ -197,6 +197,7 @@ internal fun shareText(context: android.content.Context,text: String) { context.
     val context=LocalContext.current
     val open=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri->if(uri!=null) m.importFile(uri) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        RideHistory(train, model)
         Text("Safety trip files",style=MaterialTheme.typography.headlineMedium)
         Text("Share a planned itinerary, then your friend can import it. Quick Share/Nearby Share, WhatsApp and other file apps appear in Android’s share sheet. A trip file does not contain live location.")
         FeatureStatus(s)

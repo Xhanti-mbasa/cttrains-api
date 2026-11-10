@@ -2,7 +2,7 @@ name: Android build and release
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/android-material3]
     tags: ["android-v*"]
     paths: ["android/**", "src/transit/**", "src/routes/mobile.js", "src/index.js", "package*.json", ".github/workflows/android.yml"]
   pull_request:
@@ -25,11 +25,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    outputs:
-      tag: ${{ steps.metadata.outputs.tag }}
-      version: ${{ steps.metadata.outputs.version }}
-      source_sha: ${{ steps.metadata.outputs.source_sha }}
-      signing: ${{ steps.signing.outputs.mode || 'development' }}
     defaults:
       run:
         working-directory: android
@@ -62,32 +57,6 @@ jobs:
         env:
           REQUESTED_TAG: ${{ inputs.tag }}
         run: python3 scripts/release-metadata.py
-      - name: Restore production signing key when configured
-        id: signing
-        if: github.event_name != 'pull_request'
-        env:
-          KEYSTORE_BASE64: ${{ secrets.CTTRAINS_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.CTTRAINS_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.CTTRAINS_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.CTTRAINS_KEY_PASSWORD }}
-        run: |
-          python3 - <<'PY'
-          import base64, os, pathlib
-          names = ('KEYSTORE_BASE64', 'STORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD')
-          supplied = [bool(os.environ.get(name)) for name in names]
-          if any(supplied) and not all(supplied):
-              raise SystemExit('Configure all four CTTRAINS signing secrets, or leave all four unset.')
-          mode = 'development'
-          if all(supplied):
-              key = pathlib.Path(os.environ['RUNNER_TEMP']) / 'cttrains-release.jks'
-              key.write_bytes(base64.b64decode(os.environ['KEYSTORE_BASE64'], validate=True))
-              key.chmod(0o600)
-              with open(os.environ['GITHUB_ENV'], 'a') as env:
-                  env.write(f'CTTRAINS_KEYSTORE_PATH={key}\n')
-              mode = 'production'
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'mode={mode}\n')
-          PY
       - name: Clean build, tests and lint for both variants
         env:
           CTTRAINS_VERSION_NAME: ${{ steps.metadata.outputs.version }}
@@ -95,45 +64,17 @@ jobs:
           CTTRAINS_USE_DEVELOPMENT_SIGNING: "true"
           CTTRAINS_TRANSIT_BASE_URL: ${{ vars.CTTRAINS_TRANSIT_BASE_URL }}
           CTTRAINS_GOOGLE_WEB_CLIENT_ID: ${{ vars.CTTRAINS_GOOGLE_WEB_CLIENT_ID }}
-          CTTRAINS_KEYSTORE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_KEYSTORE_PASSWORD || '' }}
-          CTTRAINS_KEY_ALIAS: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_KEY_ALIAS || '' }}
-          CTTRAINS_KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.CTTRAINS_KEY_PASSWORD || '' }}
         run: ./gradlew clean :core:test :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease --no-daemon
-      - name: Verify and prepare release APK
+      - name: Verify and prepare CI APK
         env:
           VERSION: ${{ steps.metadata.outputs.version }}
-          SIGNING_MODE: ${{ steps.signing.outputs.mode || 'development' }}
-        run: |
-          set -euo pipefail
-          apk=app/build/outputs/apk/release/app-release.apk
-          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose "$apk"
-          "${ANDROID_HOME}/build-tools/35.0.0/aapt" dump badging "$apk" > "${RUNNER_TEMP}/cttrains-badging.txt"
-          if grep -q '^application-debuggable' "${RUNNER_TEMP}/cttrains-badging.txt"; then
-            echo 'Release variant must not be debuggable.' >&2
-            exit 1
-          fi
-          mkdir -p dist
-          filename="CT-Trains-${VERSION}-${SIGNING_MODE}.apk"
-          cp "$apk" "dist/$filename"
-          python3 scripts/write-update-manifest.py --apk "dist/$filename" --output dist/update.json
-          (cd dist && sha256sum "$filename" > "$filename.sha256")
-          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --print-certs "$apk" > "${RUNNER_TEMP}/cttrains-certificates.txt"
-          python3 - <<'PY'
-          import os, pathlib, re
-          raw = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'cttrains-certificates.txt').read_text()
-          lines = ['Package: za.co.cttrains.app', 'Certificate fingerprints for this exact APK:']
-          for label in ('SHA-1', 'SHA-256'):
-              found = re.search(r'Signer #1 certificate ' + label + r' digest: ([a-fA-F0-9]+)', raw)
-              if found is None:
-                  raise SystemExit('Missing signing certificate fingerprint')
-              value = found.group(1).upper()
-              lines.append(label + ': ' + ':'.join(value[i:i+2] for i in range(0,len(value),2)))
-          pathlib.Path('dist/signing-certificate.txt').write_text('\n'.join(lines) + '\n')
-          print('\n'.join(lines))
-          PY
+          SIGNING_MODE: development
+          RELEASE_ASSETS_DIR: dist
+        run: bash scripts/prepare-release.sh
       - name: Include APK verification utility for compatible local signing
         run: cp "${ANDROID_HOME}/build-tools/35.0.0/lib/apksigner.jar" dist/apksigner.jar
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: cttrains-release-apk
           retention-days: 3
@@ -142,6 +83,7 @@ jobs:
           if-no-files-found: error
       - name: Upload test and lint reports
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: android-check-reports
@@ -150,9 +92,6 @@ jobs:
             android/core/build/reports/tests/test/
             android/app/build/reports/lint-results-*.html
             android/app/schemas/
-      - name: Remove signing key
-        if: always()
-        run: rm -f -- "${RUNNER_TEMP}/cttrains-release.jks"
 
   device:
     runs-on: ubuntu-latest
@@ -170,6 +109,11 @@ jobs:
           packages: "platform-tools platforms;android-36 build-tools;35.0.0"
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
+      - name: Reclaim disk space for the Android emulator
+        run: |
+          # This hosted runner only needs the Android and Java toolchains.
+          sudo rm -rf -- /usr/share/dotnet /usr/local/.ghcup /opt/ghc
+          df -h "$HOME"
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -187,6 +131,7 @@ jobs:
           script: bash android/scripts/check-device.sh
       - name: Upload native test reports
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: android-device-reports
@@ -198,27 +143,74 @@ jobs:
 
   publish:
     needs: [build, device]
-    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/android-v'))
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/android-material3' || startsWith(github.ref, 'refs/tags/android-v'))
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
+    concurrency:
+      group: cttrains-android-release
     permissions:
       contents: write
+    defaults:
+      run:
+        working-directory: android
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.build.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/setup-java@v4
         with:
-          name: cttrains-release-apk
-          path: release-assets
-      - name: Publish to GitHub Releases
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          # The action's old default includes the retired `tools` package.
+          packages: "platform-tools platforms;android-36 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Determine version and source
+        id: metadata
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: python3 scripts/release-metadata.py
+      - name: Assemble a signed update
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CTTRAINS_KEYSTORE_BASE64 }}
+          CTTRAINS_KEYSTORE_PASSWORD: ${{ secrets.CTTRAINS_KEYSTORE_PASSWORD }}
+          CTTRAINS_KEY_ALIAS: ${{ secrets.CTTRAINS_KEY_ALIAS }}
+          CTTRAINS_KEY_PASSWORD: ${{ secrets.CTTRAINS_KEY_PASSWORD }}
+          CTTRAINS_VERSION_NAME: ${{ steps.metadata.outputs.version }}
+          CTTRAINS_VERSION_CODE: ${{ steps.metadata.outputs.version_code }}
+          CTTRAINS_TRANSIT_BASE_URL: ${{ vars.CTTRAINS_TRANSIT_BASE_URL }}
+          CTTRAINS_GOOGLE_WEB_CLIENT_ID: ${{ vars.CTTRAINS_GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 CTTRAINS_KEYSTORE_PASSWORD CTTRAINS_KEY_ALIAS CTTRAINS_KEY_PASSWORD; do
+            if [[ -z ${!name} ]]; then
+              echo 'Configure all four CT Trains release signing secrets before publishing.'
+              exit 1
+            fi
+          done
+          umask 077
+          export CTTRAINS_KEYSTORE_PATH="$RUNNER_TEMP/cttrains-release.jks"
+          trap 'rm -f -- "$CTTRAINS_KEYSTORE_PATH"' EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$CTTRAINS_KEYSTORE_PATH"
+          unset KEYSTORE_BASE64
+          ./gradlew :app:assembleRelease --no-daemon
+      - name: Verify the release APK
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+          SIGNING_MODE: production
+          RELEASE_ASSETS_DIR: ../release-assets
+        run: bash scripts/prepare-release.sh
+      - name: Publish directly to GitHub Releases
+        working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.build.outputs.tag }}
-          VERSION: ${{ needs.build.outputs.version }}
-          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
-          SIGNING_MODE: ${{ needs.build.outputs.signing }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          SOURCE_SHA: ${{ steps.metadata.outputs.source_sha }}
+          SIGNING_MODE: production
         run: bash android/scripts/publish-release.sh

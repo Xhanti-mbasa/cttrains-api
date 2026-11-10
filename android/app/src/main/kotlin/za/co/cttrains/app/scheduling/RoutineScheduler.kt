@@ -40,7 +40,7 @@ object RoutineScheduler {
         WorkManager.getInstance(c).cancelAllWorkByTag("routine-$id").result.get(15,TimeUnit.SECONDS)
         NotificationManagerCompat.from(c).cancel(id.hashCode())
         val store=LocalTransitStore.get(c)
-        store.journeys.first().filter { it.routineId==id && it.departureAt>System.currentTimeMillis() }.forEach { JourneyReminders(c).cancel(it.id);store.deleteJourney(it.id) }
+        store.journeys.first().filter { it.routineId==id && it.departureAt>System.currentTimeMillis() }.forEach { store.deleteJourney(it.id);JourneyReminders(c).cancelPlan(it.id) }
     }
 }
 class RoutineMaintenance(c: Context,p: WorkerParameters): CoroutineWorker(c,p) {
@@ -62,7 +62,7 @@ class RoutineCheck(c: Context,p: WorkerParameters): CoroutineWorker(c,p) {
             if(journey==null) { notice(r,"No matching departure is published for $date. Open Plan to choose another journey.");return Result.success() }
             val prefs=repository.store.preferences.first()
             var item=ScheduledJourney("routine-${r.id}-$date",prefs.profileId,q,journey,r.sourceId,result.entry.fetchedAt,System.currentTimeMillis(),r.reminderMinutes,r.accessMinutes,r.bufferMinutes,result.entry.fares,
-                leaveFrom=r.origin?.label.orEmpty().take(80),reminderBasis="leave",reminderToken=UUID.randomUUID().toString(),routineId=r.id)
+                leaveFrom=r.origin?.label.orEmpty().take(80),reminderBasis="leave",reminderToken=UUID.randomUUID().toString(),routineId=r.id,rideFollowUp=RideFollowUp.PENDING)
             if(item.reminderAt?.let { it<=System.currentTimeMillis() }==true) item=item.copy(reminderMinutes=null)
             // A deleted/edited routine cannot create a plan after its request completes.
             val latest=store.extras().routines.firstOrNull { it.id==r.id }

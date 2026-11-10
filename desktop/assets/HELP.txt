@@ -1,0 +1,80 @@
+GET STARTED
+
+1. Install Docker Engine and Docker Compose v2. The desktop app and independent location relay do not need Docker.
+   Linux: https://docs.docker.com/engine/install/
+   Run the desktop as your normal OS user with access to Docker Engine.
+   The integrated HTTPS proxy uses standard Linux Docker host networking; for a rootless daemon use a separate host HTTPS proxy.
+
+2. In Servers, choose the Matrix hostname carefully: matrix.your-domain.com for phones, localhost for desktop testing only.
+   This name becomes part of every Matrix user ID and cannot be changed later.
+   Click Set up, then Start Matrix. Initial downloads may take a few minutes. No Google API is needed.
+
+3. For phone access, point this hostname's DNS to the hosting computer and allow ports 80/443 through the router/firewall.
+   Click Enable HTTPS. Caddy requests a trusted certificate. A private VPN plus trusted HTTPS proxy also works.
+   If your internet uses CGNAT, use a VPN or an existing HTTPS tunnel/proxy. The app does not change your router.
+   Test HTTPS from the phone before sharing account details. Matrix and the relay listen on localhost until you enable the proxy.
+   HTTPS hosting is supported on Linux; the Windows viewer can connect to your Linux server.
+
+4. Create a normal Matrix account for each person in Servers.
+   On Android CT Trains: Settings → Beta features → hosted sharing / community account.
+   Enter https://YOUR_HOSTNAME, then that person's username/password.
+   All friends use this SAME homeserver. This small-host preset disables federation and public registration.
+   Google sign-in is independent of Matrix.
+
+FRIEND TRIPS FROM THE PHONE
+
+5. Connect a Matrix account in the desktop Friends tab.
+   On the phone, create a private trip invitation for that desktop account's full ID, such as @desktop:matrix.your-domain.com.
+   Privately send the .ctcircle file to the desktop user. Import it and click Start watching.
+   The phone owner must explicitly start location sharing. Sharing is not switched on by account creation or importing.
+
+   The viewer checks about every 15 seconds for up to two hours, verifies sender/sequence/expiry, and decrypts Android-compatible AES-GCM payloads locally.
+   A fix older than five minutes is unknown. “At station” and “On board” are manual check-ins, not GPS deductions.
+   Stop watching clears in-memory positions. Remove forgets the invitation locally. Stop on the phone ends publishing.
+   Matrix room metadata and ordinary text can be read by the homeserver. Precise trip update payloads are separately encrypted.
+   This viewer does not implement general Matrix room encryption. Use Element for encrypted chats/calls/device verification.
+
+INDEPENDENT LOCATION RELAY
+
+6. Start Location relay in Servers. Create an invitation for up to 120 minutes.
+   Save TWO separate files: the publisher file belongs ONLY to the person sharing; the reader file belongs to their invited friend.
+   The roles have separate permissions. Revoke blocks both roles immediately.
+   This optional REST relay is for future clients: Android 1.9 uses Matrix and does NOT send GPS to this relay.
+
+   POST https://YOUR_HOSTNAME/location/v1/location
+   Authorization: Bearer PUBLISHER_TOKEN
+   Content-Type: application/json
+   Body: {"consent":true,"latitude":-33.92,"longitude":18.44,"accuracy":20,"sent_at":UNIX_SECONDS,"phase":"Leaving"}
+
+   GET https://YOUR_HOSTNAME/location/v1/location
+   Authorization: Bearer READER_TOKEN
+
+   DELETE https://YOUR_HOSTNAME/location/v1/location
+   Authorization: Bearer PUBLISHER_TOKEN
+
+   Publish only a GPS fix taken within the last minute. After five minutes it becomes unknown.
+   Tokens must stay out of URL parameters. Invitations expire after at most two hours.
+   Restart/close clears positions; only token hashes and invitation metadata are persisted. No public user list or GPS history.
+   Relay GPS uses HTTPS and access controls, but is NOT end-to-end encrypted. Use Matrix trip sharing for sealed payloads.
+
+DATA & OPERATION
+
+• Data: ~/.local/share/cttrains-desktop on Linux, or $XDG_DATA_HOME/cttrains-desktop.
+• Matrix config/keys: matrix/synapse. PostgreSQL: the named Docker volume described in compose.yaml.
+• Closing the desktop stops its relay and watching; Docker-hosted Matrix/HTTPS continue running.
+• Stop Matrix preserves accounts/messages/volumes. Never run docker compose down --volumes unless you intend to erase them.
+• Account passwords are not saved. Desktop tokens and invitation keys are encrypted on disk with a key owned by your OS user.
+  This protects against casual file inspection, not an attacker controlling your OS account. Do not export device.key.
+• Back up Matrix signing keys/config AND PostgreSQL together with the upstream backup procedure.
+• Review server security updates and back up before changing image versions. No unattended server image upgrade is performed.
+• This is a desktop companion/hosting console, not a complete replacement for the phone's journey planner.
+• Your hosting computer must stay awake, online and connected.
+
+UPSTREAM GUIDES
+
+https://element-hq.github.io/synapse/latest/setup/installation.html
+https://element-hq.github.io/synapse/latest/usage/configuration/config_documentation.html
+https://docs.docker.com/compose/
+https://caddyserver.com/docs/automatic-https
+
+CT Trains Desktop · github.com/Xhanti-mbasa
