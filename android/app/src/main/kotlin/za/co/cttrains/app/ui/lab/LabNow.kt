@@ -101,10 +101,9 @@ fun LabNowScreen(
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                    LabSectionTitle("Near you", Modifier.weight(1f))
-                    Text("one location sample · forgotten in 5 min", style = LabType.small, color = c.muted)
-                }
+                // Stacked, not side by side: at large font sizes a shared row squeezes the title to one letter per line.
+                LabSectionTitle("Near you")
+                Text("Uses one location sample, forgotten after 5 minutes.", style = LabType.small, color = c.muted)
                 when {
                     !feature.extras.beta.smartCards -> LabStateCard("Off", "Nearby stations are turned off",
                         "Turn on Smart Cards to see the closest stations and suggested trains. Location is only sampled when you ask.",
