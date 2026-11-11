@@ -23,6 +23,14 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CTTrains"
         android:usesCleartextTraffic="false">
+        <receiver android:name=".widgets.SmartCardsWidgetProvider" android:exported="false" android:label="@string/smart_widget_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/smart_cards_widget" />
+        </receiver>
+        <receiver android:name=".widgets.NextTripWidgetProvider" android:exported="false" android:label="@string/next_widget_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/next_trip_widget" />
+        </receiver>
         <receiver android:name=".scheduling.ReminderActionReceiver" android:exported="false" />
         <receiver android:name=".scheduling.RideFollowUps$RideActionReceiver" android:exported="false" />
         <service android:name=".scheduling.RideBoardingService" android:exported="false" android:foregroundServiceType="location" />

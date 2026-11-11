@@ -45,6 +45,7 @@ import za.co.cttrains.app.TrainViewModel
 import za.co.cttrains.core.*
 import androidx.navigation.compose.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import za.co.cttrains.app.scheduling.openStreetMapStationUrl
@@ -59,6 +60,28 @@ private val FetchTime = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLI
 fun TrainApp(state: TrainState, model: TrainViewModel) {
     val features: za.co.cttrains.app.FeatureViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val feature by features.state.collectAsStateWithLifecycle()
+    val smart: za.co.cttrains.app.SmartCardsModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val smartState by smart.state.collectAsStateWithLifecycle()
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    var smartNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) { smartNow = System.currentTimeMillis(); kotlinx.coroutines.delay(60_000) }
+        }
+    }
+    LaunchedEffect(smartNow, state.currentPosition, state.stations, state.catalog, state.scheduled,
+        state.preferences, feature.ready, feature.extras.spots, feature.extras.beta.smartCards) {
+        if (feature.ready && state.preferences.profileId.isNotBlank()) smart.update(state, feature.extras, smartNow)
+    }
+    LaunchedEffect(smartState.selected?.id, feature.ready) {
+        smartState.selected?.takeIf { feature.ready }?.let { card ->
+            val point = state.currentPosition?.let { GeoPoint(it.latitude, it.longitude) }
+            features.place(point?.let { WalkEndpoint("current", "Current location", it) }, true, card.query.from)
+            val place = feature.extras.spots.firstOrNull { it.name == card.destinationLabel }
+            features.place(place?.let { WalkEndpoint("spot:${it.id}", it.name, it.point) }, false, card.query.to)
+            model.presentPlannedJourney(card.query, card.journey, card.fetchedAt, card.cached, null, card.sourceId, false)
+        }
+    }
     val liveFix by remember { DirectionsRuntime.state.map { if(it.running && it.session?.paused!=true) it.fix else null }.distinctUntilChanged() }.collectAsStateWithLifecycle(initialValue=null)
     var directionPositionShown by remember { mutableStateOf(false) }
     LaunchedEffect(liveFix) {
@@ -93,7 +116,7 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
         });DirectionsCompactBanner { go("directions") } } },
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = { if (!fullMap) NavigationBar {
-            listOf(Triple("map", "Map", Icons.Outlined.Map), Triple("plan", "Plan", Icons.Outlined.Route),
+            listOf(Triple("map", if (feature.extras.beta.homeMap) "Map" else "Home", if (feature.extras.beta.homeMap) Icons.Outlined.Map else Icons.Outlined.Home), Triple("plan", "Plan", Icons.Outlined.Route),
                 Triple("saved", "Saved", Icons.Outlined.StarBorder), Triple("upcoming", "Journeys", Icons.AutoMirrored.Outlined.EventNote),
                 Triple("settings", "Settings", Icons.Outlined.Settings)).forEach { (route, title, icon) ->
                 NavigationBarItem(selected = screen == route, onClick = { if(route=="map") features.allMapStops();go(route) }, icon = { Icon(icon, null) }, label = { Text(title) })
@@ -103,9 +126,9 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
             val wide = maxWidth >= 840.dp
             NavHost(navigation, startDestination = "map", modifier = Modifier.fillMaxSize(), enterTransition={ EnterTransition.None },exitTransition={ ExitTransition.None },popEnterTransition={ EnterTransition.None },popExitTransition={ ExitTransition.None }) {
-                composable("map") { TransitMapScreen(state, model, onExpand = { navigation.navigate("map/fullscreen") { launchSingleTop = true } }, onPlan = { go("plan") },feature=feature,features=features,onBuses={ go("buses") }) }
+                composable("map") { TransitMapScreen(state, model, onExpand = { navigation.navigate("map/fullscreen") { launchSingleTop = true } }, onPlan = { go("plan") },feature=feature,features=features,onBuses={ go("buses") },smart=smart) }
                 composable("map/fullscreen") { TransitMapScreen(state, model, fullScreen = true, onClose = { navigation.popBackStack() }, onPlan = { go("plan") },feature=feature,features=features,onBuses={ go("buses") }) }
-                composable("plan") { PlanScreen(state, model, wide,feature,features) { journey -> model.selectJourney(journey);features.showTrainMap(); go("map") } }
+                composable("plan") { JourneyPlanner(state,model,feature,features,{ go("settings") },smart) }
                 composable("saved") { SavedScreen(state, model,feature,features,{ go("places") }) { go("plan") } }
                 composable("places") { SavedAddressesScreen(state,model,feature,features) { go("plan") } }
                 composable("upcoming") { UpcomingScreen(state, model) }
@@ -136,6 +159,10 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
     if (toolsOpen) TransitToolsSheet({ toolsOpen = false }, { toolsOpen = false; go("alerts") }, { toolsOpen = false; go("budget") },{ toolsOpen=false;go("buses") },{ toolsOpen=false;go("trips") },{ toolsOpen=false;go("community") },{ toolsOpen=false;go("whatsapp") },{ toolsOpen=false;go("directions") },{ toolsOpen=false;go("app-updates") })
     ImportedFiles(feature,features)
     PendingRidePrompt(state, model)
+    smartState.selected?.takeIf { feature.ready }?.let { card ->
+        JourneyScheduleSheet(card.query, card.journey, model, initialAccess = card.accessMinutes,
+            initialLeaveFrom = "Near ${card.query.from}") { smart.dismiss() }
+    }
 }
 
 @Composable
@@ -421,6 +448,7 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.
         Notice("An independent, community app for Cape Town rail commuters. Timetables come from CT Trains. This app is not affiliated with CT Trains, PRASA or Metrorail.", Icons.Outlined.Train)
         FeatureStatus(feature)
         Button(onClick=onPlaces,modifier=Modifier.fillMaxWidth().testTag("my-profile")) { Text("My profile · Home, Work & your places") }
+        SmartCardsSettings(feature, features)
         FilledTonalButton(onClick=onDirections,modifier=Modifier.fillMaxWidth()) { Text("Journey directions & Live Updates") }
         OutlinedButton(onClick=onUpdates,modifier=Modifier.fillMaxWidth()) { Text("App updates · GitHub") }
         BetaSettings(feature,features,onBuses,onTrips,onCommunity,onWhatsApp)

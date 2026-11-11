@@ -54,6 +54,7 @@ internal fun shareText(context: android.content.Context,text: String) { context.
 @Composable fun BetaSettings(s: FeatureState,m: FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit,onWhatsApp: ()->Unit) {
     Card { Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Beta features",style=MaterialTheme.typography.titleLarge)
+        ExperimentalWidgetsSettings(s, m)
         Text("Choose each operator independently. Bus times are published schedules, not live vehicle tracking.")
         Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)) { Column(Modifier.padding(12.dp)) {
             Toggle("Golden Arrow","Published PDFs and fares; surveyed map stops may be out of date.",s.extras.beta.goldenArrow) { v->m.beta { it.copy(goldenArrow=v) } }
@@ -68,7 +69,7 @@ internal fun shareText(context: android.content.Context,text: String) { context.
         Text("Android schedules checks when a connection is available. Last checked dates remain visible; a failed refresh keeps the saved version.",style=MaterialTheme.typography.bodySmall)
         Toggle("Focus on selected journey","Show only selected endpoints, changes and walking legs. Hide unrelated stops and pins until you turn focus off.",s.extras.beta.journeyFocus) { v->m.beta { it.copy(journeyFocus=v) } }
         HealthStepsSettings(s,m)
-        Toggle("Nearby station suggestions","Use location while the map is open. Approximate location may be too broad for a station recommendation.",s.extras.beta.autoNearby) { v->m.beta { it.copy(autoNearby=v) } }
+        Toggle("Nearby station suggestions","Use location while Home or Plan is open. Approximate location may be too broad for a station recommendation.",s.extras.beta.autoNearby) { v->m.beta { it.copy(autoNearby=v) } }
         Toggle("Hosted community & live trips","Optional Matrix account. Public reports are unverified; location sharing requires a separate start action.",s.extras.beta.hostedSharing) { v->m.beta { it.copy(hostedSharing=v) } }
         Toggle("Learn walking times","Start an individual walk to measure its duration in the background. No raw location history is saved.",s.extras.beta.walkLearning) { v->m.beta { it.copy(walkLearning=v) } }
         Toggle("Nearby users","Optional approximate presence in your selected Matrix service room. Uses location permission, not Bluetooth. Requires a Matrix account, room and a separate sharing start action.",s.extras.beta.nearbyUsers) { v->m.beta { it.copy(nearbyUsers=v) } }

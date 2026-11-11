@@ -19,6 +19,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val model = ViewModelProvider(this)[TrainViewModel::class.java]
         val features = ViewModelProvider(this)[FeatureViewModel::class.java]
+        handleWidgetIntent(model, intent)
         features.importIntent(intent)
         handleRideIntent(model, intent)
         model.openScheduled(intent.getStringExtra("journey_id"))
@@ -35,6 +36,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val model = ViewModelProvider(this)[TrainViewModel::class.java]
+        handleWidgetIntent(model, intent)
         handleRideIntent(model, intent)
         model.openScheduled(intent.getStringExtra("journey_id"))
         ViewModelProvider(this)[FeatureViewModel::class.java].importIntent(intent)
@@ -54,11 +56,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun handleWidgetIntent(model: TrainViewModel, intent: Intent) {
+        if (intent.getBooleanExtra("widget_settings", false)) model.edit { it.copy(requestedScreen = "settings") }
+        if (intent.getBooleanExtra("smart_refresh", false)) {
+            model.openMap()
+            model.locateOnce()
+        }
+    }
+
     companion object {
         const val OPEN_RIDES = "za.co.cttrains.OPEN_RIDES"
     }
 
     override fun onStop() {
+        ViewModelProvider(this)[SmartCardsModel::class.java].pause()
         ViewModelProvider(this)[TrainViewModel::class.java].apply { forgetLocation(); offlineMaps.foreground(false) }
         super.onStop()
     }

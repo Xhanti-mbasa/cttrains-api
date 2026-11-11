@@ -35,7 +35,7 @@ import java.time.format.DateTimeFormatter
 import za.co.cttrains.app.*
 import za.co.cttrains.core.*
 
-@Composable fun JourneyPlanner(train: TrainState,model: TrainViewModel,s: FeatureState,m: FeatureViewModel,onSettings: ()->Unit) {
+@Composable fun JourneyPlanner(train: TrainState,model: TrainViewModel,s: FeatureState,m: FeatureViewModel,onSettings: ()->Unit,smart: SmartCardsModel? = null) {
     val planner: JourneyPlannerModel=androidx.lifecycle.viewmodel.compose.viewModel()
     val directions: za.co.cttrains.app.directions.DirectionsModel=androidx.lifecycle.viewmodel.compose.viewModel()
     val result by planner.state.collectAsStateWithLifecycle()
@@ -238,7 +238,7 @@ import za.co.cttrains.core.*
         if(result.sections.isNotEmpty()) item { Text("Fastest found applies only to complete, timed routes checked here. Bus transfers and unconfirmed survey points are excluded from that claim.",style=MaterialTheme.typography.bodySmall) }
         if(mode!="compare" && mode!="PRASA" && s.extras.beta.enabled(TransportService.valueOf(mode))) item { TextButton(onClick={ manualService=mode;m.chooseBus(TransportService.valueOf(mode)) }) { Text("Manual bus setup · boarding & drop-off stops") } }
     }
-    picker?.let { start -> JourneyPlacePicker(train,model,s,m,start,{ picker=null;finalStation=null }) { endpoint ->
+    picker?.let { start -> JourneyPlacePicker(train,model,s,m,start,{ picker=null;finalStation=null },if (rail) smart else null) { endpoint ->
         if(start) model.keepOrigin()
         if(endpoint.id.startsWith("station:")) { m.place(null,start);model.edit { if(start) it.copy(from=endpoint.label) else it.copy(to=endpoint.label) } }
         else {
@@ -326,7 +326,7 @@ internal fun findLabel(services: Set<TransportService>): String=when {
     OutlinedCard(onClick=onClick,modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) { Text(label,style=MaterialTheme.typography.labelSmall);Text(value,style=MaterialTheme.typography.bodyLarge) } }
 }
 
-@Composable internal fun JourneyPlacePicker(train: TrainState,model: TrainViewModel,s: FeatureState,m: FeatureViewModel,start: Boolean,onDismiss: ()->Unit,onSelect: (WalkEndpoint)->Unit) {
+@Composable internal fun JourneyPlacePicker(train: TrainState,model: TrainViewModel,s: FeatureState,m: FeatureViewModel,start: Boolean,onDismiss: ()->Unit,smart: SmartCardsModel? = null,onSelect: (WalkEndpoint)->Unit) {
     var query by remember { mutableStateOf("") }
     var online by rememberSaveable { mutableStateOf(true) }
     var suggestions by remember { mutableStateOf<List<PlaceSuggestion>>(emptyList()) }
@@ -377,6 +377,9 @@ internal fun findLabel(services: Set<TransportService>): String=when {
                     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) { saved.forEach { p -> AssistChip(onClick={ onSelect(p) },label={ Text(p.label) },modifier=Modifier.testTag("quick-place:${p.id}")) } }
                 }
                 issue?.let { Text(it,style=MaterialTheme.typography.bodySmall) }
+            }
+            if (start && query.isBlank() && smart != null && s.extras.beta.smartCards) item {
+                SmartCardsPanel(train, model, s, m, smart, System.currentTimeMillis(), onStation = onSelect, onJourney = onDismiss)
             }
             items(ranked,key={ it.first.id }) { (p,_) -> ListItem(headlineContent={ Text(p.label) },supportingContent={ Text(placeKind(p)) },modifier=Modifier.clickable { onSelect(p) }) }
             items(suggestions,key={ "place:${it.id}" }) { p ->

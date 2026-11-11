@@ -54,6 +54,17 @@ class LocalTransitStore private constructor(private val context: Context) {
         initialize(); lock.withLock { saveValue(key, transform(dao.value(key)?.let { content(it.encryptedValue) } ?: initial)) }
     }
     suspend fun writeLocal(key: String, value: String) = withContext(Dispatchers.IO) { initialize(); lock.withLock { saveValue(key, value) } }
+    suspend fun saveSmartCards(snapshot: SmartCardsSnapshot) = withContext(Dispatchers.IO) {
+        initialize()
+        lock.withLock {
+            val profile = dao.value("profile")?.let { json.decodeFromString<Preferences>(content(it.encryptedValue)) }
+            val extras = dao.value("extras")?.let { json.decodeFromString<LocalExtras>(content(it.encryptedValue)) } ?: LocalExtras()
+            if (profile != null && profile.profileId == snapshot.profileId && extras.beta.smartCards &&
+                snapshot.cards.all { it.sourceId == profile.sourceId }) {
+                saveValue("smart-cards", json.encodeToString(snapshot))
+            }
+        }
+    }
     suspend fun trimWalkCaches() = withContext(Dispatchers.IO) {
         initialize();lock.withLock {
             dao.allValues().filter { it.key.startsWith("walk-") }.dropLast(20).forEach { dao.deleteValue(it.key) }

@@ -61,7 +61,8 @@ import za.co.cttrains.app.location.CurrentPosition
 import za.co.cttrains.core.*
 
 @Composable
-fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boolean = false, onExpand: () -> Unit = {}, onClose: () -> Unit = {}, onPlan: () -> Unit, feature: FeatureState, features: FeatureViewModel, onBuses: ()->Unit) {
+fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boolean = false, onExpand: () -> Unit = {}, onClose: () -> Unit = {}, onPlan: () -> Unit, feature: FeatureState, features: FeatureViewModel, onBuses: ()->Unit, smart: za.co.cttrains.app.SmartCardsModel? = null) {
+    val showMap = fullScreen || feature.extras.beta.homeMap
     var browser by rememberSaveable { mutableStateOf(false) }
     var downloadsOpen by remember { mutableStateOf(false) }
     var optionsOpen by remember { mutableStateOf(false) }
@@ -73,10 +74,11 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
     LaunchedEffect(Unit) { while (true) { delay(60_000); now = System.currentTimeMillis() } }
     val transfers = state.selectedJourney?.let { TransferGuide.points(state.result?.entry?.query ?: state.query, it, state.stations, state.alerts, now) }.orEmpty()
     val savedArea = downloads.regions.firstOrNull { it.id == state.preferences.offlineMapId && it.complete } ?: downloads.regions.firstOrNull { it.complete }
-    val useStreets = state.mapsReady && state.preferences.mapMode != "stations" && !failed && (state.preferences.mapMode == "online" || savedArea != null)
+    val useStreets = showMap && state.mapsReady && state.preferences.mapMode != "stations" && !failed && (state.preferences.mapMode == "online" || savedArea != null)
     val uri = LocalUriHandler.current
     val context = LocalContext.current
-    val layers by produceState(FeatureLayers(),feature.snapshots,feature.extras.beta,feature.extras.spots,feature.watched,feature.focus,feature.pin,feature.mapRoute,feature.mapService,feature.walks,feature.selectedBus,feature.access,feature.destination,state.from,state.to,state.selectedJourney,state.routeTrace,now) {
+    val layers by produceState(FeatureLayers(),showMap,feature.snapshots,feature.extras.beta,feature.extras.spots,feature.watched,feature.focus,feature.pin,feature.mapRoute,feature.mapService,feature.walks,feature.selectedBus,feature.access,feature.destination,state.from,state.to,state.selectedJourney,state.routeTrace,now) {
+        if (!showMap) { value = FeatureLayers(); return@produceState }
         value=withContext(Dispatchers.Default) {
             val base=features.layers(now)
             val bus=feature.selectedBus
@@ -107,9 +109,19 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
     }
     val visibleTransfers=if(renderState.selectedJourney!=null) transfers else emptyList()
     val closest=state.currentPosition?.let { NearbySuggestions.station(GeoPoint(it.latitude,it.longitude),it.accuracyMeters,state.stations) }
-    LaunchedEffect(state.mapsReady,feature.extras.beta.autoNearby) {
-        if(state.mapsReady && feature.extras.beta.autoNearby && state.currentPosition==null &&
-            (ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED)) model.locateOnce()
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, state.mapsReady, feature.extras.beta.autoNearby) {
+        fun sample() {
+            if (state.mapsReady && feature.extras.beta.autoNearby && model.state.value.currentPosition == null && !model.state.value.locating &&
+                (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)) model.locateOnce()
+        }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) sample()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) sample()
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(state.currentPosition?.capturedAt,state.stations,state.catalog,feature.access,feature.boardingStation,feature.extras.beta.autoNearby) {
         if(feature.extras.beta.autoNearby) state.currentPosition?.let { features.focus(GeoPoint(it.latitude,it.longitude)) }
@@ -154,12 +166,16 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
             IconButton(onClick = { browser = true }) { Icon(Icons.Outlined.Search, "Search stations") }
             IconButton(onClick = model::openAlerts) { Icon(Icons.Outlined.NotificationsActive, "Service alerts") }
         }
+        if (!fullScreen && smart != null && feature.extras.beta.smartCards) {
+            SmartCardsPanel(state, model, feature, features, smart, now)
+        }
+        if (showMap) {
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
             TextButton(onClick={ optionsOpen=true }) { Icon(Icons.Outlined.Tune,null);Text("Map options") }
             IconButton(onClick=::refresh) { Icon(Icons.Outlined.Refresh,"Refresh map and schedules") }
             TextButton(onClick=::google) { Text("Open in Google") }
         }
-        if(closest!=null && !fullScreen) {
+        if(closest!=null && !fullScreen && !feature.extras.beta.smartCards) {
             Text("Closest station: ${closest.name} · GPS accuracy ${state.currentPosition?.accuracyMeters?.toInt()} m",style=MaterialTheme.typography.labelSmall)
             Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 NearbySuggestions.destinations(closest.name,state.preferences.routes,state.preferences.favoriteStations).forEach { destination ->
@@ -189,6 +205,9 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
         if (!fullScreen && transfers.isNotEmpty()) FilledTonalButton(onClick = { allTransfers = true }, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Outlined.SyncAlt, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("${transfers.size} train ${if (transfers.size == 1) "change" else "changes"} · see trains & platforms")
         }
+        } else {
+            TextButton(onClick = { features.beta { it.copy(homeMap = true) } }) { Text("Show map on Home") }
+        }
         if (!fullScreen && state.selectedJourney != null && state.result != null) {
             val journey = state.selectedJourney
             ElevatedCard(onClick = onPlan, shape = RoundedCornerShape(20.dp)) {
@@ -209,7 +228,7 @@ fun TransitMapScreen(state: TrainState, model: TrainViewModel, fullScreen: Boole
         if(layers.badges.isNotEmpty()) Text(layers.badges.joinToString("\n") { it.text },style=MaterialTheme.typography.bodySmall)
         val travelMinutes=feature.selectedBus?.minutes ?: state.selectedJourney?.durationMinutes
         if(travelMinutes!=null) Text("Travel: ${travelMinutes+layers.walks.sumOf { it.minutes }} min including mapped walks · excludes boarding buffer and unreported delays",style=MaterialTheme.typography.labelSmall)
-        TextButton(onClick = { uri.openUri("https://www.openstreetmap.org/copyright") }, contentPadding = PaddingValues(0.dp)) { Text("© OpenStreetMap contributors${if (useStreets) " · OpenMapTiles" else ""} · stations: Wikidata", style = MaterialTheme.typography.labelSmall) }
+        if (showMap) TextButton(onClick = { uri.openUri("https://www.openstreetmap.org/copyright") }, contentPadding = PaddingValues(0.dp)) { Text("© OpenStreetMap contributors${if (useStreets) " · OpenMapTiles" else ""} · stations: Wikidata", style = MaterialTheme.typography.labelSmall) }
         if(useStreets && feature.extras.beta.mapStyle=="aerial" && state.preferences.mapMode=="online") Text("© City of Cape Town · January 2025 aerial imagery · non-commercial use",style=MaterialTheme.typography.labelSmall)
     }
     } }

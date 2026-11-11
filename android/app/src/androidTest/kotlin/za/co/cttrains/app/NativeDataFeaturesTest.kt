@@ -25,6 +25,17 @@ class NativeDataFeaturesTest {
     private val features=FeatureStore(context)
     @Before fun clear()=runBlocking { features.store.clearPersonalData() }
     @After fun finish()=runBlocking { features.store.clearPersonalData();PortableFiles(context,features).clearPrivatePhotos() }
+    @Test fun smartWidgetCacheIsDeviceOnlyAndRejectsAnOldProfile() = runBlocking {
+        features.store.initialize()
+        val profile = features.store.preferences.first().profileId
+        val snapshot = SmartCardsSnapshot(profile, System.currentTimeMillis(), System.currentTimeMillis(), emptyList())
+        features.store.saveSmartCards(snapshot)
+        assertNotNull(features.store.readLocal(SmartCardsModel.SNAPSHOT_KEY))
+        assertFalse(features.store.portable().values.containsKey(SmartCardsModel.SNAPSHOT_KEY))
+        features.store.clearPersonalData()
+        features.store.saveSmartCards(snapshot)
+        assertNull(features.store.readLocal(SmartCardsModel.SNAPSHOT_KEY))
+    }
     @Test fun largeBusGeometryUsesEncryptedFilesAndSmallRoomRows()=runBlocking {
         val source=BusSources.MYCITI_MAP
         val shape=BusShape("101","Synthetic storage test",(0 until 55000).map { GeoPoint(-33.90+it*.000001,18.6+it*.000001) },source)

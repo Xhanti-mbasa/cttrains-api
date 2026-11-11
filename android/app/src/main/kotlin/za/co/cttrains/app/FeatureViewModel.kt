@@ -68,6 +68,11 @@ class FeatureViewModel(app: Application): AndroidViewModel(app) {
         viewModelScope.launch(handler) { combine(store.watched,TripLiveService.positions) { saved,live ->
             saved.map { row->live.firstOrNull { it.id==row.id && it.update.sequence==row.update.sequence } ?: row }
         }.collect { rows->mutable.update { it.copy(watched=rows) } } }
+        viewModelScope.launch(handler) {
+            store.store.changes.debounce(500).collectLatest {
+                za.co.cttrains.app.widgets.TravelWidgets.enqueue(app)
+            }
+        }
         viewModelScope.launch(handler) { store.store.changes.debounce(2000).collectLatest {
             val link=store.backupLink() ?: return@collectLatest
             try { files.write(Uri.parse(link.uri),files.export(link.password)) } catch(e: Exception) {
