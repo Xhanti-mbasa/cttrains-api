@@ -1,0 +1,127 @@
+name: CT Trains Lab release (experimental channel)
+
+# Manual only. Publishes the experimental "CT Trains Lab" app as its own prerelease.
+# Tags use android-experimental-v*, which the regular app's updater ignores (it only reads
+# android-v* tags and rejects other package names), so Lab releases never reach regular users.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cttrains-lab-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: startsWith(github.ref, 'refs/heads/lab/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: android
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Lab version
+        id: version
+        run: |
+          base_name=$(grep '^versionName=' version.properties | cut -d= -f2)
+          base_code=$(grep '^versionCode=' version.properties | cut -d= -f2)
+          echo "name=${base_name}-lab.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "code=$((base_code + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+      - name: Test, lint and build the signed Lab APK
+        env:
+          CTTRAINS_EXPERIMENTAL: "true"
+          KEYSTORE_BASE64: ${{ secrets.CTTRAINS_KEYSTORE_BASE64 }}
+          CTTRAINS_KEYSTORE_PASSWORD: ${{ secrets.CTTRAINS_KEYSTORE_PASSWORD }}
+          CTTRAINS_KEY_ALIAS: ${{ secrets.CTTRAINS_KEY_ALIAS }}
+          CTTRAINS_KEY_PASSWORD: ${{ secrets.CTTRAINS_KEY_PASSWORD }}
+          CTTRAINS_VERSION_NAME: ${{ steps.version.outputs.name }}
+          CTTRAINS_VERSION_CODE: ${{ steps.version.outputs.code }}
+          CTTRAINS_TRANSIT_BASE_URL: ${{ vars.CTTRAINS_TRANSIT_BASE_URL }}
+          CTTRAINS_GOOGLE_WEB_CLIENT_ID: ${{ vars.CTTRAINS_GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 CTTRAINS_KEYSTORE_PASSWORD CTTRAINS_KEY_ALIAS CTTRAINS_KEY_PASSWORD; do
+            [[ -n ${!name} ]] || { echo 'Release signing secrets are missing.'; exit 1; }
+          done
+          umask 077
+          export CTTRAINS_KEYSTORE_PATH="$RUNNER_TEMP/cttrains-release.jks"
+          trap 'rm -f -- "$CTTRAINS_KEYSTORE_PATH"' EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$CTTRAINS_KEYSTORE_PATH"
+          unset KEYSTORE_BASE64
+          ./gradlew :core:test :app:lintRelease :app:assembleRelease --no-daemon
+      - name: Verify the Lab APK and write its assets
+        env:
+          VERSION: ${{ steps.version.outputs.name }}
+        run: |
+          set -euo pipefail
+          tools="${ANDROID_HOME}/build-tools/35.0.0"
+          apk=app/build/outputs/apk/release/app-release.apk
+          "$tools/apksigner" verify "$apk"
+          "$tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging.txt"
+          grep -q "^package: name='za.co.cttrains.app.experimental'" "$RUNNER_TEMP/badging.txt"
+          grep -q "application-label:'CT Trains Lab'" "$RUNNER_TEMP/badging.txt"
+          if grep -q '^application-debuggable' "$RUNNER_TEMP/badging.txt"; then echo 'Must not be debuggable.'; exit 1; fi
+          mkdir -p ../lab-release
+          file="CT-Trains-Lab-${VERSION}.apk"
+          cp "$apk" "../lab-release/$file"
+          (cd ../lab-release && sha256sum "$file" > "$file.sha256")
+          "$tools/apksigner" verify --print-certs "$apk" > "$RUNNER_TEMP/certs.txt"
+          python3 - "$file" <<'PY'
+          import hashlib, json, os, pathlib, re, sys
+          out = pathlib.Path('../lab-release'); apk = out / sys.argv[1]
+          badging = pathlib.Path(os.environ['RUNNER_TEMP'], 'badging.txt').read_text()
+          certs = pathlib.Path(os.environ['RUNNER_TEMP'], 'certs.txt').read_text()
+          pkg = re.search(r"^package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging, re.M)
+          sdk = re.search(r"^sdkVersion:'(\d+)'", badging, re.M)
+          sha = re.findall(r'Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]{64})', certs)
+          assert pkg and sdk and len(sha) == 1 and pkg[1] == 'za.co.cttrains.app.experimental'
+          digest = hashlib.sha256(apk.read_bytes()).hexdigest()
+          manifest = {'schema': 1, 'channel': 'experimental', 'packageName': pkg[1], 'versionCode': int(pkg[2]),
+                      'versionName': pkg[3], 'minSdk': int(sdk[1]), 'apk': apk.name, 'sizeBytes': apk.stat().st_size,
+                      'sha256': digest, 'certificateSha256': sha[0].lower()}
+          (out / 'update.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          pretty = ':'.join(sha[0].upper()[i:i+2] for i in range(0, 64, 2))
+          (out / 'signing-certificate.txt').write_text(f'Package: {pkg[1]}\nSHA-256: {pretty}\n')
+          print(json.dumps(manifest, indent=2))
+          PY
+      - name: Publish the experimental prerelease
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tag="android-experimental-v${VERSION}"
+          notes=$(mktemp)
+          cat > "$notes" <<EOF
+          **CT Trains Lab: experimental redesign.** A separate app that installs next to CT Trains and does not replace it.
+
+          - It has its own data. To bring your places and trips across, make an encrypted backup in CT Trains and restore it in Lab (Mine → Privacy, backup & data).
+          - It is a work in progress (issue #20): Now and Mine are redesigned; Plan and trip details still use the regular screens.
+          - Times are published schedules, not live train positions.
+          - The regular CT Trains app never offers this release as an update.
+
+          Built from commit \`${SHA}\` on \`${GITHUB_REF_NAME}\`. The APK is signed with the CT Trains release key; its SHA-256 checksum and certificate fingerprint are attached.
+          EOF
+          gh release create "$tag" lab-release/* --target "$SHA" --title "CT Trains Lab ${VERSION} (experimental)" \
+            --notes-file "$notes" --prerelease --latest=false
+          gh release view "$tag" --json url,assets --jq '.url, (.assets[] | "\(.name) \(.size)")'
