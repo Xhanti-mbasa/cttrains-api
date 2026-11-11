@@ -1,0 +1,117 @@
+name: CT Trains Lab (experimental edition)
+
+# Separate from android.yml on purpose: Lab branches never publish regular releases,
+# and this workflow has no publish job. Lab APKs here are debug builds for review only.
+on:
+  push:
+    branches: ["lab/**"]
+    paths: ["android/**", ".github/workflows/android-lab.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Regular edition still builds and passes core tests and lint
+        run: ./gradlew :core:test :app:lintDebug :app:assembleDebug --no-daemon
+      - name: Lab edition builds and passes lint
+        env:
+          CTTRAINS_EXPERIMENTAL: "true"
+        run: |
+          ./gradlew :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+          mkdir -p lab-dist
+          cp app/build/outputs/apk/debug/*.apk lab-dist/
+          "${ANDROID_HOME}/build-tools/35.0.0/aapt2" dump badging lab-dist/*.apk | grep -E "^package:|application-label:" | tee lab-dist/identity.txt
+          grep -q "name='za.co.cttrains.app.experimental'" lab-dist/identity.txt
+          grep -q "application-label:'CT Trains Lab'" lab-dist/identity.txt
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        timeout-minutes: 2
+        with:
+          name: cttrains-lab-debug-apk
+          retention-days: 7
+          compression-level: 0
+          path: android/lab-dist/*
+      - name: Upload test and lint reports
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab-check-reports
+          retention-days: 7
+          path: |
+            android/core/build/reports/tests/test/
+            android/app/build/reports/lint-results-*.html
+
+  device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Reclaim disk space for the Android emulator
+        run: |
+          sudo rm -rf -- /usr/share/dotnet /usr/local/.ghcup /opt/ghc
+          df -h "$HOME"
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Lab UI tests and screenshots
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash android/scripts/check-lab-device.sh
+      - name: Upload Lab screenshots and reports
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab-ui-screenshots
+          retention-days: 7
+          path: |
+            android/app/build/outputs/ui-screenshots/
+            android/app/build/reports/androidTests/connected/
+            android/app/build/outputs/androidTest-results/connected/

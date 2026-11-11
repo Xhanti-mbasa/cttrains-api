@@ -12,6 +12,8 @@ import za.co.cttrains.app.scheduling.RideFollowUps
 import za.co.cttrains.core.RideOutcome
 import za.co.cttrains.app.ui.TrainApp
 import za.co.cttrains.app.ui.TrainTheme
+import za.co.cttrains.app.ui.lab.LabApp
+import za.co.cttrains.app.ui.lab.LabTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,7 +31,9 @@ class MainActivity : ComponentActivity() {
         if(intent.getBooleanExtra("app_updates",false)) model.openAppUpdates()
         setContent {
             val state = model.state.collectAsStateWithLifecycle().value
-            TrainTheme(state.preferences) { TrainApp(state, model) }
+            // The Lab edition (separate package, data and widgets) gets its own UI root; the regular edition is unchanged.
+            if (BuildConfig.EXPERIMENTAL_EDITION) LabTheme(state.preferences) { LabApp(state, model) }
+            else TrainTheme(state.preferences) { TrainApp(state, model) }
         }
     }
     override fun onNewIntent(intent: Intent) {
