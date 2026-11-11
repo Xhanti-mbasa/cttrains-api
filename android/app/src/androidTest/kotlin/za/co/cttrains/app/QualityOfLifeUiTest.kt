@@ -18,17 +18,17 @@ class QualityOfLifeUiTest {
         app.runOnUiThread { train.setMapMode("stations") }
         app.waitForIdle()
         app.onNodeWithText("Online").assertDoesNotExist()
-        app.onNodeWithText("Map options").performClick()
+        app.onNodeWithText("Map options").performScrollTo().performClick()
         app.onNodeWithText("Online").assertIsDisplayed()
         app.onNodeWithText("Collapse").performClick()
         app.onNodeWithText("Online").assertDoesNotExist()
-        app.onNodeWithContentDescription("Expand map to full screen").performClick()
+        app.onNodeWithContentDescription("Expand map to full screen").performScrollTo().performClick()
         app.onNodeWithContentDescription("Close full-screen map").assertIsDisplayed()
         app.onNodeWithText("Online").assertDoesNotExist()
         app.onNodeWithText("Open in Google").assertIsDisplayed()
         app.onNodeWithContentDescription("Close full-screen map").performClick()
-        app.onNodeWithContentDescription("Refresh map and schedules").assertIsDisplayed()
-        app.onNodeWithText("Map options").performClick()
+        app.onNodeWithContentDescription("Refresh map and schedules").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Map options").performScrollTo().performClick()
         app.onNodeWithContentDescription("Manage offline maps").performClick()
         app.onNodeWithText("Collapse").assertDoesNotExist()
         app.onNodeWithText("Offline street maps").assertIsDisplayed()
@@ -76,7 +76,7 @@ class QualityOfLifeUiTest {
         app.waitUntil(15000) { features.state.value.ready }
         app.runOnUiThread { train.setMapMode("stations");features.beta { it.copy(journeyFocus=true,myCiti=true,goldenArrow=true) } }
         app.waitUntil(15000) { features.state.value.extras.beta.run { journeyFocus && myCiti && goldenArrow } }
-        app.onNodeWithText("Map options").performClick()
+        app.onNodeWithText("Map options").performScrollTo().performClick()
         app.onNodeWithText("Focus on selected journey").performScrollTo().assertIsDisplayed()
         app.onNodeWithText("Collapse").performClick()
         app.onNodeWithText("Plan").performClick()
