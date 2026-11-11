@@ -97,7 +97,9 @@ object TravelWidgets {
                 val views = RemoteViews(context.packageName, R.layout.travel_widget)
                 views.setTextViewText(R.id.widget_title, if (smart) "Smart Cards" else "Next trip")
                 val fontScale = context.resources.configuration.fontScale.coerceAtLeast(1f)
-                val compact = height / fontScale < 160
+                val compact = height / fontScale < 180
+                val inset = ((if(compact) 6 else 12) * context.resources.displayMetrics.density).toInt()
+                views.setViewPadding(R.id.widget_root,inset,inset,inset,inset)
                 views.setViewVisibility(R.id.widget_badge, if(height / fontScale < 240) View.GONE else View.VISIBLE)
                 views.setViewVisibility(R.id.widget_updated, if(height / fontScale < 200) View.GONE else View.VISIBLE)
                 views.removeAllViews(R.id.widget_rows)
@@ -148,6 +150,11 @@ object TravelWidgets {
         child.setTextViewText(R.id.widget_row_title, title)
         child.setTextViewText(R.id.widget_row_subtitle, subtitle)
         child.setViewVisibility(R.id.widget_row_subtitle,if(compact) View.GONE else View.VISIBLE)
+        if(compact) {
+            val density=context.resources.displayMetrics.density
+            child.setViewPadding(R.id.widget_row_root,0,(4*density).toInt(),0,(4*density).toInt())
+            child.setInt(R.id.widget_row_root,"setMinimumHeight",(48*density).toInt())
+        }
         if (action != null) child.setOnClickPendingIntent(R.id.widget_row_root, action)
         views.addView(R.id.widget_rows, child)
     }

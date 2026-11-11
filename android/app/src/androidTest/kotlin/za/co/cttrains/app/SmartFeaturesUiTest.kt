@@ -56,15 +56,24 @@ class SmartFeaturesUiTest {
     @Test fun widgetHeaderAndActionFitCompactAndExpandedSizes() {
         app.runOnUiThread {
             val context=app.activity
-            for((width,height) in listOf(180 to 180,250 to 220,350 to 320)) {
+            for((width,height) in listOf(180 to 160,180 to 180,250 to 220,350 to 320)) {
                 val views=RemoteViews(context.packageName,R.layout.travel_widget)
                 views.setTextViewText(R.id.widget_title,"Smart Cards")
+                val compact=height<180
+                val inset=((if(compact) 6 else 12)*context.resources.displayMetrics.density).toInt()
+                views.setViewPadding(R.id.widget_root,inset,inset,inset,inset)
                 views.setTextViewText(R.id.widget_refresh,"Refresh nearby rides  →")
                 views.setViewVisibility(R.id.widget_badge,if(height<240)android.view.View.GONE else android.view.View.VISIBLE)
                 views.setViewVisibility(R.id.widget_updated,if(height<200)android.view.View.GONE else android.view.View.VISIBLE)
                 val row=RemoteViews(context.packageName,R.layout.travel_widget_row)
                 row.setTextViewText(R.id.widget_row_title,"Your next ride starts here")
                 row.setTextViewText(R.id.widget_row_subtitle,"Set Home in My profile, then refresh nearby rides.")
+                if(compact) {
+                    row.setViewVisibility(R.id.widget_row_subtitle,android.view.View.GONE)
+                    val d=context.resources.displayMetrics.density
+                    row.setViewPadding(R.id.widget_row_root,0,(4*d).toInt(),0,(4*d).toInt())
+                    row.setInt(R.id.widget_row_root,"setMinimumHeight",(48*d).toInt())
+                }
                 views.addView(R.id.widget_rows,row)
                 val root=views.apply(context,FrameLayout(context))
                 val density=context.resources.displayMetrics.density
