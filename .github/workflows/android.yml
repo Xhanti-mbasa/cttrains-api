@@ -75,6 +75,7 @@ jobs:
         run: cp "${ANDROID_HOME}/build-tools/35.0.0/lib/apksigner.jar" dist/apksigner.jar
       - uses: actions/upload-artifact@v4
         continue-on-error: true
+        timeout-minutes: 2
         with:
           name: cttrains-release-apk
           retention-days: 3
@@ -84,6 +85,7 @@ jobs:
       - name: Upload test and lint reports
         if: always()
         continue-on-error: true
+        timeout-minutes: 2
         uses: actions/upload-artifact@v4
         with:
           name: android-check-reports
@@ -132,6 +134,7 @@ jobs:
       - name: Upload native test reports
         if: always()
         continue-on-error: true
+        timeout-minutes: 2
         uses: actions/upload-artifact@v4
         with:
           name: android-device-reports
