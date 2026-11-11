@@ -123,6 +123,8 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
         navigation.navigate(target) { popUpTo(navigation.graph.startDestinationId) { saveState = true }; launchSingleTop = true; restoreState = true }
     }
     fun push(target: String) { navigation.navigate(target) { launchSingleTop = true } }
+    /** Map and alerts belong to Now: open them on Now's stack so each tab keeps its own history. */
+    fun openInPlace(target: String) { if (placeOf(target) == LabPlace.NOW && route != "now") { go("now"); push(target) } else push(target) }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); model.dismissMessage() } }
     LaunchedEffect(feature.message) { feature.message?.let { snackbar.showSnackbar(it); features.dismissMessage() } }
     LaunchedEffect(feature.error) { feature.error?.let { snackbar.showSnackbar(it) } }
@@ -185,11 +187,11 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
                 }
                 composable("plan") { JourneyPlanner(state, model, feature, features, { push("settings") }, smart) }
                 composable("mine") {
-                    LabMineScreen(state, model, feature, now, onOpen = ::push,
+                    LabMineScreen(state, model, feature, now, onOpen = ::openInPlace,
                         onPlanRoute = { r -> model.useRoute(r); go("plan") }, onPlanFrom = { name -> model.edit { it.copy(from = name) }; go("plan") },
                         onDeveloper = { push("developer") })
                 }
-                composable("settings") { LabSettingsScreen(state, model, feature, features, onOpen = ::push, onDeveloperLock = developer::lock) }
+                composable("settings") { LabSettingsScreen(state, model, feature, features, onOpen = ::openInPlace, onDeveloperLock = developer::lock) }
                 composable("widgets") { LabWidgetsScreen(feature, features) }
                 composable("places") { SavedAddressesScreen(state, model, feature, features) { go("plan") } }
                 composable("upcoming") { UpcomingScreen(state, model) }
