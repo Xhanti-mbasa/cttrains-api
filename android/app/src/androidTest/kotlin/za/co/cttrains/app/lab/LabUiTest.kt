@@ -27,6 +27,10 @@ class LabUiTest {
         UiScreenshots.closeSystemDialogs()
         val features = ViewModelProvider(app.activity)[FeatureViewModel::class.java]
         app.waitUntil(15_000) { features.state.value.ready }
+        // Like the regular suite: the emulator's software GPU cannot host the online street map, so use the station atlas.
+        val train = ViewModelProvider(app.activity)[TrainViewModel::class.java]
+        app.runOnUiThread { train.setMapMode("stations") }
+        app.waitUntil(15_000) { train.state.value.preferences.mapMode == "stations" }
     }
 
     private fun shell(command: String) {
