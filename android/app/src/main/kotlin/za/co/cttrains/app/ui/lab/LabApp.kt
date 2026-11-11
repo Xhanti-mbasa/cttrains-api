@@ -48,7 +48,7 @@ private enum class LabPlace(val route: String, val title: String, val icon: Imag
 /** Routes requested by the shared view models, mapped to the Lab place they belong to. */
 private fun placeOf(route: String): LabPlace = when {
     route == "now" || route.startsWith("map") || route == "alerts" || route == "ride-departures" -> LabPlace.NOW
-    route == "plan" || route == "budget" -> LabPlace.PLAN
+    route == "plan" || route == "trip" || route == "budget" -> LabPlace.PLAN
     else -> LabPlace.MINE
 }
 
@@ -56,7 +56,7 @@ private val Titles = mapOf(
     "alerts" to "Updates & delays", "budget" to "Fares & budget", "buses" to "Buses · beta", "trips" to "Rides & safety trips",
     "places" to "Your places", "upcoming" to "Saved trips & reminders", "settings" to "Privacy & data", "developer" to "Developer options",
     "whatsapp" to "WhatsApp updates", "community" to "Community", "directions" to "Directions", "app-updates" to "App updates",
-    "ride-departures" to "Your ride", "widgets" to "Widgets & cards",
+    "ride-departures" to "Your ride", "widgets" to "Widgets & cards", "trip" to "Trip",
 )
 
 /**
@@ -74,6 +74,20 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
     val smart: SmartCardsModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val smartState by smart.state.collectAsStateWithLifecycle()
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    // Activity-scoped so results survive moving between Plan and a trip's details.
+    val planner: za.co.cttrains.app.JourneyPlannerModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val directions: za.co.cttrains.app.directions.DirectionsModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    var trip by remember { mutableStateOf<za.co.cttrains.app.PlannerOption?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    fun locationAllowed() = listOf(android.Manifest.permission.ACCESS_COARSE_LOCATION, android.Manifest.permission.ACCESS_FINE_LOCATION)
+        .any { androidx.core.content.ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+    var resumed by remember { mutableStateOf(false) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { resumed = true; onPauseOrDispose { resumed = false } }
+    // Once location is allowed, keep Near you and Smart Cards available without asking again: one quiet sample
+    // whenever the app is open and the previous sample has expired (it is forgotten when the app closes).
+    LaunchedEffect(resumed, state.currentPosition == null, state.locating, feature.extras.beta.smartCards) {
+        if (resumed && state.currentPosition == null && !state.locating && feature.extras.beta.smartCards && locationAllowed()) model.locateOnce()
+    }
 
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { updates.checkAtLaunch(); onPauseOrDispose {} }
     LaunchedEffect(lifecycle) {
@@ -125,7 +139,14 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
     fun push(target: String) { navigation.navigate(target) { launchSingleTop = true } }
     /** Map and alerts belong to Now: open them on Now's stack so each tab keeps its own history. */
     fun openInPlace(target: String) { if (placeOf(target) == LabPlace.NOW && route != "now") { go("now"); push(target) } else push(target) }
-    LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); model.dismissMessage() } }
+    LaunchedEffect(state.message) {
+        state.message?.let { message ->
+            // Location status is shown where it matters (Near you, the place picker), not as a toast on every screen.
+            val quiet = message.startsWith("Location sampled") || message.startsWith("Location is unavailable") || message.startsWith("Couldn’t get your location")
+            if (!quiet) snackbar.showSnackbar(message)
+            model.dismissMessage()
+        }
+    }
     LaunchedEffect(feature.message) { feature.message?.let { snackbar.showSnackbar(it); features.dismissMessage() } }
     LaunchedEffect(feature.error) { feature.error?.let { snackbar.showSnackbar(it) } }
     LaunchedEffect(state.requestedScreen) {
@@ -185,7 +206,19 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
                     TransitMapScreen(state, model, fullScreen = true, onClose = { navigation.popBackStack() }, onPlan = { go("plan") },
                         feature = feature, features = features, onBuses = { push("buses") })
                 }
-                composable("plan") { JourneyPlanner(state, model, feature, features, { push("settings") }, smart) }
+                composable("plan") { LabPlanScreen(state, model, feature, features, planner) { option -> trip = option; push("trip") } }
+                composable("trip") {
+                    val option = trip
+                    if (option == null) LaunchedEffect(Unit) { navigation.popBackStack() }
+                    else LabTripScreen(option, planner.state.value.request?.from, planner.state.value.request?.to, state, model, feature, features, directions,
+                        onMap = {
+                            if (option.rail != null) { features.showTrainMap(); features.usePlannedWalks(option.walks)
+                                model.presentPlannedJourney(option.query!!, option.rail, option.fetchedAt, option.cached, null, option.sourceId, false) }
+                            else { model.selectJourney(null); features.selectBus(option.bus!!); features.usePlannedWalks(option.walks) }
+                            push("map")
+                        },
+                        onDirections = { push("directions") }, onSaved = { push("upcoming") })
+                }
                 composable("mine") {
                     LabMineScreen(state, model, feature, now, onOpen = ::openInPlace,
                         onPlanRoute = { r -> model.useRoute(r); go("plan") }, onPlanFrom = { name -> model.edit { it.copy(from = name) }; go("plan") },

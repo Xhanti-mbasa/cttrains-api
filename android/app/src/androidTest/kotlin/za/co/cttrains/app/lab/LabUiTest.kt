@@ -116,4 +116,37 @@ class LabUiTest {
             shell("settings put system font_scale 1.0")
         }
     }
+
+    private fun pick(field: String, query: String) {
+        app.onNodeWithTag(field).performClick()
+        app.onNodeWithTag("lab-place-search").performTextInput(query)
+        app.waitUntil(10_000) { app.onAllNodesWithText("Train station").fetchSemanticsNodes().isNotEmpty() }
+        app.onAllNodesWithText("Train station")[0].performClick()
+        app.waitForIdle()
+    }
+
+    @Test fun planIsNativeAndOpensATripWithSaveAndRemind() {
+        app.onNodeWithTag("lab-tab-plan").performClick()
+        app.onNodeWithTag("lab-plan").assertIsDisplayed()
+        app.onNodeWithText("Plan your journey").assertDoesNotExist()
+        pick("lab-plan-from", "Unibell")
+        pick("lab-plan-to", "Woodstock")
+        app.onNodeWithTag("lab-plan-search").performClick()
+        app.waitUntil(90_000) {
+            app.onAllNodesWithTag("lab-option").fetchSemanticsNodes().isNotEmpty() ||
+                app.onAllNodesWithText("No Train trip found").fetchSemanticsNodes().isNotEmpty() ||
+                app.onAllNodesWithText("This trip couldn’t be checked").fetchSemanticsNodes().isNotEmpty()
+        }
+        UiScreenshots.save("lab-plan-results")
+        if (app.onAllNodesWithTag("lab-option").fetchSemanticsNodes().isNotEmpty()) {
+            app.onAllNodesWithTag("lab-option")[0].performClick()
+            app.onNodeWithTag("lab-trip").assertIsDisplayed()
+            UiScreenshots.save("lab-trip")
+            app.onNodeWithTag("lab-trip-remind").performScrollTo().assertIsDisplayed()
+            app.onNodeWithTag("lab-trip-save-only").performScrollTo().assertIsDisplayed()
+            UiScreenshots.save("lab-trip-save")
+            app.onNodeWithTag("lab-back").performClick()
+            app.onAllNodesWithTag("lab-option")[0].assertExists()
+        }
+    }
 }

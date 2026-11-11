@@ -49,9 +49,15 @@ fun LabNowScreen(
 ) {
     val c = LocalLab.current
     val context = LocalContext.current
+    fun allowed() = listOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+        .any { androidx.core.content.ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+    // Re-read on every resume, so a change made in Android settings is picked up without asking again.
+    var granted by remember { mutableStateOf(allowed()) }
     var denied by rememberSaveable { mutableStateOf(false) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { granted = allowed(); if (granted) denied = false; onPauseOrDispose {} }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        if (grants.values.any { it }) { denied = false; model.locateOnce() } else denied = true
+        granted = grants.values.any { it } || allowed()
+        if (granted) { denied = false; model.locateOnce() } else denied = true
     }
     val next = LabTiming.nextPlan(state.scheduled, state.preferences.profileId, now)
     val home = feature.extras.spots.firstOrNull { SavedAddresses.role(it) == "Home" }
@@ -103,7 +109,7 @@ fun LabNowScreen(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Stacked, not side by side: at large font sizes a shared row squeezes the title to one letter per line.
                 LabSectionTitle("Near you")
-                Text("Uses one location sample, forgotten after 5 minutes.", style = LabType.small, color = c.muted)
+                Text("Checked while the app is open. Not stored or uploaded.", style = LabType.small, color = c.muted)
                 when {
                     !feature.extras.beta.smartCards -> LabStateCard("Off", "Nearby stations are turned off",
                         "Turn on Smart Cards to see the closest stations and suggested trains. Location is only sampled when you ask.",
@@ -118,22 +124,25 @@ fun LabNowScreen(
                                 trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = c.muted) },
                                 colors = ListItemDefaults.colors(containerColor = c.surface),
                                 modifier = Modifier.heightIn(min = 56.dp).clickableRow("Plan from ${station.name}") {
-                                    model.edit { it.copy(from = station.name) }; onPlan()
+                                    features.place(null, true); model.edit { it.copy(from = station.name) }; onPlan()
                                 },
                             )
                         }
                     }
-                    denied -> LabStateCard("Location not allowed", "Pick your station instead",
+                    !granted && denied -> LabStateCard("Location not allowed", "Pick your station instead",
                         "Near you needs one location sample while the app is open. Everything else works without it.",
                         "Search stations" to onPlan, "Allow in Android settings" to {
                             context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))); Unit
                         })
-                    state.locating -> Text("Finding nearby stations…", style = LabType.body, color = c.muted)
+                    !granted -> LabSecondaryButton("Allow location for nearby stations", {
+                        permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                    }, Modifier.fillMaxWidth().testTag("lab-locate"))
+                    state.locating || state.currentPosition == null && smartState.message == null ->
+                        Text("Finding nearby stations…", style = LabType.body, color = c.muted)
                     else -> {
-                        smartState.message?.let { Text(it, style = LabType.small, color = c.muted) }
-                        LabSecondaryButton("Use my location once", {
-                            permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                        }, Modifier.fillMaxWidth().testTag("lab-locate"))
+                        Text(if (state.currentPosition == null) "Couldn’t get a location fix right now." else smartState.message ?: "No station within 5 km.",
+                            style = LabType.small, color = c.muted)
+                        LabSecondaryButton("Try again", { model.locateOnce() }, Modifier.fillMaxWidth().testTag("lab-locate-retry"))
                     }
                 }
             }
