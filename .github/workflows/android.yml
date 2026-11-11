@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-${{ github.ref }}
+  group: android-release-v2-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -83,7 +83,7 @@ jobs:
           path: android/dist/*
           if-no-files-found: error
       - name: Upload test and lint reports
-        if: always()
+        if: ${{ !cancelled() }}
         continue-on-error: true
         timeout-minutes: 2
         uses: actions/upload-artifact@v4
@@ -132,7 +132,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: bash android/scripts/check-device.sh
       - name: Upload native test reports
-        if: always()
+        if: ${{ !cancelled() }}
         continue-on-error: true
         timeout-minutes: 2
         uses: actions/upload-artifact@v4
