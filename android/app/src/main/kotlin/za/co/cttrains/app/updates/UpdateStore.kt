@@ -19,6 +19,10 @@ class UpdateStore(c: Context) {
     fun downloadId(value: String)=prefs.edit().putString("download-id",value).commit()
     fun notifiedVersion()=prefs.getLong("notified-version",0)
     fun notifiedVersion(value: Long)=prefs.edit().putLong("notified-version",value).commit()
+    fun seenVersions()=prefs.getStringSet("seen-versions",emptySet()).orEmpty().mapNotNull { it.toLongOrNull() }.toSet()
+    fun sawVersion(code: Long) { prefs.edit().putStringSet("seen-versions",(seenVersions()+code).sortedDescending().take(100).map { it.toString() }.toSet()).commit() }
+    fun guideShown()=prefs.getBoolean("update-guide-shown",false)
+    fun guideShown(value: Boolean) { prefs.edit().putBoolean("update-guide-shown",value).apply() }
     fun stage(v: AppUpdate?) { prefs.edit().apply { if(v==null) remove("staged") else putString("staged",codec.encrypt(TripFiles.json.encodeToString(v))) }.commit() }
     fun clear() { prefs.edit().clear().commit() }
 }

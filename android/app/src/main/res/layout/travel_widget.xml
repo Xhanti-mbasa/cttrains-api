@@ -1,18 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:padding="16dp" android:background="@drawable/widget_background">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+    android:orientation="vertical" android:padding="12dp" android:background="@drawable/widget_background">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
         <TextView android:id="@+id/widget_title" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:textColor="#90DBC9" android:textSize="14sp" android:textStyle="bold" />
-        <TextClock android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_height="wrap_content" android:text="Smart Cards" android:textColor="#A9E7D6" android:textSize="14sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" />
+        <TextClock android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="12dp"
             android:format12Hour="HH:mm" android:format24Hour="HH:mm" android:timeZone="Africa/Johannesburg"
-            android:textColor="#F2F5F3" android:textSize="14sp" />
+            android:textColor="#BACCC6" android:textSize="12sp" />
     </LinearLayout>
-    <LinearLayout android:id="@+id/widget_rows" android:layout_width="match_parent" android:layout_height="0dp"
-        android:layout_weight="1" android:orientation="vertical" />
+    <TextView android:id="@+id/widget_badge" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp"
+        android:text="CT TRAINS  /  EXPERIMENTAL" android:textColor="#93B2A8" android:textSize="9sp" android:maxLines="1" android:ellipsize="end" />
+    <LinearLayout android:id="@+id/widget_rows" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:layout_marginTop="8dp" />
     <TextView android:id="@+id/widget_updated" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:textColor="#C0CDC8" android:textSize="11sp" android:maxLines="2" />
-    <TextView android:id="@+id/widget_refresh" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:minHeight="40dp" android:gravity="center_vertical" android:textColor="#90DBC9" android:textSize="13sp" />
+        android:layout_marginTop="6dp" android:textColor="#A2BAB1" android:textSize="10sp" android:maxLines="1" android:ellipsize="end" />
+    <TextView android:id="@+id/widget_refresh" android:layout_width="match_parent" android:layout_height="48dp"
+        android:layout_marginTop="10dp" android:paddingStart="12dp" android:paddingEnd="12dp" android:background="@drawable/widget_action"
+        android:gravity="center" android:textColor="#112A22" android:textSize="12sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" />
 </LinearLayout>

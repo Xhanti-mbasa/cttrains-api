@@ -57,12 +57,13 @@ class UpdateRepository(private val c: Context) {
         } }
         require(bytes.size<=limit) { "Update metadata is too large." };bytes.toString(Charsets.UTF_8)
     }
-    suspend fun check(): AppUpdate? = withContext(Dispatchers.IO) {
+    suspend fun check(targetTag: String?=null): AppUpdate? = withContext(Dispatchers.IO) {
+        za.co.cttrains.app.developer.DeveloperLog.event(c,"update-check")
         val cfg=store.settings();val repo=AppUpdates.repository(cfg.repository)
         val rows=AppUpdates.releases(text("https://api.github.com/repos/$repo/releases?per_page=30",cfg.token,false,2*1024*1024),cfg.beta)
         var incompatible: String?=null
         var newest: AppUpdate?=null
-        for(release in rows) {
+        for(release in rows.filter { targetTag==null || it.tag==targetTag }) {
             val descriptor=release.assets.singleOrNull { it.name=="update.json" } ?: continue
             val manifest=AppUpdates.manifest(text(asset(repo,descriptor.id),cfg.token,true,64*1024))
             try {
@@ -94,6 +95,7 @@ class UpdateRepository(private val c: Context) {
                 require(total==m.sizeBytes && hex(digest.digest())==m.sha256) { "The download is incomplete or its checksum is incorrect." }
             }
             verify(part,update)
+            za.co.cttrains.app.developer.DeveloperLog.event(c,"update-verified")
             require(part.renameTo(ready)) { "Could not stage the verified APK." }
             store.stage(update)
         } finally { part.delete() }

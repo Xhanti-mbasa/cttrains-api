@@ -11,6 +11,9 @@ plugins {
 val appVersion = Properties().apply {
     rootProject.file("version.properties").inputStream().use { load(it) }
 }
+val experimentalEdition = System.getenv("CTTRAINS_EXPERIMENTAL") == "true"
+val configuredVersionName = System.getenv("CTTRAINS_VERSION_NAME") ?: appVersion.getProperty("versionName")
+val allowTestMaintenance = configuredVersionName.contains("-") && !experimentalEdition
 val releaseStore = System.getenv("CTTRAINS_KEYSTORE_PATH")
 val localSecrets = Properties().apply {
     val source = rootProject.file("local.properties")
@@ -27,12 +30,15 @@ android {
     namespace = "za.co.cttrains.app"
     compileSdk = 36
     defaultConfig {
-        applicationId = "za.co.cttrains.app"
+        applicationId = if (experimentalEdition) "za.co.cttrains.app.experimental" else "za.co.cttrains.app"
+        resValue("string", "app_name", if (experimentalEdition) "CT Trains Lab" else "CT Trains")
+        buildConfigField("boolean", "EXPERIMENTAL_EDITION", experimentalEdition.toString())
+        buildConfigField("boolean", "ALLOW_REMOTE_MAINTENANCE", allowTestMaintenance.toString())
         minSdk = 26
         targetSdk = 35
         versionCode = (System.getenv("CTTRAINS_VERSION_CODE") ?: appVersion.getProperty("versionCode"))
             .toInt().also { require(it > 0) { "versionCode must be positive" } }
-        versionName = System.getenv("CTTRAINS_VERSION_NAME") ?: appVersion.getProperty("versionName")
+        versionName = configuredVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "TRANSIT_BASE_URL", quoted(transitUrl.trimEnd('/')))
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", quoted(System.getenv("CTTRAINS_GOOGLE_WEB_CLIENT_ID") ?: localSecrets.getProperty("CTTRAINS_GOOGLE_WEB_CLIENT_ID", "")))

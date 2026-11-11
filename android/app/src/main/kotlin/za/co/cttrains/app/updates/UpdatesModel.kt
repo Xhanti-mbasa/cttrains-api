@@ -42,10 +42,13 @@ class UpdatesModel(app: Application): AndroidViewModel(app) {
             mutable.update { it.copy(settings=cfg,candidate=null,error=null,message="Update settings saved.") }
         } catch(e: Exception) { mutable.update { it.copy(error=updateMessage(e)) } }
     } }
-    fun check() { if(state.value.checking) return;viewModelScope.launch {
+    private var lastLaunchCheck=0L
+    fun checkAtLaunch() { val now=android.os.SystemClock.elapsedRealtime();if(lastLaunchCheck!=0L && now-lastLaunchCheck<15*60_000) return;lastLaunchCheck=now;check() }
+    fun check()=checkTarget(null)
+    fun checkTarget(targetTag: String?) { if(state.value.checking) return;viewModelScope.launch {
         mutable.update { it.copy(checking=true,error=null,message=null) }
-        try { val candidate=repository.check();mutable.update { it.copy(candidate=candidate,message=if(candidate==null) "No newer compatible release was found. Only published releases with update.json are checked." else "${candidate.manifest.versionName} is available.") } }
-        catch(e: Exception) { if(e is CancellationException) throw e;mutable.update { it.copy(error=updateMessage(e)) } }
+        try { val candidate=repository.check(targetTag);mutable.update { it.copy(candidate=candidate,message=if(candidate==null) "No newer compatible release was found. Only published releases with update.json are checked." else "${candidate.manifest.versionName} is available.") } }
+        catch(e: Exception) { if(e is CancellationException) throw e;za.co.cttrains.app.developer.DeveloperLog.event(getApplication(),"update-failed");mutable.update { it.copy(error=updateMessage(e)) } }
         finally { mutable.update { it.copy(checking=false) } }
     } }
     fun download() { val candidate=state.value.candidate ?: return
@@ -69,6 +72,6 @@ class UpdatesModel(app: Application): AndroidViewModel(app) {
             val uri=FileProvider.getUriForFile(c,"${c.packageName}.files",repository.ready)
             c.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
             mutable.update { it.copy(message="Review Android's installation prompt. Cancelling keeps your current version.") }
-        } catch(e: Exception) { if(e is CancellationException) throw e;mutable.update { it.copy(error=updateMessage(e)) } }
+        } catch(e: Exception) { if(e is CancellationException) throw e;za.co.cttrains.app.developer.DeveloperLog.event(getApplication(),"update-failed");mutable.update { it.copy(error=updateMessage(e)) } }
     } }
 }

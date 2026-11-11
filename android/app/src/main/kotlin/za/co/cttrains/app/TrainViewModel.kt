@@ -208,7 +208,7 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
             finally { mutableState.update { it.copy(refreshing=false) } }
         }
     }
-    fun search() = performSearch(false)
+    fun search() { za.co.cttrains.app.developer.DeveloperLog.event(getApplication(),"search-start");performSearch(false) }
     private fun performSearch(autoSelect: Boolean,previous: Journey?=null) {
         val current = state.value
         val error = TravelRules.validationError(current.query, current.catalog, LocalDate.now(CapeTownZone))
@@ -222,6 +222,7 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
                 mutableState.update { it.copy(loading = false, result = result, selectedJourney = if(autoSelect) result.entry.journeys.firstOrNull { it==previous } ?: result.entry.journeys.firstOrNull() else null) }
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
+                za.co.cttrains.app.developer.DeveloperLog.event(getApplication(),"search-failed")
                 val message = if (error is ScheduleFormatException) error.message else "Couldn’t reach CT Trains. Check your connection and try again."
                 mutableState.update { it.copy(loading = false, error = message) }
             }

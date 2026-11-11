@@ -14,8 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import za.co.cttrains.app.BuildConfig
 
-@Composable fun UpdatesScreen() {
-    val m: UpdatesModel=androidx.lifecycle.viewmodel.compose.viewModel()
+@Composable fun UpdatesScreen(m: UpdatesModel=androidx.lifecycle.viewmodel.compose.viewModel()) {
     val s by m.state.collectAsStateWithLifecycle()
     val c=LocalContext.current;val uri=LocalUriHandler.current
     var setup by remember { mutableStateOf(false) };var help by remember { mutableStateOf(false) };var notes by remember { mutableStateOf(false) }

@@ -1,0 +1,9 @@
+{
+  "name": "cttrains-developer-control",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-11",
+  "workers_dev": true,
+  "observability": {"enabled": true, "traces": {"enabled": true}},
+  "vars": {"ALLOW_MAINTENANCE": "true"},
+  "d1_databases": [{"binding":"DB","database_name":"cttrains-developer-control","database_id":"87e37f59-b772-41e4-aa14-70d32437d39d"}]
+}

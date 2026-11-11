@@ -34,6 +34,10 @@ trap 'rm -f -- "$notes"' EXIT
     printf 'Native Kotlin / Google Material 3 Android app.\n\n'
     printf 'Built from commit `%s`. Tests, debug/release lint and both APK builds passed.\n\n' "$SOURCE_SHA"
     printf 'APK signed with the configured persistent release key.\n'
+    if [[ -f "docs/release-${VERSION%%-*}.md" ]]; then
+        printf '\n'
+        cat "docs/release-${VERSION%%-*}.md"
+    fi
     printf '\nDownload the APK below. Its SHA-256 checksum and public signing certificate fingerprints are provided alongside it.\n'
     printf '\nIn-app updates use `update.json` and require the same signing certificate as the installed app.\n'
     printf '\nActive directions support Android 16 Live Updates, with a standard ongoing notification on older versions. Now Bar placement remains controlled by Samsung firmware and user settings. Scheduled transit times are not live vehicle arrivals.\n'

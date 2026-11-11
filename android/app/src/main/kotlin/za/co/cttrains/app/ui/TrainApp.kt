@@ -58,11 +58,20 @@ private val FetchTime = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLI
 
 @Composable
 fun TrainApp(state: TrainState, model: TrainViewModel) {
+    val developer: za.co.cttrains.app.developer.DeveloperModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val dev by developer.state.collectAsStateWithLifecycle()
+    val updates: za.co.cttrains.app.updates.UpdatesModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val features: za.co.cttrains.app.FeatureViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val feature by features.state.collectAsStateWithLifecycle()
     val smart: za.co.cttrains.app.SmartCardsModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val smartState by smart.state.collectAsStateWithLifecycle()
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { updates.checkAtLaunch();onPauseOrDispose {} }
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while(true) { developer.refresh();kotlinx.coroutines.delay(60_000) }
+        }
+    }
     var smartNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
@@ -97,6 +106,11 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
     var toolsOpen by remember { mutableStateOf(false) }
     val backStack by navigation.currentBackStackEntryAsState()
     val screen = backStack?.destination?.route ?: "map"
+    val policyActive=dev.policy.applies(BuildConfig.VERSION_CODE.toLong(),System.currentTimeMillis()/1000)
+    val maintenance=BuildConfig.ALLOW_REMOTE_MAINTENANCE && policyActive && dev.policy.maintenance
+    val screenKey=when { screen.startsWith("map/")->"map";screen.startsWith("directions/")->"directions";else->screen }
+    val disabledScreen=dev.verified && screenKey in dev.disabled
+    LaunchedEffect(maintenance) { if(maintenance) { model.stopRideDetection();features.stopLive();features.stopNearby();za.co.cttrains.app.directions.DirectionsService.stop(model.getApplication());za.co.cttrains.app.scheduling.WalkLearningService.stop(model.getApplication()) } }
     val fullMap = screen == "map/fullscreen" || screen=="directions/map"
     val snackbar = remember { SnackbarHostState() }
     fun go(route: String) { navigation.navigate(route) { popUpTo(navigation.graph.startDestinationId) { saveState = true }; launchSingleTop = true; restoreState = true } }
@@ -125,14 +139,24 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
     ) { padding ->
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
             val wide = maxWidth >= 840.dp
-            NavHost(navigation, startDestination = "map", modifier = Modifier.fillMaxSize(), enterTransition={ EnterTransition.None },exitTransition={ ExitTransition.None },popEnterTransition={ EnterTransition.None },popExitTransition={ ExitTransition.None }) {
+            if((maintenance && screenKey !in setOf("settings","app-updates","developer","places")) || disabledScreen) {
+                Column(Modifier.fillMaxWidth().padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                    Text(if(maintenance) "Temporary maintenance" else "Screen disabled for testing",style=MaterialTheme.typography.headlineSmall)
+                    Text(if(maintenance) dev.policy.message else "You disabled this screen in Developer options. Lock developer options to reset screen switches.")
+                    if(maintenance) Text("Expires ${java.time.Instant.ofEpochSecond(dev.policy.expires)}. Your saved data is available in Settings.")
+                    Button(onClick={go("settings")}) {Text("Settings & backup")}
+                    OutlinedButton(onClick={go("app-updates")}) {Text("Review app update")}
+                    if(dev.verified) TextButton(onClick={go("developer")}) {Text("Developer options")}
+                }
+            } else NavHost(navigation, startDestination = "map", modifier = Modifier.fillMaxSize(), enterTransition={ EnterTransition.None },exitTransition={ ExitTransition.None },popEnterTransition={ EnterTransition.None },popExitTransition={ ExitTransition.None }) {
                 composable("map") { TransitMapScreen(state, model, onExpand = { navigation.navigate("map/fullscreen") { launchSingleTop = true } }, onPlan = { go("plan") },feature=feature,features=features,onBuses={ go("buses") },smart=smart) }
                 composable("map/fullscreen") { TransitMapScreen(state, model, fullScreen = true, onClose = { navigation.popBackStack() }, onPlan = { go("plan") },feature=feature,features=features,onBuses={ go("buses") }) }
                 composable("plan") { JourneyPlanner(state,model,feature,features,{ go("settings") },smart) }
                 composable("saved") { SavedScreen(state, model,feature,features,{ go("places") }) { go("plan") } }
                 composable("places") { SavedAddressesScreen(state,model,feature,features) { go("plan") } }
                 composable("upcoming") { UpcomingScreen(state, model) }
-                composable("settings") { AboutScreen(state, model,feature,features,{ go("buses") },{ go("trips") },{ go("community") },{ go("whatsapp") },{ go("directions") },{ go("app-updates") },{ go("places") }) }
+                composable("developer") { za.co.cttrains.app.developer.DeveloperScreen(developer,feature,features,model) { go("settings") } }
+                composable("settings") { AboutScreen(state, model,feature,features,{ go("buses") },{ go("trips") },{ go("community") },{ go("whatsapp") },{ go("directions") },{ go("app-updates") },{ go("places") },{ go("developer") },developer::lock) }
                 composable("budget") { BudgetScreen(state, model) { go("plan") } }
                 composable("alerts") { AlertsScreen(state, model) }
                 composable("buses") { BusScreen(feature,features,{ go("trips") }) { service,route -> model.selectJourney(null);features.showBusMap(service,route);go("map") } }
@@ -152,10 +176,11 @@ fun TrainApp(state: TrainState, model: TrainViewModel) {
                 composable("community") { CommunityScreen(state,feature,features,model) { go("settings") } }
                 composable("directions") { DirectionsScreen({ go("plan") },{ navigation.navigate("directions/map") { launchSingleTop=true } }) }
                 composable("directions/map") { DirectionsMapScreen(state,model,feature) { navigation.popBackStack() } }
-                composable("app-updates") { za.co.cttrains.app.updates.UpdatesScreen() }
+                composable("app-updates") { za.co.cttrains.app.updates.UpdatesScreen(updates) }
             }
         }
     }
+    za.co.cttrains.app.updates.LaunchUpdateNotices(updates,dev.policy) { go("app-updates") }
     if (toolsOpen) TransitToolsSheet({ toolsOpen = false }, { toolsOpen = false; go("alerts") }, { toolsOpen = false; go("budget") },{ toolsOpen=false;go("buses") },{ toolsOpen=false;go("trips") },{ toolsOpen=false;go("community") },{ toolsOpen=false;go("whatsapp") },{ toolsOpen=false;go("directions") },{ toolsOpen=false;go("app-updates") })
     ImportedFiles(feature,features)
     PendingRidePrompt(state, model)
@@ -439,8 +464,10 @@ private fun SavedScreen(state: TrainState, model: TrainViewModel,feature: za.co.
 }
 
 @Composable
-private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.cttrains.app.FeatureState,features: za.co.cttrains.app.FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit,onWhatsApp: ()->Unit,onDirections: ()->Unit,onUpdates: ()->Unit,onPlaces: ()->Unit={}) {
+private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.cttrains.app.FeatureState,features: za.co.cttrains.app.FeatureViewModel,onBuses: ()->Unit,onTrips: ()->Unit,onCommunity: ()->Unit,onWhatsApp: ()->Unit,onDirections: ()->Unit,onUpdates: ()->Unit,onPlaces: ()->Unit={},onDeveloper: ()->Unit={},onDeveloperLock: ()->Unit={}) {
     val uri = LocalUriHandler.current
+    var developerTaps by remember { mutableIntStateOf(0) }
+    var lastDeveloperTap by remember { mutableLongStateOf(0) }
     var confirmClear by remember { mutableStateOf(false) }
     var confirmProfile by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp).widthIn(max = 700.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -471,7 +498,7 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.
                 Text("Timetables & privacy", style = MaterialTheme.typography.titleLarge)
                 Text("Your last 12 searches are stored on this device for up to 14 days. If a refresh fails, the same route, date and departure time can use its saved result. Saved routes stay until you remove them.")
                 Text("An anonymous UUID identifies this installation locally. Personal records and optional account tokens are encrypted with Android Keystore in Room. Public station positions and scheduling timestamps remain readable inside the private database. No analytics or device identifiers. Google profile and hosted Matrix accounts are optional and independent.", style = MaterialTheme.typography.bodyMedium)
-                Text("Searches send the route, date, time and IP to their timetable source. Online maps reveal the viewed area and IP to OpenFreeMap or City of Cape Town imagery hosting. Explicit place searches go to OpenStreetMap Nominatim or Photon. Offline map mode disables map tile requests; timetable and hosted communication checks have their own controls.", style = MaterialTheme.typography.bodyMedium)
+                Text("Opening the app checks GitHub for app updates (at most once per 15 minutes) and the owner-operated notice service while foregrounded. Those providers receive your IP; no trips, profile or location are included. Developer access sends only the code or session credential you choose to use. Searches send the route, date, time and IP to their timetable source. Online maps reveal the viewed area and IP to OpenFreeMap or City of Cape Town imagery hosting. Explicit place searches go to OpenStreetMap Nominatim or Photon. Offline map mode disables map tile requests; timetable and hosted communication checks have their own controls.", style = MaterialTheme.typography.bodyMedium)
                 Text("Locate me samples Android location while the app is open. Active directions run locally with a visible notification for up to four hours; no GPS history is saved or uploaded. Separate, optional live sharing runs for at most two hours and sends encrypted updates to your private Matrix room. Public reports go to the selected community room. Friend positions disappear from the map after five minutes without a fresh update.", style = MaterialTheme.typography.bodyMedium)
                 Text("Calendar handoff opens your calendar app for review. The app cannot read your calendar. Optional Health Connect step totals are read only after separate permission; no health data is uploaded. Trip files reveal the itinerary you review before sharing. Encrypted profile backups are stored only at the file location you choose.", style = MaterialTheme.typography.bodyMedium)
                 Text("Downloaded maps and map-area bounds are public cache data and are not encrypted. Manage and delete them from the Map download button.", style = MaterialTheme.typography.bodyMedium)
@@ -487,10 +514,13 @@ private fun AboutScreen(state: TrainState, model: TrainViewModel,feature: za.co.
         OutlinedButton(onClick = model::openAlerts) { Text("Updates & delays") }
         OutlinedButton(onClick = { uri.openUri("https://cttrains.co.za/train-form.php") }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.AutoMirrored.Outlined.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Visit CT Trains") }
         TextButton(onClick = { uri.openUri("https://github.com/Xhanti-mbasa") }) { Text("Built by Xhanti-mbasa · GitHub",style=MaterialTheme.typography.labelMedium) }
-        Text("CT Trains for Android · ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("CT Trains for Android · ${BuildConfig.VERSION_NAME}", modifier=Modifier.testTag("developer-build-label").clickable(role=Role.Button) {
+            val now=android.os.SystemClock.elapsedRealtime();developerTaps=if(now-lastDeveloperTap>2000) 1 else developerTaps+1;lastDeveloperTap=now
+            if(developerTaps>=7) {developerTaps=0;onDeveloper()}
+        }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("Clear saved timetables?") }, text = { Text("You’ll need an internet connection for your next search. Your favourite routes will stay saved.") }, confirmButton = { TextButton(onClick = { model.clearCache(); confirmClear = false }) { Text("Clear") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } })
-    if (confirmProfile) AlertDialog(onDismissRequest = { confirmProfile = false }, title = { Text("Delete your local profile?") }, text = { Text("Favourites, corrections, journeys, reminders, personal spots/photos, trip files, account sessions and saved timetables will be removed. Public offline maps are managed separately. External backup files and calendar events remain at their chosen locations.") }, confirmButton = { TextButton(onClick = { features.reset();model.clearPersonalData(); confirmProfile = false }) { Text("Delete local data") } }, dismissButton = { TextButton(onClick = { confirmProfile = false }) { Text("Cancel") } })
+    if (confirmProfile) AlertDialog(onDismissRequest = { confirmProfile = false }, title = { Text("Delete your local profile?") }, text = { Text("Favourites, corrections, journeys, reminders, personal spots/photos, trip files, account sessions and saved timetables will be removed. Public offline maps are managed separately. External backup files and calendar events remain at their chosen locations.") }, confirmButton = { TextButton(onClick = { onDeveloperLock();features.reset();model.clearPersonalData(); confirmProfile = false }) { Text("Delete local data") } }, dismissButton = { TextButton(onClick = { confirmProfile = false }) { Text("Cancel") } })
 }
 
 @Composable
