@@ -78,6 +78,7 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
     val planner: za.co.cttrains.app.JourneyPlannerModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val directions: za.co.cttrains.app.directions.DirectionsModel = androidx.lifecycle.viewmodel.compose.viewModel()
     var trip by remember { mutableStateOf<za.co.cttrains.app.PlannerOption?>(null) }
+    val plannerState by planner.state.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     fun locationAllowed() = listOf(android.Manifest.permission.ACCESS_COARSE_LOCATION, android.Manifest.permission.ACCESS_FINE_LOCATION)
         .any { androidx.core.content.ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
@@ -210,7 +211,7 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
                 composable("trip") {
                     val option = trip
                     if (option == null) LaunchedEffect(Unit) { navigation.popBackStack() }
-                    else LabTripScreen(option, planner.state.value.request?.from, planner.state.value.request?.to, state, model, feature, features, directions,
+                    else LabTripScreen(option, plannerState.request?.from, plannerState.request?.to, state, model, feature, features, directions,
                         onMap = {
                             if (option.rail != null) { features.showTrainMap(); features.usePlannedWalks(option.walks)
                                 model.presentPlannedJourney(option.query!!, option.rail, option.fetchedAt, option.cached, null, option.sourceId, false) }
