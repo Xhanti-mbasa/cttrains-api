@@ -33,6 +33,9 @@ class LabUiTest {
         ParcelFileDescriptor.AutoCloseInputStream(InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)).use { it.readBytes() }
     }
 
+    /** Lazy lists only compose visible rows, so scroll the list to the row rather than the row into view. */
+    private fun scrollTo(list: String, tag: String) = app.onNodeWithTag(list).performScrollToNode(hasTestTag(tag))
+
     @Test fun threePlacesReplaceTheFiveTabs() {
         app.onNodeWithTag("lab-tab-now").assertIsDisplayed()
         app.onNodeWithTag("lab-tab-plan").assertIsDisplayed()
@@ -41,7 +44,8 @@ class LabUiTest {
         app.onNodeWithTag("lab-now").assertIsDisplayed()
         app.onNodeWithContentDescription("Open map").assertIsDisplayed()
         app.onNodeWithTag("lab-alerts").assertIsDisplayed()
-        app.onNodeWithTag("lab-get-home").performScrollTo().assertIsDisplayed()
+        scrollTo("lab-now", "lab-get-home")
+        app.onNodeWithTag("lab-get-home").assertIsDisplayed()
         UiScreenshots.save("lab-now")
         app.onNodeWithTag("lab-tab-mine").performClick()
         app.onNodeWithTag("lab-mine").assertIsDisplayed()
@@ -55,18 +59,21 @@ class LabUiTest {
         app.onNodeWithTag("lab-tab-mine").performClick()
         val routes = listOf("upcoming", "trips", "budget", "buses", "map", "alerts", "directions", "widgets", "community", "whatsapp", "settings", "app-updates")
         for (route in routes) {
-            app.onNodeWithTag("lab-mine-$route").performScrollTo().performClick()
+            scrollTo("lab-mine", "lab-mine-$route")
+            app.onNodeWithTag("lab-mine-$route").performClick()
             app.waitForIdle()
             if (route == "map") app.onNodeWithTag("lab-tab-now").performClick()
             else app.onNodeWithTag("lab-back").performClick()
             app.onNodeWithTag("lab-tab-mine").performClick()
         }
-        app.onNodeWithTag("developer-build-label").performScrollTo().assertIsDisplayed()
+        scrollTo("lab-mine", "developer-build-label")
+        app.onNodeWithTag("developer-build-label").assertIsDisplayed()
     }
 
     @Test fun privacyControlsAndBackupStayOnOneFlatPage() {
         app.onNodeWithTag("lab-tab-mine").performClick()
-        app.onNodeWithTag("lab-mine-settings").performScrollTo().performClick()
+        scrollTo("lab-mine", "lab-mine-settings")
+        app.onNodeWithTag("lab-mine-settings").performClick()
         app.onNodeWithTag("lab-settings").assertIsDisplayed()
         app.onNodeWithText("Forget sampled location").performScrollTo().assertIsDisplayed()
         app.onNodeWithText("Clear cached timetables").performScrollTo().assertIsDisplayed()
@@ -81,7 +88,8 @@ class LabUiTest {
         val train = ViewModelProvider(app.activity)[TrainViewModel::class.java]
         app.runOnUiThread { train.forgetLocation() }
         app.waitForIdle()
-        app.onNodeWithTag("lab-locate").performScrollTo().assertIsDisplayed()
+        scrollTo("lab-now", "lab-locate")
+        app.onNodeWithTag("lab-locate").assertIsDisplayed()
         org.junit.Assert.assertNull(train.state.value.currentPosition)
         UiScreenshots.save("lab-now-no-location")
     }
@@ -97,7 +105,8 @@ class LabUiTest {
             app.activityRule.scenario.recreate()
             app.waitForIdle()
             app.onNodeWithTag("lab-tab-now").assertIsDisplayed()
-            app.onNodeWithTag("lab-get-home").performScrollTo().assertIsDisplayed()
+            scrollTo("lab-now", "lab-get-home")
+            app.onNodeWithTag("lab-get-home").assertIsDisplayed()
             UiScreenshots.save("lab-now-font-200")
         } finally {
             shell("settings put system font_scale 1.0")
