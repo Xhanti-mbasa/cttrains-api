@@ -221,21 +221,21 @@ private fun PlaceField(label: String, value: String?, hint: String, modifier: Mo
 
 /** One trip. The whole card opens it; nothing on it needs a precise tap. */
 @Composable
-private fun OptionCard(option: PlannerOption, from: WalkEndpoint?, fastest: Boolean, onOpen: () -> Unit) {
+internal fun OptionCard(option: PlannerOption, from: WalkEndpoint?, fastest: Boolean, onOpen: () -> Unit) {
     val c = LocalLab.current
     val dep = LabTiming.clock(option.estimate.departureAt)
     val arrival = option.estimate.arrivalAt?.let { LabTiming.clock(it) }
         ?: option.rail?.arrival ?: option.bus?.arrival?.time
     val leave = option.leaveAt(from)
     LabCard(Modifier.clickableRow("Open trip leaving $dep") { onOpen() }.testTag("lab-option"), emphasised = fastest) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(dep, style = LabType.timeMedium, color = c.ink, softWrap = false)
-                arrival?.let { Text("→ ${LabTiming.arrival(it)}", style = LabType.small, color = c.muted, modifier = Modifier.padding(bottom = 4.dp)) }
-            }
-            Text(listOfNotNull(option.estimate.totalMinutes?.let { LabTiming.duration(it) } ?: "${LabTiming.duration(option.rideMinutes)} on board",
-                option.rail?.let { LabTiming.changes(it.transfers) }).joinToString(" · "), style = LabType.bodyStrong, color = c.ink)
+        // Each timing item gets the card's width. A trailing unweighted duration used to
+        // consume the Row first, squeezing arrival digits into a tall, overlapping column.
+        Text(dep, modifier = Modifier.fillMaxWidth(), style = LabType.timeMedium, color = c.ink, softWrap = false)
+        arrival?.let {
+            Text("Arrive ${LabTiming.arrival(it)}", modifier = Modifier.fillMaxWidth(), style = LabType.small, color = c.muted)
         }
+        Text(listOfNotNull(option.estimate.totalMinutes?.let { LabTiming.duration(it) } ?: "${LabTiming.duration(option.rideMinutes)} on board",
+            option.rail?.let { LabTiming.changes(it.transfers) }).joinToString(" · "), modifier = Modifier.fillMaxWidth(), style = LabType.bodyStrong, color = c.ink)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             option.accessMinutes(from)?.takeIf { it > 0 }?.let { ModeBadge(LabMode.WALK, "$it min") }
             val rail = option.rail
