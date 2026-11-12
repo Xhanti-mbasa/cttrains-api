@@ -247,9 +247,9 @@ internal fun OptionCard(option: PlannerOption, from: WalkEndpoint?, fastest: Boo
             } else option.bus?.let { ModeBadge(option.service.labMode(), it.timetable.route.title.take(28)) }
         }
         Text("${option.board} → ${option.alight}", style = LabType.small, color = c.muted)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(leave?.let { "Leave by ${LabTiming.clock(it)}" } ?: "Turn on walking times for a leave time", style = LabType.small,
-                color = if (leave != null) c.signal else c.muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        Text(leave?.let { "Leave by ${LabTiming.clock(it)}" } ?: "Turn on walking times for a leave time", style = LabType.small,
+            color = if (leave != null) c.signal else c.muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth())
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
             Text(option.fares.firstOrNull()?.let { money(it.cents) } ?: "Fare: confirm", style = LabType.small, color = c.ink)
             Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = c.muted)
         }

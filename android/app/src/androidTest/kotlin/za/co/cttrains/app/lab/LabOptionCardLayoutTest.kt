@@ -76,6 +76,9 @@ class LabOptionCardLayoutTest {
                 assertFalse("$time must not clip or overflow", layout.hasVisualOverflow)
             }
             assertFalse("Duration must remain fully laid out", textLayout(duration).hasVisualOverflow)
+            val walking = textLayout("Turn on walking times for a leave time")
+            assertFalse("Walking guidance must not clip", walking.hasVisualOverflow)
+            assertTrue("Fare must not squeeze walking guidance into a tall column", walking.lineCount <= 3)
             val departure = app.onNodeWithText("14:03", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             val arrival = app.onNodeWithText("Arrive ~14:58", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             val summary = app.onNodeWithText(duration, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
