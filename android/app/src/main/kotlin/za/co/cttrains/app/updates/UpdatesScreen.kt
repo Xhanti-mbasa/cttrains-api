@@ -39,6 +39,7 @@ import za.co.cttrains.app.BuildConfig
             Text("Current · ${BuildConfig.VERSION_NAME}",style=MaterialTheme.typography.titleLarge)
             Text("Your installed app stays available while the next version downloads. Android replaces it only after verification and your installation confirmation.")
             Text("Source · ${s.settings.repository}",style=MaterialTheme.typography.labelSmall)
+            Text(if(BuildConfig.EXPERIMENTAL_EDITION) "Channel · CT Trains Lab" else "Channel · CT Trains",style=MaterialTheme.typography.labelSmall)
             Button(onClick=m::check,enabled=!s.checking && !s.downloading,modifier=Modifier.testTag("check-app-updates")) { Text(if(s.checking) "Checking GitHub…" else "Check for updates") }
             s.message?.let { Text(it,style=MaterialTheme.typography.bodySmall) };s.error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
             if(s.checking) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -68,8 +69,9 @@ import za.co.cttrains.app.BuildConfig
         if(setup) item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(repo,{ repo=it.take(150) },label={ Text("GitHub owner/repository") },singleLine=true,modifier=Modifier.fillMaxWidth())
             OutlinedTextField(token,{ token=it.take(300) },label={ Text(if(s.settings.token.isEmpty()) "Read-only token · private repos only" else "Token saved · enter to replace") },singleLine=true,visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
-            Text("Public releases need no token. Private releases require Contents: read access to this repository. The token stays encrypted on this device and is excluded from backups.",style=MaterialTheme.typography.bodySmall)
-            Row { Checkbox(beta,{ beta=it });Text("Include beta releases",Modifier.weight(1f).padding(top=12.dp)) }
+            Text("Public releases are checked without a token. Private releases require Contents: read access to this repository. The token stays encrypted on this device and is excluded from backups.",style=MaterialTheme.typography.bodySmall)
+            Row { Checkbox(beta,{ beta=it });Text("Include beta releases for this edition",Modifier.weight(1f).padding(top=12.dp)) }
+            if(BuildConfig.EXPERIMENTAL_EDITION) Text("Lab updates are experimental prereleases. Keep beta releases enabled to receive them. Regular CT Trains updates cannot replace Lab.",style=MaterialTheme.typography.bodySmall)
             Row { Checkbox(auto,{ auto=it });Text("Check daily when connected",Modifier.weight(1f).padding(top=12.dp)) }
             Button(onClick={ m.save(repo,token.takeIf { it.isNotBlank() },beta,auto);token="";if(auto) askNotifications(false) },enabled=!s.downloading) { Text("Save update settings") }
             if(s.settings.token.isNotEmpty()) TextButton(onClick={ m.save(repo,"",beta,auto);token="" }) { Text("Remove saved token") }

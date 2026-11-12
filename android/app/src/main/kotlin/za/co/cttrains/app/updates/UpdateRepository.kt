@@ -28,28 +28,13 @@ class UpdateRepository(private val c: Context) {
     }
     @Suppress("DEPRECATION") fun versionCode()=installed().let { if(Build.VERSION.SDK_INT>=28) it.longVersionCode else it.versionCode.toLong() }
     private fun asset(repo: String,id: Long)="https://api.github.com/repos/${AppUpdates.repository(repo)}/releases/assets/$id"
-    private suspend fun request(url: String,token: String,binary: Boolean): Response {
-        var target=url.toHttpUrl()
-        repeat(6) { hop ->
-            currentCoroutineContext().ensureActive()
-            require(target.isHttps && (target.host=="api.github.com" || target.host=="github.com" || target.host=="release-assets.githubusercontent.com" || target.host=="objects.githubusercontent.com")) { "Untrusted update download address." }
-            val b=Request.Builder().url(target).header("User-Agent","CT-Trains-Android-updater").header("Accept",if(binary) "application/octet-stream" else "application/vnd.github+json")
-            // Credentials go only to the initial GitHub API request, never to a redirect host.
-            if(hop==0 && target.host=="api.github.com" && token.isNotEmpty()) b.header("Authorization","Bearer $token")
-            val call=http.newCall(b.build())
-            val cancellation=currentCoroutineContext()[Job]?.invokeOnCompletion { if(it!=null) call.cancel() }
-            val response=try { call.execute() } finally { cancellation?.dispose() }
-            if(response.code in listOf(301,302,303,307,308)) {
-                val location=response.header("Location");response.close()
-                target=location?.let { target.resolve(it) } ?: error("GitHub supplied an invalid download redirect.")
-            } else {
-                if(response.code !in 200..299) { val code=response.code;response.close();error(when(code) { 401,403->"GitHub access was denied. Check the read-only token, its expiry and repository access.";404->"No accessible releases. This private repository needs a read-only token, and a release must be published.";else->"GitHub could not be reached ($code). Retry later." }) }
-                return response
-            }
-        }
-        error("Too many download redirects.")
-    }
-    private suspend fun text(url: String,token: String,binary: Boolean,limit: Int): String = request(url,token,binary).use { r ->
+    private val downloads=GitHubUpdateClient(http)
+    private fun publicAsset(repo: String,tag: String,name: String)=
+        "https://github.com".toHttpUrl().newBuilder().addPathSegments(AppUpdates.repository(repo))
+            .addPathSegment("releases").addPathSegment("download").addPathSegment(tag).addPathSegment(name).build().toString()
+    private suspend fun request(url: String,token: String,binary: Boolean,privateApiUrl: String=url)=
+        downloads.request(url,token,binary,privateApiUrl)
+    private suspend fun text(url: String,token: String,binary: Boolean,limit: Int,privateApiUrl: String=url): String = request(url,token,binary,privateApiUrl).use { r ->
         val body=r.body ?: error("Empty GitHub response.")
         if(body.contentLength()>limit) error("Update metadata is too large.")
         val bytes=body.byteStream().use { input->java.io.ByteArrayOutputStream().use { output->
@@ -60,12 +45,12 @@ class UpdateRepository(private val c: Context) {
     suspend fun check(targetTag: String?=null): AppUpdate? = withContext(Dispatchers.IO) {
         za.co.cttrains.app.developer.DeveloperLog.event(c,"update-check")
         val cfg=store.settings();val repo=AppUpdates.repository(cfg.repository)
-        val rows=AppUpdates.releases(text("https://api.github.com/repos/$repo/releases?per_page=30",cfg.token,false,2*1024*1024),cfg.beta)
+        val rows=AppUpdates.releases(text("https://api.github.com/repos/$repo/releases?per_page=30",cfg.token,false,2*1024*1024),cfg.beta,c.packageName)
         var incompatible: String?=null
         var newest: AppUpdate?=null
         for(release in rows.filter { targetTag==null || it.tag==targetTag }) {
             val descriptor=release.assets.singleOrNull { it.name=="update.json" } ?: continue
-            val manifest=AppUpdates.manifest(text(asset(repo,descriptor.id),cfg.token,true,64*1024))
+            val manifest=AppUpdates.manifest(text(publicAsset(repo,release.tag,descriptor.name),cfg.token,true,64*1024,asset(repo,descriptor.id)))
             try {
                 AppUpdates.candidate(repo,release,manifest,versionCode(),c.packageName,certificate(),Build.VERSION.SDK_INT)?.let {
                     if(it.manifest.versionCode>(newest?.manifest?.versionCode ?: 0)) newest=it
@@ -82,7 +67,7 @@ class UpdateRepository(private val c: Context) {
         require(StatFs(directory.absolutePath).availableBytes>m.sizeBytes+20*1024*1024) { "Free space is needed to stage this update." }
         val part=File(directory,"next.part")
         try {
-            request(asset(update.repo,update.asset.id),store.settings().token,true).use { response ->
+            request(publicAsset(update.repo,update.release.tag,update.asset.name),store.settings().token,true,asset(update.repo,update.asset.id)).use { response ->
                 val body=response.body ?: error("Empty APK download.")
                 if(body.contentLength()>0) require(body.contentLength()==m.sizeBytes) { "Unexpected APK size." }
                 val digest=MessageDigest.getInstance("SHA-256");var total=0L;var last=0L
