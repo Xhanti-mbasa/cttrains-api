@@ -40,6 +40,7 @@ import za.co.cttrains.app.ui.TravelDatePicker
 import za.co.cttrains.app.ui.money
 import za.co.cttrains.app.ui.JourneyStationField
 import za.co.cttrains.app.ui.JourneyStationPicker
+import za.co.cttrains.app.ui.SaveJourneyPlace
 import za.co.cttrains.core.*
 
 /** Lab names for the three services, so chips read as modes rather than operator brands. */
@@ -71,6 +72,7 @@ fun LabPlanScreen(
     var datePicker by remember { mutableStateOf(false) }
     var timePicker by remember { mutableStateOf(false) }
     var stationPicker by remember { mutableStateOf<Boolean?>(null) }
+    var savePlace by remember { mutableStateOf<Boolean?>(null) }
     var timeMode by rememberSaveable { mutableStateOf("depart") }
     val allDay = timeMode == "all"
     var visibleCount by remember(result.request) { mutableIntStateOf(24) }
@@ -109,7 +111,13 @@ fun LabPlanScreen(
         }
     }
     val canSearch = from != null && to != null && from != to && services.isNotEmpty() && !result.loading
-    fun search() { if (from != null && to != null) planner.find(PlannerRequest(from, to, state.date, if(allDay) "00:00" else state.time, services, walking, 5000, board, arrive, allDay), state) }
+    fun search() {
+        if (from != null && to != null) {
+            val time = when { allDay -> "00:00"; timeMode == "now" -> java.time.LocalTime.now(CapeTownZone).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")); else -> state.time }
+            if (timeMode == "now") model.chooseTime(time)
+            planner.find(PlannerRequest(from, to, state.date, time, services, walking, 5000, board, arrive, allDay), model.state.value)
+        }
+    }
     val today = LocalDate.now(CapeTownZone).toString()
 
     LazyColumn(Modifier.fillMaxSize().background(c.ground).testTag("lab-plan"), contentPadding = PaddingValues(16.dp),
@@ -132,7 +140,7 @@ fun LabPlanScreen(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(true, { datePicker = true }, label = { Text(if (state.date == today) "Today" else LabTiming.day(state.date)) },
                         leadingIcon = { Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(18.dp)) }, modifier = Modifier.heightIn(min = LabTouch).testTag("lab-plan-date"))
-                    FilterChip(timeMode == "depart", { timeMode = "depart"; timePicker = true }, label = { Text("Depart after ${state.time}") },
+                    FilterChip(timeMode == "depart", { timePicker = true }, label = { Text("Depart after ${state.time}") },
                         leadingIcon = { Icon(Icons.Outlined.Schedule, null, Modifier.size(18.dp)) }, modifier = Modifier.heightIn(min = LabTouch).testTag("lab-time-depart"))
                     FilterChip(timeMode == "now", {
                         timeMode = "now"
@@ -155,6 +163,10 @@ fun LabPlanScreen(
                     JourneyStationField(true, board, from, state, { stationPicker = true }, { features.place(null, true) })
                 if (TransportService.PRASA in services && feature.destination != null)
                     JourneyStationField(false, arrive, to, state, { stationPicker = false }, { features.place(null, false) })
+                if (feature.access != null && !feature.access.id.startsWith("spot:"))
+                    TextButton(onClick = { savePlace = true }) { Text("Save start as a place") }
+                if (feature.destination != null && !feature.destination.id.startsWith("spot:"))
+                    TextButton(onClick = { savePlace = false }) { Text("Save destination as a place") }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ModeOrder.forEach { service ->
                         val on = feature.extras.beta.enabled(service) || service == TransportService.PRASA
@@ -203,7 +215,7 @@ fun LabPlanScreen(
         if (allDay) {
             val chronological = all.sortedWith(compareBy<PlannerOption> { it.estimate.departureAt }.thenBy { it.id })
             items(chronological.take(visibleCount), key = { it.id }) { option ->
-                OptionCard(option, request?.from, false, past = option.estimate.departureAt <= now) { onOpenTrip(option) }
+                OptionCard(option, request?.from, false, past = option.estimate.departureAt <= now, allDay = true) { onOpenTrip(option) }
             }
             if (chronological.size > visibleCount) item {
                 LabSecondaryButton("Show more departures (${chronological.size - visibleCount} remaining)", { visibleCount += 24 }, Modifier.fillMaxWidth().testTag("lab-more-departures"))
@@ -237,7 +249,10 @@ fun LabPlanScreen(
                 model.edit { if (start) it.copy(from = endpoint.label) else it.copy(to = endpoint.label) }
             } else {
                 features.place(endpoint, start)
-                if (endpoint.id.startsWith("spot:") && (if(start) features.state.value.boardingStation else features.state.value.arrivalStation) == null) stationPicker = start
+                val chosen = if(start) features.state.value.boardingStation else features.state.value.arrivalStation
+                val suggestion = chosen ?: StationChoices.ranked(endpoint.point, state.stations, state.catalog.stations).firstOrNull()?.name
+                suggestion?.let { name -> model.edit { if(start) it.copy(from = name) else it.copy(to = name) } }
+                if (TransportService.PRASA in services && endpoint.id.startsWith("spot:") && chosen == null) stationPicker = start
             }
             picker = null
         }
@@ -246,8 +261,16 @@ fun LabPlanScreen(
         (if(start) from else to)?.let { endpoint ->
             JourneyStationPicker(endpoint, state, feature, start, if(start) board else arrive, { stationPicker = null }) { name, remember ->
                 features.chooseStation(name, start, remember)
-                name?.let { value -> model.edit { if(start) it.copy(from = value) else it.copy(to = value) } }
+                val suggestion = name ?: StationChoices.ranked(endpoint.point, state.stations, state.catalog.stations).firstOrNull()?.name
+                suggestion?.let { value -> model.edit { if(start) it.copy(from = value) else it.copy(to = value) } }
                 stationPicker = null
+            }
+        }
+    }
+    savePlace?.let { start ->
+        (if(start) feature.access else feature.destination)?.let { endpoint ->
+            SaveJourneyPlace(endpoint, feature.busy, { savePlace = null }) { name, tag ->
+                features.saveJourneyPlace(endpoint, start, name, tag); savePlace = null
             }
         }
     }
@@ -285,7 +308,7 @@ private fun PlaceField(label: String, value: String?, hint: String, modifier: Mo
 
 /** One trip. The whole card opens it; nothing on it needs a precise tap. */
 @Composable
-internal fun OptionCard(option: PlannerOption, from: WalkEndpoint?, fastest: Boolean, past: Boolean = false, onOpen: () -> Unit) {
+internal fun OptionCard(option: PlannerOption, from: WalkEndpoint?, fastest: Boolean, past: Boolean = false, allDay: Boolean = false, onOpen: () -> Unit) {
     val c = LocalLab.current
     val dep = LabTiming.clock(option.estimate.departureAt)
     val arrival = option.estimate.arrivalAt?.let { LabTiming.clock(it) }
@@ -298,7 +321,7 @@ internal fun OptionCard(option: PlannerOption, from: WalkEndpoint?, fastest: Boo
         arrival?.let {
             Text("Arrive ${LabTiming.arrival(it)}", modifier = Modifier.fillMaxWidth(), style = LabType.small, color = c.muted)
         }
-        Text(listOfNotNull("${LabTiming.duration(option.rideMinutes)} on board",
+        Text(listOfNotNull(option.estimate.totalMinutes?.takeUnless { allDay }?.let { LabTiming.duration(it) } ?: "${LabTiming.duration(option.rideMinutes)} on board",
             option.rail?.let { LabTiming.changes(it.transfers) }).joinToString(" · "), modifier = Modifier.fillMaxWidth(), style = LabType.bodyStrong, color = c.ink)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             option.accessMinutes(from)?.takeIf { it > 0 }?.let { ModeBadge(LabMode.WALK, "$it min") }
@@ -347,7 +370,11 @@ internal fun LabPlacePicker(state: TrainState, model: TrainViewModel, feature: F
         saved + rail + bus
     }
     val ranked = remember(places, query) {
-        if (query.isBlank()) emptyList() else places.mapNotNull { p -> FuzzyPlaces.score(query, p.label)?.let { p to it + if (p.id.startsWith("spot:")) 60 else 0 } }
+        if (query.isBlank()) emptyList() else places.mapNotNull { p ->
+            val note = feature.extras.spots.firstOrNull { p.id == "spot:${it.id}" }?.note.orEmpty()
+            listOfNotNull(FuzzyPlaces.score(query, p.label), note.takeIf { it.isNotBlank() }?.let { FuzzyPlaces.score(query, it) })
+                .maxOrNull()?.let { p to it + if (p.id.startsWith("spot:")) 60 else 0 }
+        }
             .sortedByDescending { it.second }.distinctBy { it.first.id }.take(30)
     }
     val exact = ranked.any { it.second >= 1000 }

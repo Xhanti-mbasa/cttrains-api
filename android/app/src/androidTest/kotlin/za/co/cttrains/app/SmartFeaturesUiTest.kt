@@ -99,7 +99,7 @@ class SmartFeaturesUiTest {
         app.onNodeWithTag("lab-tab-mine").performClick()
         app.onNodeWithTag("lab-mine").performScrollToNode(hasTestTag("developer-build-label"))
         repeat(7) { app.onNodeWithTag("developer-build-label").performClick() }
-        app.onNodeWithText("Developer options").assertExists()
+        app.onAllNodesWithText("Developer options").assertCountEquals(2)
         app.onNodeWithText("Verify access").assertExists()
         app.onAllNodesWithText("Owner controls").assertCountEquals(0)
         UiScreenshots.save("developer-locked")

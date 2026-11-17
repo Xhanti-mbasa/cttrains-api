@@ -82,12 +82,12 @@ fun LabNowScreen(
             firstUse -> item(key = "first-use") {
                 LabStateCard("First use", "Where do you usually go?",
                     "Set Home and Work once and Now shows your next train and when to leave. Places stay on this phone. " +
-                        "CT Trains Lab is an independent app, not affiliated with Metrorail, PRASA or CT Trains.",
+                        "This is an independent app, not affiliated with Metrorail, PRASA or CT Trains.",
                     "Set Home" to onPlaces, "Just search" to onPlan)
             }
         }
         if (firstUse) item {
-            TextButton(onClick = onSettings, Modifier.heightIn(min = LabTouch)) { Text("Restore a backup from CT Trains", color = c.ink) }
+            TextButton(onClick = onSettings, Modifier.heightIn(min = LabTouch)) { Text("Restore an encrypted backup", color = c.ink) }
         }
         items(smartState.cards.filter { it.id != homeCard?.id }.take(3), key = { "smart-${it.id}" }) { card ->
             SuggestionCard(card, now) { smart.select(card) }

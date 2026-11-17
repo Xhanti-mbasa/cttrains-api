@@ -131,9 +131,7 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            bash android/scripts/check-upgrade.sh
-            bash android/scripts/check-device.sh
+          script: bash android/scripts/check-device.sh
       - name: Upload native test reports
         if: ${{ !cancelled() }}
         continue-on-error: true
@@ -203,13 +201,33 @@ jobs:
           trap 'rm -f -- "$CTTRAINS_KEYSTORE_PATH"' EXIT
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$CTTRAINS_KEYSTORE_PATH"
           unset KEYSTORE_BASE64
-          ./gradlew :app:assembleRelease --no-daemon
+          ./gradlew :app:assembleRelease :app:assembleDebugAndroidTest --no-daemon
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" sign \
+            --ks "$CTTRAINS_KEYSTORE_PATH" --ks-key-alias "$CTTRAINS_KEY_ALIAS" \
+            --ks-pass env:CTTRAINS_KEYSTORE_PASSWORD --key-pass env:CTTRAINS_KEY_PASSWORD \
+            --out app/build/outputs/apk/androidTest/production-upgrade-test.apk \
+            app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
       - name: Verify the release APK
         env:
           VERSION: ${{ steps.metadata.outputs.version }}
           SIGNING_MODE: production
           RELEASE_ASSETS_DIR: ../release-assets
         run: bash scripts/prepare-release.sh
+      - name: Enable production upgrade emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify an actual signed production upgrade and launcher
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash android/scripts/check-signed-upgrade.sh
       - name: Publish directly to GitHub Releases
         working-directory: .
         env:

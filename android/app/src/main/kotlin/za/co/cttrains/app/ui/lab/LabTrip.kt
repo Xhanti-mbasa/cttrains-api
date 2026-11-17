@@ -24,6 +24,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.repeatOnLifecycle
 import za.co.cttrains.app.FeatureState
 import za.co.cttrains.app.FeatureViewModel
 import za.co.cttrains.app.PlannerOption
@@ -46,7 +47,13 @@ fun LabTripScreen(
     feature: FeatureState, features: FeatureViewModel, directions: DirectionsModel, onMap: () -> Unit, onDirections: () -> Unit, onSaved: () -> Unit,
 ) {
     val c = LocalLab.current
-    val now = System.currentTimeMillis()
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(30_000) }
+        }
+    }
     val access = option.accessMinutes(from)
     val leaveAt = option.leaveAt(from)
     val egress = option.walks.lastOrNull { it.to == to }?.minutes

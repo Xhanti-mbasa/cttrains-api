@@ -157,7 +157,7 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun useRoute(route: SavedRoute) { refreshSearchDefaults(); edit { it.copy(from = route.from, to = route.to) } }
 
-    fun refreshSearchDefaults(now: java.time.LocalDateTime = java.time.LocalDateTime.now()) {
+    fun refreshSearchDefaults(now: java.time.LocalDateTime = java.time.LocalDateTime.now(CapeTownZone)) {
         val defaults = SearchDefaults.at(now)
         mutableState.update { current ->
             val date = if (manualDate) current.date else defaults.date

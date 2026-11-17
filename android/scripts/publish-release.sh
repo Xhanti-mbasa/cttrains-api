@@ -25,7 +25,8 @@ version_code=$(jq -r .versionCode "$manifest")
 certificate=$(jq -r .certificateSha256 "$manifest")
 
 prerelease=true
-if [[ "$VERSION" != *-* ]]; then
+# A main build has passed the production checks; its run suffix identifies the exact build.
+if [[ "${GITHUB_REF:-}" == refs/heads/main || "$VERSION" != *-* ]]; then
     prerelease=false
 fi
 notes=$(mktemp)

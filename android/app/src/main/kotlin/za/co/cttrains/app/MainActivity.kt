@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
         if(intent.getBooleanExtra("app_updates",false)) model.openAppUpdates()
         setContent {
             val state = model.state.collectAsStateWithLifecycle().value
-            // The Lab edition (separate package, data and widgets) gets its own UI root; the regular edition is unchanged.
+            // Both editions share the approved design; package, signing and data identities stay separate.
             LabTheme(state.preferences) { LabApp(state, model) }
         }
     }

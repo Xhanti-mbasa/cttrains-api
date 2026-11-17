@@ -56,7 +56,7 @@ class QualityOfLifeUiTest {
         val train=ViewModelProvider(app.activity)[TrainViewModel::class.java]
         app.runOnUiThread { train.edit { it.copy(from="",to="") } }
         app.onNodeWithTag("lab-plan-from").performScrollTo().performClick()
-        app.onNodeWithText("Where are you starting?").assertIsDisplayed()
+        app.onNodeWithTag("lab-place-search").assertIsDisplayed()
         app.onNodeWithTag("lab-place-search").performTextInput("Unibell")
         app.onNode(hasText("Unibell") and hasClickAction() and !hasSetTextAction()).performClick()
         app.openMine("community")

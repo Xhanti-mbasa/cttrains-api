@@ -23,4 +23,14 @@ class SearchDefaultsTest {
     @Test fun earlyMorningRespectsTheSourceMinimumTime() {
         assertEquals(SearchDefaults("2026-11-06", "03:00"), SearchDefaults.at(LocalDateTime.parse("2026-11-06T00:01")))
     }
+    @Test fun deviceTimeZoneDoesNotOfferAlreadyDepartedCapeTownTrainsAsUpcoming() {
+        val previous=java.util.TimeZone.getDefault()
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Pacific/Honolulu"))
+            val before=SearchDefaults.at(LocalDateTime.now(CapeTownZone))
+            val actual=SearchDefaults.at()
+            val after=SearchDefaults.at(LocalDateTime.now(CapeTownZone))
+            assertTrue(actual==before || actual==after)
+        } finally { java.util.TimeZone.setDefault(previous) }
+    }
 }

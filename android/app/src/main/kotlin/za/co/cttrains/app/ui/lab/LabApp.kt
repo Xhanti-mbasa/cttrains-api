@@ -5,6 +5,10 @@ package za.co.cttrains.app.ui.lab
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -133,6 +137,17 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
     val backStack by navigation.currentBackStackEntryAsState()
     val route = backStack?.destination?.route ?: "now"
     val fullMap = route == "map/fullscreen" || route == "directions/map"
+    val policyActive = dev.policy.applies(za.co.cttrains.app.BuildConfig.VERSION_CODE.toLong(), now / 1000)
+    val maintenance = za.co.cttrains.app.BuildConfig.ALLOW_REMOTE_MAINTENANCE && policyActive && dev.policy.maintenance
+    val screenKey = when { route == "now" || route.startsWith("map") -> "map"; route == "mine" -> "saved"; route == "trip" -> "plan"; route.startsWith("directions/") -> "directions"; else -> route }
+    val blocked = (maintenance && screenKey !in setOf("settings", "app-updates", "developer", "places")) || (dev.verified && screenKey in dev.disabled)
+    LaunchedEffect(maintenance) {
+        if (maintenance) {
+            model.stopRideDetection(); features.stopLive(); features.stopNearby()
+            za.co.cttrains.app.directions.DirectionsService.stop(model.getApplication())
+            za.co.cttrains.app.scheduling.WalkLearningService.stop(model.getApplication())
+        }
+    }
     val snackbar = remember { SnackbarHostState() }
     fun go(target: String) {
         navigation.navigate(target) { popUpTo(navigation.graph.startDestinationId) { saveState = true }; launchSingleTop = true; restoreState = true }
@@ -191,7 +206,7 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            NavHost(navigation, startDestination = "now", modifier = Modifier.fillMaxSize(),
+            NavHost(navigation, startDestination = "now", modifier = Modifier.fillMaxSize().then(if(blocked) Modifier.clearAndSetSemantics {} else Modifier),
                 enterTransition = { EnterTransition.None }, exitTransition = { ExitTransition.None },
                 popEnterTransition = { EnterTransition.None }, popExitTransition = { ExitTransition.None }) {
                 composable("now") {
@@ -248,6 +263,16 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
                 composable("directions") { DirectionsScreen({ go("plan") }, { push("directions/map") }) }
                 composable("directions/map") { DirectionsMapScreen(state, model, feature) { navigation.popBackStack() } }
                 composable("app-updates") { za.co.cttrains.app.updates.UpdatesScreen(updates) }
+            }
+            if (blocked) Surface(onClick = {}, modifier = Modifier.fillMaxSize(), color = c.ground) {
+              Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if(maintenance) "Temporary maintenance" else "Screen disabled for testing", style = LabType.route, color = c.ink)
+                Text(if(maintenance) dev.policy.message else "You disabled this screen in Developer options. Lock developer options to reset screen switches.", color = c.ink)
+                if(maintenance) Text("Expires ${java.time.Instant.ofEpochSecond(dev.policy.expires)}. Your saved data is available in Settings.", color = c.muted)
+                Button(onClick = { push("settings") }) { Text("Settings & backup") }
+                OutlinedButton(onClick = { push("app-updates") }) { Text("Review app update") }
+                if(dev.verified) TextButton(onClick = { push("developer") }) { Text("Developer options") }
+              }
             }
         }
     }

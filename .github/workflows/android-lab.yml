@@ -4,7 +4,7 @@ name: CT Trains Lab (experimental edition)
 # and this workflow has no publish job. Lab APKs here are debug builds for review only.
 on:
   push:
-    branches: ["lab/redesign"]
+    branches: ["lab/**", "!lab/production-promotion"]
     paths: ["android/**", ".github/workflows/android-lab.yml"]
   workflow_dispatch:
 
