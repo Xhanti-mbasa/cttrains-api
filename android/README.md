@@ -2,6 +2,12 @@
 
 Native **Kotlin, Jetpack Compose and Google Material 3** transit planner. The app incorporates the first stage of the [smart transit proposal](docs/SMART_TRANSIT_VISION.md), with the [architecture and remaining stages](docs/TRANSIT_ARCHITECTURE.md) documented explicitly.
 
+## Navigation and Penelope in 1.15.0
+
+The owner-approved Lab design is now the default production UI: **Now · Plan · Mine**. Open maps from Now, and find saved trips, places, widgets, privacy, backups and updates in Mine. Production keeps its package, signing certificate and local data; the optional Lab installation remains separate. To move Lab data into production, export an encrypted backup in Lab and restore it in CT Trains.
+
+Plan offers **Now**, **Depart after** and **Any time · All day**. Penelope's all-day mode preserves the selected route/date/modes, orders the returned departures chronologically and pages them locally. Past services are labelled for reference. The published source's response and supported dates limit coverage; this is not a complete downloaded network timetable. See [release notes and rollback](docs/release-1.15.0.md).
+
 ## Optional beta features in 1.4.0
 
 Independent Golden Arrow and MyCiTi switches now add operator routes/stops, published day timetables, product fares and personal corrections. Map filters, street/light/dark/2025 aerial styles, nearby saved-route suggestions and local pins/photos are available. Tools includes portable safety-trip files/import, structured offline reports, and optional hosted Matrix community/chat and time-limited private trip sharing. Settings supports a local name and password-encrypted document backups. These features preserve source/freshness limits and require explicit remote/location opt-in. See [BETA_TRANSIT.md](docs/BETA_TRANSIT.md) for data provenance, privacy, limitations and device verification still needed.
@@ -10,13 +16,13 @@ Optional Google profile sign-in is implemented but awaits a Web application clie
 
 ## Search defaults
 
-Opening or returning to the planner refreshes untouched date/time fields from the device clock. Before 19:00 it uses today and the next supported 15-minute timetable interval (03:00 minimum); from 19:00 it uses tomorrow at 06:00. This is a search starting time, not a guaranteed first departure. Sundays and public holidays still show the existing no-service guidance instead of silently skipping to a different day.
+Opening or returning to the planner refreshes untouched date/time fields from the current clock in Cape Town service time. Before 19:00 it uses today and the next supported 15-minute timetable interval (03:00 minimum); from 19:00 it uses tomorrow at 06:00. This is a search starting time, not a guaranteed first departure. Sundays and public holidays still show the existing no-service guidance instead of silently skipping to a different day.
 
 With nearby suggestions enabled and location permission already granted, the planner takes one foreground location sample. A fresh fix can replace the restored departure station with the nearest mapped station in the current catalogue, within 5 km. Missing permission, stale/unavailable location or no nearby station leaves manual selection available. Explicit places, stations, dates and times are preserved; the previous search's time is no longer restored on launch.
 
 ## What works now
 
-- Map-first home with real positions for all 102 bundled stations, tap/search selection, origin/destination controls and favourite stations.
+- Now home with a map layer showing real positions for all 102 bundled stations, tap/search selection, origin/destination controls and favourite stations.
 - Online street maps with MapLibre Native and OpenFreeMap; no Google Maps SDK, Google API key, billing account or login. Online, Offline and Stations modes are selectable on Map and in Settings.
 - Download the rail overview or the selected journey area for offline streets. Downloads show progress, pause/resume, deletion and storage use. The built-in station atlas works without downloading maps.
 - Expand the mini map to a full-screen view with a close/back control. Selected journeys fit the view; the station atlas supports clearer labels and up to 16× zoom.

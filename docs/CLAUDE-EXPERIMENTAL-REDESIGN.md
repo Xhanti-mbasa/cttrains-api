@@ -1,5 +1,7 @@
 # Claude brief: CT Trains Lab
 
+Historical design prompt: the owner subsequently approved promotion in #36 on 2026-11-17. The existing Lab design is now the production default; the original branch/rollout restrictions below describe the earlier prototype stage. Current behavior is documented in `android/docs/release-1.15.0.md`.
+
 You own the experimental visual redesign in this same repository. ChatGPT owns developer authorization, release/update controls and the existing edition. Read AGENTS.md and the owner's private handoff instructions first. Open/reuse an issue, keep a task-specific private .llm note with your agent/model, verification and commit, and push directly. No PR unless the owner requests one. Never store credentials or private handoffs in this public repository. Do not overwrite concurrent work; fetch and inspect the branch head before each push.
 
 ## Goal

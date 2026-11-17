@@ -1,6 +1,8 @@
 # CT Trains Lab — design brief and capability map
 
-Status: implementation slice 1 on branch `lab/redesign`. Not published; no Lab release exists.
+Current status (2026-11-17, #36): the owner approved promotion of this design to the default production UI. Both editions now use `LabTheme { LabApp }`; `CTTRAINS_EXPERIMENTAL` selects package/name/update identity only. See `android/docs/release-1.15.0.md` for the promotion, verification and rollback. Lab remains a separate testing installation.
+
+The slice notes below are historical design records, including descriptions of the earlier gated rollout; they do not override the current promotion.
 Prototype: Claude Design canvas "CT Trains Lab — redesign prototype" (private to the owner).
 Build and checks: `.github/workflows/android-lab.yml` (no publish job). UI root: `android/app/src/main/kotlin/za/co/cttrains/app/ui/lab/`.
 
