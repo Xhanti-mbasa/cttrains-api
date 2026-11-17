@@ -26,12 +26,13 @@ class SmartFeaturesUiTest {
         try {
             runBlocking { features.store.update { it.copy(beta = it.beta.copy(homeMap = true, smartCards = true)) } }
             UiScreenshots.closeSystemDialogs()
-            app.onNodeWithText("Settings").performClick()
+            app.openMine("widgets")
             app.onNodeWithTag("home-map-toggle").performScrollTo().performClick()
             app.waitUntil(5000) { !features.state.value.extras.beta.homeMap }
             assertEquals(false, runBlocking { features.store.extras() }.beta.homeMap)
-            app.onNodeWithText("Home").performClick()
-            app.onNodeWithTag("smart-cards").assertExists()
+            app.onNodeWithTag("lab-tab-now").performClick()
+            app.onNodeWithTag("lab-now").assertIsDisplayed()
+            assertTrue(features.state.value.extras.beta.smartCards)
             app.onAllNodesWithContentDescription("Expand map to full screen").assertCountEquals(0)
             UiScreenshots.save("smart-cards-map-hidden")
         } finally {
@@ -95,8 +96,8 @@ class SmartFeaturesUiTest {
 
     @Test fun sevenBuildTapsOpenLockedDeveloperOptionsWithoutGrantingAccess() {
         UiScreenshots.closeSystemDialogs()
-        app.onNodeWithText("Settings").performClick()
-        app.onNodeWithTag("developer-build-label").performScrollTo()
+        app.onNodeWithTag("lab-tab-mine").performClick()
+        app.onNodeWithTag("lab-mine").performScrollToNode(hasTestTag("developer-build-label"))
         repeat(7) { app.onNodeWithTag("developer-build-label").performClick() }
         app.onNodeWithText("Developer options").assertExists()
         app.onNodeWithText("Verify access").assertExists()

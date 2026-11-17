@@ -65,7 +65,7 @@ object BusDiscovery {
         val br=valid.filter { it.stopId in b }.map { it.routeId }.toSet()
         return snapshot.routes.filter { it.id in ar && it.id in br && it.validFor(date) }
     }
-    fun journeys(t: BusTimetable,snapshot: BusSnapshot,from: GeoPoint,to: GeoPoint,date: LocalDate,after: String,links: List<BusStopLink>,radius: Double=1500.0): List<BusJourney> {
+    fun journeys(t: BusTimetable,snapshot: BusSnapshot,from: GeoPoint,to: GeoPoint,date: LocalDate,after: String,links: List<BusStopLink>,radius: Double=1500.0,limit: Int=30): List<BusJourney> {
         if(!t.day.equals(date.dayOfWeek.name,true) || !t.route.validFor(date)) return emptyList()
         val stops=snapshot.stops.associateBy { it.id }
         val mapping=links.filter { it.service==t.service && it.routeId==t.route.id && it.confirmedAt>0 }.associateBy { it.callId }
@@ -74,6 +74,6 @@ object BusDiscovery {
             val a=trip.calls.mapIndexedNotNull { i,c -> stop(c)?.takeIf { NearbySuggestions.distance(from,it.point)<=radius && c.time>=after }?.let { i to it } }
             val b=trip.calls.mapIndexedNotNull { i,c -> stop(c)?.takeIf { NearbySuggestions.distance(to,it.point)<=radius }?.let { i to it } }
             a.flatMap { (i,board) -> b.filter { it.first>i }.map { (j,alight) -> BusJourney(t,trip,i,j,board,alight,t.service==TransportService.GOLDEN_ARROW) } }
-        }.distinctBy { "${it.trip.id}:${it.boardIndex}:${it.alightIndex}" }.sortedWith(compareBy({ it.arrival.time },{ NearbySuggestions.distance(from,it.board!!.point)+NearbySuggestions.distance(to,it.alight!!.point) })).take(30)
+        }.distinctBy { "${it.trip.id}:${it.boardIndex}:${it.alightIndex}" }.sortedWith(compareBy({ it.arrival.time },{ NearbySuggestions.distance(from,it.board!!.point)+NearbySuggestions.distance(to,it.alight!!.point) })).take(limit)
     }
 }

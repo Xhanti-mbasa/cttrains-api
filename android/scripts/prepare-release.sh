@@ -11,6 +11,9 @@ mkdir -p "$RELEASE_ASSETS_DIR"
 filename="CT-Trains-${VERSION}-${SIGNING_MODE}.apk"
 cp "$apk" "$RELEASE_ASSETS_DIR/$filename"
 python3 scripts/write-update-manifest.py --apk "$RELEASE_ASSETS_DIR/$filename" --output "$RELEASE_ASSETS_DIR/update.json"
+if [[ "$SIGNING_MODE" == production ]]; then
+  python3 scripts/check-release-compatibility.py "$RELEASE_ASSETS_DIR/update.json"
+fi
 (cd "$RELEASE_ASSETS_DIR" && sha256sum "$filename" > "$filename.sha256")
 "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --print-certs "$apk" > "${RUNNER_TEMP}/cttrains-certificates.txt"
 python3 - <<'PY'

@@ -2,10 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 test_status=0
-# CI emulators often raise "System UI isn't responding", which covers the app and swallows test taps.
-adb shell settings put global hide_error_dialogs 1 || true
-adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
-./gradlew connectedDebugAndroidTest --no-daemon || test_status=$?
+adb logcat -c
+./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=za.co.cttrains.app.UpgradeFixtureTest --no-daemon || test_status=$?
 # Copy while emulator-runner still has the device connected, including failures.
 mkdir -p app/build/outputs/ui-screenshots
 adb pull /data/local/tmp/cttrains-ui-screenshots/. app/build/outputs/ui-screenshots/ || true
@@ -24,5 +22,9 @@ for report in Path("app/build/outputs/androidTest-results").rglob("TEST-*.xml"):
         print(report, error)
 PY
   adb logcat -d -t 500 '*:W' || true
+fi
+adb logcat -d -b crash > app/build/outputs/ui-screenshots/crash-logcat.txt || true
+if grep -E 'Process: za.co.cttrains.app(,|$)|ANR in za.co.cttrains.app( |$)' app/build/outputs/ui-screenshots/crash-logcat.txt; then
+  test_status=1
 fi
 exit "$test_status"

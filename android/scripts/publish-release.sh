@@ -96,7 +96,5 @@ jq -e --arg apk "$apk" --argjson size "$apk_size" '
     any(.assets[]; .name == "update.json" and .size > 0) and
     any(.assets[]; .name == $apk and .size == $size)
 ' <<< "$remote" >/dev/null
-for tag in "${older[@]}"; do
-    gh release delete "$tag" --yes
-done
+# Retain prior signed releases for audit and rollback rebuilds. Android does not allow an in-place version downgrade.
 jq -r .url <<< "$remote"

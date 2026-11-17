@@ -28,8 +28,8 @@ class CommuteUpgradeUiTest {
         val home=MarkedSpot("test-home","Home",null,GeoPoint(-33.94,18.63),"Home","Old address",createdAt=1,preferredStation="Unibell")
         runBlocking { features.store.update { it.copy(spots=listOf(home)) } }
         app.waitUntil(15000) { features.state.value.extras.spots.any { it.id==home.id } }
-        app.onNodeWithText("Saved").performClick()
-        app.onNodeWithText("Home, Work & School · manage addresses").performScrollTo().performClick()
+        app.onNodeWithTag("lab-tab-mine").performClick()
+        app.onNodeWithText("All places").performClick()
         app.onNodeWithTag("edit-address:Home").performScrollTo().performClick()
         app.onNodeWithText("Search places, stations or stops").performTextInput("Salt River")
         // The search field also contains the typed text; pick the result row, not the field.
@@ -48,7 +48,7 @@ class CommuteUpgradeUiTest {
         val r=CommuteRoutine("test-repeat","Morning commute",SearchQuery("Salt River","Unibell","2026-10-12","08:00"),setOf(1,2,3,4,5),"cttrains-web",20,5,createdAt=1)
         runBlocking { features.store.update { it.copy(routines=listOf(r)) } }
         app.waitUntil(15000) { features.state.value.extras.routines.size==1 }
-        app.onNodeWithText("Journeys").performClick()
+        app.openMine("upcoming")
         val routineKey = "routine:${r.id}"
         val loadedRoutine = SemanticsMatcher("journey list contains the saved routine") { node ->
             (node.config.getOrNull(SemanticsProperties.IndexForKey)?.invoke(routineKey) ?: -1) >= 0

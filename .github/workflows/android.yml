@@ -2,7 +2,7 @@ name: Android build and release
 
 on:
   push:
-    branches: [main, feat/android-material3]
+    branches: [main, feat/android-material3, "lab/production-promotion"]
     tags: ["android-v*"]
     paths: ["android/**", "src/transit/**", "src/routes/mobile.js", "src/index.js", "package*.json", ".github/workflows/android.yml"]
   pull_request:
@@ -102,6 +102,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -130,7 +131,9 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: bash android/scripts/check-device.sh
+          script: |
+            bash android/scripts/check-upgrade.sh
+            bash android/scripts/check-device.sh
       - name: Upload native test reports
         if: ${{ !cancelled() }}
         continue-on-error: true

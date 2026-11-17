@@ -62,4 +62,19 @@ class JourneyComparisonTest {
             BusFareRow("other","Different route",mapOf("Single" to 1500L),""))
         assertEquals(listOf(3000L),JourneyComparison.singleFares(rows,route).map { it.cents })
     }
+    @Test fun allDayBusSearchRetainsMoreThanThirtyDeparturesAndHonoursCalendars() {
+        val s=snapshot(TransportService.MYCITI)
+        val trips=(0 until 48).map { index ->
+            val departure=java.time.LocalTime.of(3,0).plusMinutes(index*20L)
+            BusTrip("trip-$index","101","Out","Friday",listOf(BusCall("a","Home stop",departure.toString()),BusCall("b","Campus stop",departure.plusMinutes(15).toString())))
+        }
+        val t=timetable(s.service).copy(trips=trips)
+        val all=BusDiscovery.journeys(t,s,a,b,date,"00:00",emptyList(),500.0,Int.MAX_VALUE)
+        assertEquals(48,all.size)
+        assertEquals("03:00",all.first().departure.time)
+        assertEquals("18:40",all.last().departure.time)
+        assertEquals(30,BusDiscovery.journeys(t,s,a,b,date,"00:00",emptyList(),500.0).size)
+        assertTrue(BusDiscovery.journeys(t,s,a,b,date.plusDays(1),"00:00",emptyList(),500.0,Int.MAX_VALUE).isEmpty())
+        assertTrue(BusDiscovery.journeys(t,s,a,b,date,"23:00",emptyList(),500.0,Int.MAX_VALUE).isEmpty())
+    }
 }

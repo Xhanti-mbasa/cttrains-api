@@ -14,18 +14,16 @@ class SimplePlannerUiTest {
         val train=ViewModelProvider(app.activity)[TrainViewModel::class.java]
         app.waitUntil(15000) { train.state.value.stations.any { it.name=="Bellville" && it.mapped } }
         UiScreenshots.closeSystemDialogs()
-        app.onNodeWithText("Plan").performClick()
-        app.onNodeWithTag("journey-planner").performScrollToNode(hasText("To"))
-        app.onNode(hasText("To") and hasClickAction()).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
-        app.onNodeWithTag("use-current-location").assertIsDisplayed()
-        app.onNodeWithText("Search places, stations or stops").performTextInput("bellv")
+        app.onNodeWithTag("lab-tab-plan").performClick()
+        app.onNodeWithTag("lab-plan-to").performClick()
+        app.onNodeWithTag("lab-place-search").performTextInput("bellv")
         app.waitUntil(5000) { app.onAllNodes(hasText("Bellville") and hasClickAction() and !hasSetTextAction()).fetchSemanticsNodes().isNotEmpty() }
         UiScreenshots.save("fuzzy-place-search")
     }
     @Test fun myProfileIsReachableFromSettings() {
         UiScreenshots.closeSystemDialogs()
-        app.onNodeWithText("Settings").performClick()
-        app.onNodeWithTag("my-profile").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
+        app.onNodeWithTag("lab-tab-mine").performClick()
+        app.onNodeWithText("All places").performClick()
         app.onNodeWithText("My profile").assertIsDisplayed()
         app.onNodeWithTag("saved-addresses").performScrollToNode(hasTestTag("add-custom-place"))
         app.onNodeWithTag("add-custom-place").assertIsDisplayed()

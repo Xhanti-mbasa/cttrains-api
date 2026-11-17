@@ -17,6 +17,7 @@ class QualityOfLifeUiTest {
         val train=ViewModelProvider(app.activity)[TrainViewModel::class.java]
         app.runOnUiThread { train.setMapMode("stations") }
         app.waitForIdle()
+        app.openMap()
         app.onNodeWithText("Online").assertDoesNotExist()
         app.onNodeWithText("Map options").performScrollTo().performClick()
         app.onNodeWithText("Online").assertIsDisplayed()
@@ -51,15 +52,14 @@ class QualityOfLifeUiTest {
         app.waitUntil(15000) { features.state.value.extras.beta.run { !goldenArrow && !myCiti && !hostedSharing } }
     }
     @Test fun savedPlacesAndChatAccountSetupAreDiscoverable() {
-        app.onNodeWithText("Plan").performClick()
+        app.onNodeWithTag("lab-tab-plan").performClick()
         val train=ViewModelProvider(app.activity)[TrainViewModel::class.java]
         app.runOnUiThread { train.edit { it.copy(from="",to="") } }
-        app.onNodeWithText("Choose your start").performScrollTo().performClick()
-        app.onNodeWithText("Where are you?").assertIsDisplayed()
-        app.onNodeWithText("Search places, stations or stops").performTextInput("Unibell")
+        app.onNodeWithTag("lab-plan-from").performScrollTo().performClick()
+        app.onNodeWithText("Where are you starting?").assertIsDisplayed()
+        app.onNodeWithTag("lab-place-search").performTextInput("Unibell")
         app.onNode(hasText("Unibell") and hasClickAction() and !hasSetTextAction()).performClick()
-        app.onNodeWithText("Tools").performClick()
-        app.onNodeWithText("Community reports, chat & friends").performClick()
+        app.openMine("community")
         app.onNodeWithText("Chat").performClick()
         val features=ViewModelProvider(app.activity)[FeatureViewModel::class.java]
         app.waitUntil(15000) { features.state.value.ready }
@@ -76,24 +76,20 @@ class QualityOfLifeUiTest {
         app.waitUntil(15000) { features.state.value.ready }
         app.runOnUiThread { train.setMapMode("stations");features.beta { it.copy(journeyFocus=true,myCiti=true,goldenArrow=true) } }
         app.waitUntil(15000) { features.state.value.extras.beta.run { journeyFocus && myCiti && goldenArrow } }
+        app.openMap()
         app.onNodeWithText("Map options").performScrollTo().performClick()
         app.onNodeWithText("Focus on selected journey").performScrollTo().assertIsDisplayed()
         app.onNodeWithText("Collapse").performClick()
-        app.onNodeWithText("Plan").performClick()
+        app.onNodeWithTag("lab-tab-plan").performClick()
         app.runOnUiThread { train.edit { it.copy(from="Unibell",to="Salt River") } }
-        app.onNodeWithText("Mode of transport").performScrollTo().assertIsDisplayed()
-        app.onNodeWithTag("mode:MYCITI").performScrollTo().performClick()
-        app.onNodeWithText("Find Trains + MyCiTi routes").performScrollTo().assertIsDisplayed()
-        app.onNodeWithTag("mode:PRASA").performScrollTo().performClick()
-        app.onNodeWithText("Find MyCiTi routes").performScrollTo().assertIsDisplayed()
-        app.onNodeWithText("Unibell").performScrollTo().assertIsDisplayed()
-        app.onNodeWithText("Salt River").assertIsDisplayed()
-        app.onNodeWithTag("mode:GOLDEN_ARROW").performScrollTo().performClick()
-        app.onNodeWithTag("mode:MYCITI").performScrollTo().performClick()
-        app.onNodeWithText("Find Golden Arrow routes").performScrollTo().assertIsDisplayed()
-        app.onNodeWithTag("mode:all").performScrollTo().performClick()
-        app.onNodeWithText("Find all routes").performScrollTo().assertIsDisplayed()
-        app.onNodeWithTag("mode:all").performScrollTo()
+        app.onNodeWithTag("lab-mode-MYCITI").performScrollTo().performClick().assertIsSelected()
+        app.onNodeWithTag("lab-mode-PRASA").performScrollTo().performClick().assertIsNotSelected()
+        app.onNodeWithTag("lab-plan-from").assertTextContains("Unibell")
+        app.onNodeWithTag("lab-plan-to").assertTextContains("Salt River")
+        app.onNodeWithTag("lab-mode-GOLDEN_ARROW").performScrollTo().performClick().assertIsSelected()
+        app.onNodeWithTag("lab-mode-MYCITI").performScrollTo().performClick().assertIsNotSelected()
+        app.onNodeWithTag("lab-mode-PRASA").performScrollTo().performClick().assertIsSelected()
+        app.onNodeWithTag("lab-mode-MYCITI").performScrollTo().performClick().assertIsSelected()
         UiScreenshots.save("planner-compare")
         val image=app.onRoot().captureToImage()
         val file=java.io.File(app.activity.getExternalFilesDir(null),"ui-screenshots/planner-compare.png").apply { parentFile!!.mkdirs() }
@@ -103,8 +99,7 @@ class QualityOfLifeUiTest {
         app.runOnUiThread { features.beta { it.copy(journeyFocus=false,myCiti=false,goldenArrow=false) } }
     }
     @Test fun whatsAppAlphaIsDiscoverableAndHasNoDirectPhoneAccountAccess() {
-        app.onNodeWithText("Tools").performClick()
-        app.onNodeWithText("WhatsApp updates · alpha").performScrollTo().performClick()
+        app.openMine("whatsapp")
         app.onNodeWithText("WhatsApp updates · alpha").assertIsDisplayed()
         app.onNodeWithText("Gateway website · HTTPS").performScrollTo().assertIsDisplayed()
         app.onNodeWithText("Reader API key").performScrollTo().assertIsDisplayed()
@@ -123,20 +118,20 @@ class QualityOfLifeUiTest {
         val home=za.co.cttrains.core.WalkEndpoint("spot:home","Home",za.co.cttrains.core.GeoPoint(-33.94,18.63))
         val campus=za.co.cttrains.core.WalkEndpoint("spot:campus","Campus",za.co.cttrains.core.GeoPoint(-33.93,18.46))
         app.runOnUiThread { train.edit { it.copy(from="Unibell",to="Salt River") };features.place(home,true);features.place(campus,false) }
-        app.onNodeWithText("Plan").performClick()
-        app.onNodeWithText("Swap From and To").performScrollTo().performClick()
+        app.onNodeWithTag("lab-tab-plan").performClick()
+        app.onNodeWithContentDescription("Swap start and destination").performScrollTo().performClick()
         app.runOnIdle { assertEquals(campus,features.state.value.access);assertEquals(home,features.state.value.destination);assertEquals("Salt River",train.state.value.from);assertEquals("Unibell",train.state.value.to) }
-        app.onNodeWithTag("journey-planner").performScrollToNode(hasText("Travel date"))
-        app.onNodeWithText("Travel date").performClick()
+        app.onNodeWithTag("lab-plan-date").performScrollTo().performClick()
         app.onNodeWithText("Choose date").assertIsDisplayed()
         UiScreenshots.save("journey-calendar")
         app.onNodeWithText("Cancel").performClick()
-        app.onNodeWithText("Leave after").performScrollTo().performClick()
+        app.onNodeWithTag("lab-time-depart").performScrollTo().performClick()
         app.onNodeWithText("24-hour time · 15-minute intervals").assertIsDisplayed()
         UiScreenshots.save("journey-time-picker")
         app.onNodeWithText("Choose time").performClick()
-        app.onNodeWithText("Options").performScrollTo().performClick()
-        app.onNodeWithText("Auto estimate").performScrollTo().assertIsDisplayed()
+        app.onNodeWithText("Walking times").performScrollTo().performClick()
+        app.onNodeWithText("Calculate walking times?").assertIsDisplayed()
+        app.onNodeWithText("Not now").performClick()
         app.runOnUiThread { features.place(null,true);features.place(null,false) }
     }
     @Test fun healthAccessIsReadOnlyAndBluetoothIsNotRequestedForMatrixPresence() {

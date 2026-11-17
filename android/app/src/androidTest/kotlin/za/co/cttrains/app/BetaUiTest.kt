@@ -16,7 +16,7 @@ class BetaUiTest {
         app.waitUntil(15000) { features.state.value.ready }
         app.runOnUiThread { features.beta { it.copy(goldenArrow=false,myCiti=false) } }
         app.waitUntil(15000) { features.state.value.extras.beta.run { !goldenArrow && !myCiti } }
-        app.onNodeWithText("Settings").performClick()
+        app.openMine("settings")
         app.onNodeWithContentDescription("Golden Arrow").performScrollTo().assertIsOff().performClick()
         app.waitUntil(15000) { features.state.value.extras.beta.goldenArrow }
         app.onNodeWithContentDescription("Golden Arrow").assertIsOn()

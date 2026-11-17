@@ -32,4 +32,21 @@ class AppUpdatesTest {
         assertEquals(manifest(),AppUpdates.manifest(json.encodeToString(manifest())))
         for(m in listOf(manifest().copy(apk="../app.apk"),manifest().copy(sha256="bad"),manifest().copy(sizeBytes=AppUpdates.MAX_APK_BYTES+1),manifest().copy(schema=2))) assertThrows(IllegalArgumentException::class.java) { AppUpdates.manifest(json.encodeToString(m)) }
     }
+    @Test fun labAndRegularReleaseChannelsStaySeparate() {
+        fun row(tag: String,pre: Boolean)="""{"draft":false,"prerelease":$pre,"tag_name":"$tag","assets":[]}"""
+        val raw="[${row("android-v1.14.0",false)},${row("android-experimental-v1.14.0-lab.4",true)}]"
+        assertEquals(listOf("android-v1.14.0"),AppUpdates.releases(raw,true).map { it.tag })
+        assertEquals(listOf("android-experimental-v1.14.0-lab.4"),AppUpdates.releases(raw,true,"za.co.cttrains.app.experimental").map { it.tag })
+        assertTrue(AppUpdates.releases(raw,false,"za.co.cttrains.app.experimental").isEmpty())
+    }
+    @Test fun labUpgradeStillRequiresMatchingPackageTagVersionAndCertificate() {
+        val m=manifest().copy(packageName="za.co.cttrains.app.experimental",versionName="1.9.0-lab.4")
+        val r=release().copy(tag="android-experimental-v1.9.0-lab.4",prerelease=true)
+        assertNotNull(AppUpdates.candidate("owner/repo",r,m,801,m.packageName,cert,36))
+        for(bad in listOf(r.copy(tag="android-v1.9.0-lab.4"),r.copy(tag="android-experimental-v1.9.0-lab.5"))) {
+            assertThrows(IllegalArgumentException::class.java) { AppUpdates.candidate("owner/repo",bad,m,801,m.packageName,cert,36) }
+        }
+        assertThrows(IllegalArgumentException::class.java) { AppUpdates.candidate("owner/repo",r,m,801,"za.co.cttrains.app",cert,36) }
+        assertThrows(IllegalArgumentException::class.java) { AppUpdates.candidate("owner/repo",r,m.copy(certificateSha256="3".repeat(64)),801,m.packageName,cert,36) }
+    }
 }

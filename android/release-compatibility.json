@@ -1,0 +1,7 @@
+{
+  "packageName": "za.co.cttrains.app",
+  "minimumVersionCode": 1461,
+  "maxMinSdk": 26,
+  "certificateSha256": "bad7d9e6c7490f81ce027c89d5ae7af2c3a3359f259f2fded53a577be6bf6f8b",
+  "baselineRelease": "android-v1.14.0-build.61"
+}

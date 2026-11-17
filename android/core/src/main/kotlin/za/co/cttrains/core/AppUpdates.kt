@@ -11,19 +11,25 @@ import kotlinx.serialization.json.*
 
 object AppUpdates {
     const val MAX_APK_BYTES=200L*1024*1024
+    private fun tagPrefix(packageName: String) = when(packageName) {
+        "za.co.cttrains.app" -> "android-v"
+        "za.co.cttrains.app.experimental" -> "android-experimental-v"
+        else -> throw IllegalArgumentException("This update channel is unavailable for this app.")
+    }
     fun repository(raw: String): String {
         val value=raw.trim().removePrefix("https://github.com/").trimEnd('/').removeSuffix(".git")
         require(Regex("[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.-]{1,100}").matches(value)) { "Use a GitHub owner/repository, without a branch or URL query." }
         return value
     }
-    fun releases(raw: String,beta: Boolean): List<AppRelease> {
+    fun releases(raw: String,beta: Boolean,packageName: String="za.co.cttrains.app"): List<AppRelease> {
         require(raw.toByteArray().size<=2*1024*1024)
+        val prefix=tagPrefix(packageName)
         return Json.parseToJsonElement(raw).jsonArray.take(100).mapNotNull { e ->
             val o=e.jsonObject
             if(o["draft"]?.jsonPrimitive?.booleanOrNull!=false) return@mapNotNull null
             val pre=o["prerelease"]?.jsonPrimitive?.booleanOrNull ?: return@mapNotNull null
             val tag=o["tag_name"]?.jsonPrimitive?.content.orEmpty()
-            if((pre && !beta) || !Regex("android-v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?").matches(tag)) return@mapNotNull null
+            if((pre && !beta) || !Regex("${Regex.escape(prefix)}[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?").matches(tag)) return@mapNotNull null
             val assets=o["assets"]?.jsonArray.orEmpty().mapNotNull { a ->
                 val v=a.jsonObject;val id=v["id"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
                 val name=v["name"]?.jsonPrimitive?.content.orEmpty();val size=v["size"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
@@ -43,7 +49,8 @@ object AppUpdates {
     }
     fun candidate(repo: String,release: AppRelease,m: UpdateManifest,currentCode: Long,packageName: String,certificate: String,sdk: Int): AppUpdate? {
         require(m.packageName==packageName) { "The release belongs to a different app." }
-        require(m.versionName==release.tag.removePrefix("android-v")) { "Release tag and APK version disagree." }
+        val prefix=tagPrefix(packageName)
+        require(release.tag.startsWith(prefix) && m.versionName==release.tag.removePrefix(prefix)) { "Release tag and APK version disagree." }
         if(m.versionCode<=currentCode) return null
         require(m.certificateSha256==certificate) { "This release uses a different signing key and cannot update this installation." }
         require(m.minSdk<=sdk) { "This update requires a newer Android version." }
