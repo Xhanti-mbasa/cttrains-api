@@ -72,7 +72,7 @@ class JourneyPlannerModel(app: Application): AndroidViewModel(app) {
                 else "No mapped train station within ${r.maxWalkMeters} m of ${if(origins.isEmpty()) "your start" else "your destination"}. Choose another stop or increase the walking limit.")
         }
         val requested=JourneyComparison.requestedAt(r.date,if(r.allDay) "00:00" else r.time)
-        val options=mutableListOf<PlannerOption>();var checked=0;var failed=0;var ruleIssue: String?=null
+        val options=mutableListOf<PlannerOption>();var checked=0;var failed=0;var ruleIssue: String?=null;var partial=false
         for(a in origins) for(b in destinations) {
             if(stationKey(a.name)==stationKey(b.name)) continue
             val minute=LocalTime.parse(if(r.allDay) "03:00" else r.time).toSecondOfDay()/60
@@ -80,7 +80,14 @@ class JourneyPlannerModel(app: Application): AndroidViewModel(app) {
             val q=SearchQuery(a.name,b.name,r.date,sourceTime)
             val error=TravelRules.validationError(q,train.catalog,LocalDate.now(CapeTownZone))
             if(error!=null) { ruleIssue=error;continue }
-            val result=try { if(r.allDay) trains.store.cached(q,train.preferences.sourceId)?.takeIf { System.currentTimeMillis()-it.fetchedAt in 0..900_000L }?.let { SearchResult(it,true) } ?: trains.search(q,train.preferences.sourceId) else trains.search(q,train.preferences.sourceId) } catch(e: Exception) { if(e is CancellationException) throw e;failed++;continue }
+            // Penelope: the source returns four trains per answer, so page from the first train to the last.
+            val result=try {
+                if(r.allDay) {
+                    val day=trains.searchDay(a.name,b.name,r.date,train.preferences.sourceId) { page -> mutable.update { it.copy(progress="Penelope · ${a.name} → ${b.name} · page $page") } }
+                    if(!day.complete) partial=true
+                    SearchResult(CachedSearch(q,day.journeys,day.fetchedAt,day.fares,day.sourceId),day.offline)
+                } else trains.search(q,train.preferences.sourceId)
+            } catch(e: Exception) { if(e is CancellationException) throw e;failed++;continue }
             checked++
             val walk=walks(r,WalkingRoutes.endpoint(a),WalkingRoutes.endpoint(b))
             val prices=TripBudget.sourcePrices(result.entry.fares)
@@ -91,7 +98,7 @@ class JourneyPlannerModel(app: Application): AndroidViewModel(app) {
                 if(r.allDay || timing.canCatch!=false) options+=PlannerOption("rail:${q.from}:${q.to}:${j.legs.joinToString { it.train+it.departure.time }}",TransportService.PRASA,q,j,null,walk.first.toList(),timing,fares,result.entry.fetchedAt,result.offline || walk.third,sourceId=result.entry.sourceId)
             }
         }
-        return PlannerSection(TransportService.PRASA,rank(options,r),if(options.isEmpty()) ruleIssue ?: if(failed>0) "Train schedules could not be checked for the selected stations. Try again or open CT Trains." else if(r.allDay) "No train journeys were returned for this date. Missing timetable coverage does not prove there is no service." else "No published train journey you can catch was found for these places and time." else if(failed>0) "Some station pairs could not be checked; this comparison is incomplete." else null,checked)
+        return PlannerSection(TransportService.PRASA,rank(options,r),if(options.isEmpty()) ruleIssue ?: if(failed>0) "Train schedules could not be checked for the selected stations. Try again or open CT Trains." else if(r.allDay) "No train journeys were returned for this date. Missing timetable coverage does not prove there is no service." else "No published train journey you can catch was found for these places and time." else if(failed>0) "Some station pairs could not be checked; this comparison is incomplete." else if(partial) "Penelope stopped after 30 pages for a station pair; later trains may be missing." else null,checked)
     }
     private suspend fun bus(r: PlannerRequest,service: TransportService): PlannerSection {
         val extras=buses.store.extras()

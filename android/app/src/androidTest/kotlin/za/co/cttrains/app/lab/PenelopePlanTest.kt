@@ -56,7 +56,9 @@ class PenelopePlanTest {
         app.onNodeWithTag("lab-time-depart").assertTextContains("Depart after 00:00")
         app.onNodeWithTag("lab-plan-from").assertTextContains("Salt River")
     }
-    @Test fun cachedAllDayIncludesEarlierAndLaterTransfersAndPagesWithoutAnotherSearch() {
+    @Test fun cachedAllDayIncludesEarlierAndLaterTransfersAndPagesWithoutAnotherSearch() = allDay(penelopeButton = false)
+    @Test fun penelopeButtonForcesEveryTrainAndShowAllTimesListsThemAll() = allDay(penelopeButton = true)
+    private fun allDay(penelopeButton: Boolean) {
         val date = LocalDate.now(CapeTownZone).let { today -> if(today.dayOfWeek.value == 7) today.plusDays(1) else today }
         val query = SearchQuery("Salt River", "Unibell", date.toString(), "03:00")
         val journeys = (0 until 40).map { i ->
@@ -65,12 +67,20 @@ class PenelopePlanTest {
                 Leg("Test", "a-$i", listOf(Stop("Salt River", time.toString()), Stop("Mutual", time.plusMinutes(10).toString()))),
                 Leg("Test", "b-$i", listOf(Stop("Mutual", time.plusMinutes(15).toString()), Stop("Unibell", time.plusMinutes(30).toString())))))
         }.reversed()
-        runBlocking { train.repository.store.cache(CachedSearch(query, journeys, System.currentTimeMillis(), null, train.state.value.preferences.sourceId)) }
+        runBlocking {
+            train.repository.store.cache(CachedSearch(query, journeys, System.currentTimeMillis(), null, train.state.value.preferences.sourceId))
+            // Paging continues from the last saved train; an empty saved answer there ends the day without a network request.
+            train.repository.store.cache(CachedSearch(query.copy(time = "19:15"), emptyList(), System.currentTimeMillis(), null, train.state.value.preferences.sourceId))
+        }
         app.runOnUiThread { train.chooseDate(date.toString()); train.chooseTime("17:00") }
-        app.onNodeWithTag("lab-time-depart").performScrollTo().performClick()
-        app.onNodeWithTag("lab-time-choice-all").performClick()
-        app.onNodeWithText("Apply").performClick()
-        app.onNodeWithTag("lab-plan-search").performScrollTo().performClick()
+        if (penelopeButton) {
+            app.onNodeWithTag("lab-plan-penelope").performScrollTo().performClick()
+        } else {
+            app.onNodeWithTag("lab-time-depart").performScrollTo().performClick()
+            app.onNodeWithTag("lab-time-choice-all").performClick()
+            app.onNodeWithText("Apply").performClick()
+            app.onNodeWithTag("lab-plan-search").performScrollTo().performClick()
+        }
         val planner = ViewModelProvider(app.activity)[JourneyPlannerModel::class.java]
         app.waitUntil(15_000) { !planner.state.value.loading && planner.state.value.sections.isNotEmpty() }
         val options = planner.state.value.sections.getValue(TransportService.PRASA).options
@@ -78,8 +88,15 @@ class PenelopePlanTest {
         assertEquals("03:00", options.first().rail!!.departure)
         assertEquals("19:15", options.last().rail!!.departure)
         assertTrue(options.all { it.cached && it.rail!!.transfers == 1 })
-        app.onNodeWithTag("lab-plan").performScrollToNode(hasTestTag("lab-more-departures"))
-        app.onNodeWithTag("lab-more-departures").performClick()
+        if (penelopeButton) {
+            app.onNodeWithTag("lab-time-depart").assertTextContains("All-day departures")
+            app.onNodeWithTag("lab-plan").performScrollToNode(hasTestTag("lab-all-times"))
+            app.onNodeWithTag("lab-all-times").assertTextContains("Show all times (40)").performClick()
+            app.onNodeWithTag("lab-all-times").assertDoesNotExist()
+        } else {
+            app.onNodeWithTag("lab-plan").performScrollToNode(hasTestTag("lab-more-departures"))
+            app.onNodeWithTag("lab-more-departures").performClick()
+        }
         app.onNodeWithTag("lab-plan").performScrollToNode(hasText("19:15"))
         app.onNodeWithText("19:15").assertIsDisplayed()
         assertEquals(40, planner.state.value.sections.getValue(TransportService.PRASA).options.size)

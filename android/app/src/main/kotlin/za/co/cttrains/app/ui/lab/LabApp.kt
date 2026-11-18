@@ -51,7 +51,7 @@ private enum class LabPlace(val route: String, val title: String, val icon: Imag
 
 /** Routes requested by the shared view models, mapped to the Lab place they belong to. */
 private fun placeOf(route: String): LabPlace = when {
-    route == "now" || route.startsWith("map") || route == "alerts" || route == "ride-departures" -> LabPlace.NOW
+    route == "now" || route.startsWith("map") || route == "alerts" || route == "ride-departures" || route == "station" -> LabPlace.NOW
     route == "plan" || route == "trip" || route == "budget" -> LabPlace.PLAN
     else -> LabPlace.MINE
 }
@@ -60,7 +60,7 @@ private val Titles = mapOf(
     "alerts" to "Updates & delays", "budget" to "Fares & budget", "buses" to "Buses · beta", "trips" to "Rides & safety trips",
     "places" to "Your places", "upcoming" to "Saved trips & reminders", "settings" to "Privacy & data", "developer" to "Developer options",
     "whatsapp" to "WhatsApp updates", "community" to "Community", "directions" to "Directions", "app-updates" to "App updates",
-    "ride-departures" to "Your ride", "widgets" to "Widgets & cards", "trip" to "Trip",
+    "ride-departures" to "Your ride", "widgets" to "Widgets & cards", "trip" to "Trip", "station" to "Trains at a station",
 )
 
 /**
@@ -83,6 +83,8 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
     val directions: za.co.cttrains.app.directions.DirectionsModel = androidx.lifecycle.viewmodel.compose.viewModel()
     var trip by remember { mutableStateOf<za.co.cttrains.app.PlannerOption?>(null) }
     val plannerState by planner.state.collectAsStateWithLifecycle()
+    val stationBoard: za.co.cttrains.app.StationBoardModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val boardState by stationBoard.state.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     fun locationAllowed() = listOf(android.Manifest.permission.ACCESS_COARSE_LOCATION, android.Manifest.permission.ACCESS_FINE_LOCATION)
         .any { androidx.core.content.ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
@@ -212,7 +214,8 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
                 composable("now") {
                     LabNowScreen(state, model, feature, features, smartState, smart, now,
                         onMap = { features.allMapStops(); push("map") }, onPlan = { go("plan") }, onAlerts = { push("alerts") },
-                        onPlaces = { push("places") }, onSettings = { push("settings") })
+                        onPlaces = { push("places") }, onSettings = { push("settings") },
+                        board = boardState, boardModel = stationBoard, onStation = { push("station") })
                 }
                 composable("map") {
                     TransitMapScreen(state, model, onExpand = { push("map/fullscreen") }, onPlan = { go("plan") },
@@ -221,6 +224,13 @@ fun LabApp(state: TrainState, model: TrainViewModel) {
                 composable("map/fullscreen") {
                     TransitMapScreen(state, model, fullScreen = true, onClose = { navigation.popBackStack() }, onPlan = { go("plan") },
                         feature = feature, features = features, onBuses = { push("buses") })
+                }
+                composable("station") {
+                    val nearest = smartState.nearby.firstOrNull()?.first?.name
+                    LabStationScreen(state, boardState, stationBoard, boardState.station ?: nearest ?: state.from.ifBlank { null }) { from, to ->
+                        features.place(null, true); features.place(null, false)
+                        model.useRoute(za.co.cttrains.core.SavedRoute(from, to)); model.refreshPlanDate(); go("plan")
+                    }
                 }
                 composable("plan") { LabPlanScreen(state, model, feature, features, planner) { option -> trip = option; push("trip") } }
                 composable("trip") {

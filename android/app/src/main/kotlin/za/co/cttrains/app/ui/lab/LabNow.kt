@@ -15,6 +15,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Train
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.*
@@ -32,6 +34,8 @@ import za.co.cttrains.app.FeatureState
 import za.co.cttrains.app.FeatureViewModel
 import za.co.cttrains.app.SmartCardsModel
 import za.co.cttrains.app.SmartCardsState
+import za.co.cttrains.app.StationBoardModel
+import za.co.cttrains.app.StationBoardState
 import za.co.cttrains.app.TrainState
 import za.co.cttrains.app.TrainViewModel
 import za.co.cttrains.core.LabTiming
@@ -46,6 +50,7 @@ fun LabNowScreen(
     state: TrainState, model: TrainViewModel, feature: FeatureState, features: FeatureViewModel,
     smartState: SmartCardsState, smart: SmartCardsModel, now: Long,
     onMap: () -> Unit, onPlan: () -> Unit, onAlerts: () -> Unit, onPlaces: () -> Unit, onSettings: () -> Unit,
+    board: StationBoardState = StationBoardState(), boardModel: StationBoardModel? = null, onStation: () -> Unit = {},
 ) {
     val c = LocalLab.current
     val context = LocalContext.current
@@ -63,6 +68,11 @@ fun LabNowScreen(
     val home = feature.extras.spots.firstOrNull { SavedAddresses.role(it) == "Home" }
     val homeCard = home?.let { h -> smartState.cards.firstOrNull { it.destinationLabel == h.name } }
     val firstUse = feature.ready && feature.extras.spots.isEmpty() && state.preferences.routes.isEmpty() && state.scheduled.isEmpty()
+    // The station for the live counter: the one already on the board, else the nearest, else Plan's start.
+    val counterStation = board.station ?: smartState.nearby.firstOrNull()?.first?.name ?: state.from.takeIf { it in state.catalog.stations }
+    LaunchedEffect(counterStation, state.catalog, now) {
+        if (counterStation != null && boardModel != null) boardModel.load(counterStation, state.catalog, state.preferences.sourceId)
+    }
 
     LazyColumn(Modifier.fillMaxSize().background(c.ground).testTag("lab-now"), contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -91,6 +101,18 @@ fun LabNowScreen(
         }
         items(smartState.cards.filter { it.id != homeCard?.id }.take(3), key = { "smart-${it.id}" }) { card ->
             SuggestionCard(card, now) { smart.select(card) }
+        }
+        item {
+            val count = board.nextHour?.takeIf { board.station == counterStation }?.size
+            ActionRow(Icons.Outlined.Train, if (counterStation == null) "Trains at a station" else "Trains at $counterStation", when {
+                counterStation == null -> "Choose a station to see trains leaving soon"
+                count != null -> "$count ${if (count == 1) "train" else "trains"} in the next hour · scheduled · tap to view"
+                board.loading -> "Counting trains in the next hour…"
+                else -> "See trains leaving in the next hour"
+            }, Modifier.testTag("lab-station-row"), onClick = onStation)
+        }
+        item {
+            ActionRow(Icons.Outlined.Search, "Find a train by number", "See where a train goes and every stop", Modifier.testTag("lab-train-row"), onClick = onStation)
         }
         item {
             ActionRow(Icons.Outlined.Home, "Get home", when {

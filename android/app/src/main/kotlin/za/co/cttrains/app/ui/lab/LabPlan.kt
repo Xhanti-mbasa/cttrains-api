@@ -110,18 +110,18 @@ fun LabPlanScreen(
     val today = localNow.toLocalDate().toString()
     val currentTime = if (state.date == today) localNow.toLocalTime().withSecond(0).withNano(0) else LocalTime.MIDNIGHT
     val canSearch = from != null && to != null && from != to && services.isNotEmpty() && !result.loading
-    fun search() {
+    fun search(everyTrain: Boolean = allDay) {
         if (from != null && to != null) {
             model.refreshPlanDate()
             val current = model.state.value
             val clock = java.time.LocalDateTime.now(CapeTownZone)
             val time = when {
-                allDay -> "00:00"
+                everyTrain -> "00:00"
                 timeMode == "depart" -> current.time
                 current.date == clock.toLocalDate().toString() -> clock.toLocalTime().withSecond(0).withNano(0).toString()
                 else -> "00:00"
             }
-            planner.find(PlannerRequest(from, to, current.date, time, services, walking, 5000, board, arrive, allDay, nextAvailable = timeMode == "auto"), current)
+            planner.find(PlannerRequest(from, to, current.date, time, services, walking, 5000, board, arrive, everyTrain, nextAvailable = !everyTrain && timeMode == "auto"), current)
         }
     }
 
@@ -183,11 +183,14 @@ fun LabPlanScreen(
                         leadingIcon = { Icon(Icons.AutoMirrored.Outlined.DirectionsWalk, null, Modifier.size(18.dp)) }, modifier = Modifier.heightIn(min = LabTouch))
                 }
                 LabPrimaryButton(if (result.loading) "Finding trips…" else "Find trips", { search() }, Modifier.fillMaxWidth().testTag("lab-plan-search"), enabled = canSearch)
+                // Penelope on demand: every published train for the day, even when the normal search found trips.
+                LabSecondaryButton("Penelope · every train ${if (state.date == today) "today" else "this day"}", { timeMode = "all"; search(everyTrain = true) },
+                    Modifier.fillMaxWidth().testTag("lab-plan-penelope"), enabled = canSearch)
             }
         }
         if (allDay) item {
             Text("Penelope · All-day departures", style = LabType.bodyStrong, color = c.ink)
-            Text("Browse published departures for the selected date, including earlier services. Bus searches cover direct trips, within the available timetable data.", style = LabType.small, color = c.muted)
+            Text("Every published departure for the selected date, from the first train to the last, including ones that have already left. Bus searches cover direct trips, within the available timetable data.", style = LabType.small, color = c.muted)
         }
         if (request == null && !result.loading) {
             if (state.preferences.routes.isNotEmpty()) {
@@ -218,7 +221,10 @@ fun LabPlanScreen(
                 OptionCard(option, request?.from, false, past = option.estimate.departureAt <= now, allDay = true) { onOpenTrip(option) }
             }
             if (chronological.size > visibleCount) item {
-                LabSecondaryButton("Show more departures (${chronological.size - visibleCount} remaining)", { visibleCount += 24 }, Modifier.fillMaxWidth().testTag("lab-more-departures"))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LabPrimaryButton("Show all times (${chronological.size})", { visibleCount = Int.MAX_VALUE }, Modifier.fillMaxWidth().testTag("lab-all-times"))
+                    LabSecondaryButton("Show 24 more", { visibleCount += 24 }, Modifier.fillMaxWidth().testTag("lab-more-departures"))
+                }
             }
         }
         ModeOrder.forEach { service ->
