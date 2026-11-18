@@ -32,47 +32,65 @@ object JourneyComparison {
     }
 }
 
+data class GoldenCorridor(val document: BusRouteDocument,val departureArea: String="",val arrivalArea: String="")
+
 object BusDiscovery {
     // PRASA locates Unibell station in Belhar. Area names help find PDFs without assigning a boarding pin.
-    private fun goldenArea(name: String): String = when (val key = stationKey(name)) {
-        "unibell" -> "belhar"
-        "city", "citygoldenacre", "goldenacreterminus" -> "capetown"
-        else -> key
+    private fun goldenArea(name: String): String {
+        val key=stationKey(name)
+        return when {
+            key=="unibell" -> "belhar"
+            key=="city" || key=="goldenacreterminus" || key.startsWith("citygoldenacre") -> "capetown"
+            else -> key
+        }
     }
 
     /** Find published corridor documents by known area names or nearby survey geometry. */
-    fun goldenCandidates(snapshot: BusSnapshot,from: GeoPoint,to: GeoPoint,date: LocalDate,radius: Double=1500.0,fromName: String="",toName: String=""): List<BusRouteDocument> {
+    fun goldenCandidates(snapshot: BusSnapshot,from: GeoPoint,to: GeoPoint,date: LocalDate,radius: Double=1500.0,fromName: String="",toName: String=""): List<GoldenCorridor> {
         if(snapshot.service!=TransportService.GOLDEN_ARROW) return emptyList()
-        val start = goldenArea(fromName)
-        val end = goldenArea(toName)
+        val start=goldenArea(fromName)
+        val end=goldenArea(toName)
         val corridors=snapshot.shapes.mapNotNull { shape ->
-            val names=shape.name.substringAfter(":",shape.name).split(Regex("\\s+to\\s+",RegexOption.IGNORE_CASE))
-            if(names.size!=2 || shape.points.isEmpty()) return@mapNotNull null
-            val a=shape.points.minOf { NearbySuggestions.distance(from,it) };val b=shape.points.minOf { NearbySuggestions.distance(to,it) }
-            if(a>radius || b>radius) null else Triple(goldenArea(names[0]),goldenArea(names[1]),a+b)
+            val names=shape.name.substringAfter(":",shape.name).split(Regex("\\s+to\\s+",RegexOption.IGNORE_CASE)).map(::goldenArea)
+            if(names.size!=2 || names.any { it.isBlank() } || shape.points.isEmpty()) return@mapNotNull null
+            fun nearest(point: GeoPoint)=shape.points.indices.minBy { NearbySuggestions.distance(point,shape.points[it]) }
+            val a=nearest(from)
+            val b=nearest(to)
+            val access=NearbySuggestions.distance(from,shape.points[a])
+            val egress=NearbySuggestions.distance(to,shape.points[b])
+            if(access>radius || egress>radius) return@mapNotNull null
+            val direction=when {
+                a<b -> names
+                a>b -> names.asReversed()
+                else -> emptyList()
+            }
+            Triple(names,direction,access+egress)
         }
         return snapshot.routes.filter { it.validFor(date) }.mapNotNull { route ->
             val areas=route.title.split(Regex("\\s*[-–—]\\s*")).map(::goldenArea)
             if(start.isNotBlank() && end.isNotBlank() && start!=end && start in areas && end in areas)
-                return@mapNotNull route to -1.0
+                return@mapNotNull GoldenCorridor(route,start,end) to -1.0
             val title=stationKey(route.title)
-            val match=corridors.filter { it.first.isNotBlank() && it.second.isNotBlank() && title.contains(it.first) && title.contains(it.second) }.minOfOrNull { it.third }
-            match?.let { route to it }
-        }.sortedBy { it.second }.map { it.first }.distinctBy { "${it.id.substringBefore(':')}:${it.validFrom}:${it.validUntil}" }.take(8)
+            val match=corridors.filter { (names,_,_) -> names.all(title::contains) }.minByOrNull { it.third } ?: return@mapNotNull null
+            GoldenCorridor(route,match.second.getOrElse(0) { "" },match.second.getOrElse(1) { "" }) to match.third
+        }.sortedBy { it.second }.map { it.first }.distinctBy { (doc) -> "${doc.id.substringBefore(':')}:${doc.validFrom}:${doc.validUntil}" }.take(8)
     }
     /** Published times on a nearby corridor, without joining PDF names to surveyed stops. */
-    fun goldenDepartures(timetable: BusTimetable, fromName: String, toName: String, date: LocalDate, after: String): List<BusJourney> {
+    fun goldenDepartures(timetable: BusTimetable, fromName: String, toName: String, date: LocalDate, after: String, corridor: GoldenCorridor?=null): List<BusJourney> {
         if(timetable.service!=TransportService.GOLDEN_ARROW || !timetable.day.equals(date.dayOfWeek.name,true) || !timetable.route.validFor(date))
             return emptyList()
         val names = timetable.trips.flatMap { trip -> trip.calls.map { goldenArea(it.name) } }.toSet()
         val origin = goldenArea(fromName).takeIf { it in names }
         val destination = goldenArea(toName).takeIf { it in names }
+        // When one end has a published name, use the survey only to identify the onward direction.
+        val boardArea = origin ?: corridor?.departureArea?.takeIf { destination != null && it in names }
+        val alightArea = destination ?: corridor?.arrivalArea?.takeIf { origin != null && it in names }
         return timetable.trips.mapNotNull { trip ->
             if (trip.validFrom != null && date < LocalDate.parse(trip.validFrom)) return@mapNotNull null
-            val end = if (destination == null) trip.calls.lastIndex else trip.calls.indexOfLast { goldenArea(it.name) == destination }
+            val end = if (alightArea == null) trip.calls.lastIndex else trip.calls.indexOfLast { goldenArea(it.name) == alightArea }
             val start = (0 until end).firstOrNull { i ->
                 val call = trip.calls[i]
-                call.time >= after && (origin == null || goldenArea(call.name) == origin)
+                call.time >= after && (boardArea == null || goldenArea(call.name) == boardArea)
             } ?: return@mapNotNull null
             BusJourney(timetable, trip, start, end, null, null)
         }.distinctBy { it.departure.id to it.arrival.id to (it.departure.time to it.arrival.time) }

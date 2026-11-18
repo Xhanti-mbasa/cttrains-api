@@ -31,27 +31,32 @@ import java.time.LocalTime
 @Composable
 internal fun PlanTimePicker(
     time: LocalTime,
+    currentTime: LocalTime,
     mode: String,
     onDismiss: () -> Unit,
     onAuto: () -> Unit,
     onAllDay: () -> Unit,
     onSelected: (String) -> Unit,
 ) {
-    var selection by rememberSaveable { mutableStateOf(if (mode == "auto") "depart" else mode) }
+    var selection by rememberSaveable { mutableStateOf(mode) }
     var hour by rememberSaveable { mutableIntStateOf(time.hour) }
     var minute by rememberSaveable { mutableIntStateOf(time.minute) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Leave at") },
+        title = { Text("Depart after") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()).selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                TimeChoice("Next available", "auto", selection) { selection = "auto" }
-                TimeChoice("Leave after", "depart", selection) { selection = "depart" }
+                TimeChoice("Now", "auto", selection) {
+                    hour = currentTime.hour
+                    minute = currentTime.minute
+                    selection = "auto"
+                }
+                TimeChoice("Choose a time", "depart", selection) { selection = "depart" }
                 TimeChoice("Any time · All day", "all", selection) { selection = "all" }
-                if (selection == "depart") {
+                if (selection != "all") {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)) {
-                        TimeWheel("Hour", 24, hour) { hour = it }
-                        TimeWheel("Minute", 60, minute) { minute = it }
+                        TimeWheel("Hour", 24, hour) { hour = it; selection = "depart" }
+                        TimeWheel("Minute", 60, minute) { minute = it; selection = "depart" }
                     }
                 }
             }
@@ -100,6 +105,7 @@ private fun TimeWheel(label: String, count: Int, selected: Int, onChange: (Int) 
                     setOnValueChangedListener { _, _, next -> onChange(next) }
                 }
             },
+            update = { if (it.value != selected) it.value = selected },
             modifier = Modifier.testTag("lab-time-wheel-${label.lowercase()}"),
         )
     }

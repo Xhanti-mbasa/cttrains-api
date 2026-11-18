@@ -139,12 +139,13 @@ class JourneyPlannerModel(app: Application): AndroidViewModel(app) {
                 BusDiscovery.goldenCandidates(snapshot,fromPoint,toPoint,date,r.maxWalkMeters.toDouble(),origin,destination)
             }
             val candidates=mutableListOf<GoldenTimetableCandidate>()
-            for(route in routesNearBoth) {
+            for(corridor in routesNearBoth) {
+                val route=corridor.document
                 currentCoroutineContext().ensureActive()
                 mutable.update { it.copy(progress="Checking published timetable · ${route.title}") }
                 val (timetable,cached)=try { buses.timetable(service,route,day) }
                     catch(e: Exception) { if(e is CancellationException) throw e;failed++;continue }
-                val departures=BusDiscovery.goldenDepartures(timetable,origin,destination,date,after)
+                val departures=BusDiscovery.goldenDepartures(timetable,origin,destination,date,after,corridor)
                 candidates+=GoldenTimetableCandidate(timetable,cached,departures)
             }
             val timed=candidates.filter { it.departures.isNotEmpty() }.distinctBy { candidate ->

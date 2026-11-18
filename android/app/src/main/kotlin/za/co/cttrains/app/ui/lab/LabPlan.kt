@@ -146,9 +146,9 @@ fun LabPlanScreen(
                     FilterChip(true, { datePicker = true }, label = { Text(if (state.date == today) "Today" else LabTiming.day(state.date)) },
                         leadingIcon = { Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(18.dp)) }, modifier = Modifier.heightIn(min = LabTouch).testTag("lab-plan-date"))
                     val timeLabel = when (timeMode) {
-                        "all" -> "Any time · All day"
-                        "depart" -> "Leave after ${state.time}"
-                        else -> "Next available"
+                        "all" -> "All-day departures"
+                        "depart" -> "Depart after ${state.time}"
+                        else -> "Depart after $currentTime"
                     }
                     FilterChip(true, { timePicker = true }, label = { Text(timeLabel) },
                         leadingIcon = { Icon(Icons.Outlined.Schedule, null, Modifier.size(18.dp)) }, modifier = Modifier.heightIn(min = LabTouch).testTag("lab-time-depart"))
@@ -287,6 +287,7 @@ fun LabPlanScreen(
     }
     if (timePicker) PlanTimePicker(
         time = if (timeMode == "depart") LocalTime.parse(state.time) else currentTime,
+        currentTime = currentTime,
         mode = timeMode,
         onDismiss = { timePicker = false },
         onAuto = { timeMode = "auto"; timePicker = false },

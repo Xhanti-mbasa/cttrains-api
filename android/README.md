@@ -6,7 +6,7 @@ Native **Kotlin, Jetpack Compose and Google Material 3** transit planner. The ap
 
 The owner-approved Lab design is now the default production UI: **Now · Plan · Mine**. Open maps from Now, and find saved trips, places, widgets, privacy, backups and updates in Mine. Production keeps its package, signing certificate and local data; the optional Lab installation remains separate. To move Lab data into production, export an encrypted backup in Lab and restore it in CT Trains.
 
-Plan defaults to **Next available**. Its time selector offers hour and minute wheels for **Leave after**, plus **Any time · All day**. All-day browsing keeps the selected route, date and modes, shows departures in time order and labels past services. For saved places, train station preferences are inside the From and To selectors. See [release notes and rollback](docs/release-1.15.0.md).
+Plan defaults to the current time. Tap **Depart after** for **Now**, hour and minute wheels, and **Any time · All day**. All-day browsing keeps the selected route, date and modes, shows departures in time order and labels past services. For saved places, train station preferences are inside the From and To selectors. See [release notes and rollback](docs/release-1.15.0.md).
 
 ## Optional beta features in 1.4.0
 
