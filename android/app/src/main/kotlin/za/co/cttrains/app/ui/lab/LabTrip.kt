@@ -159,6 +159,8 @@ fun LabTripScreen(
                 style = LabType.small, color = c.muted)
         }
 
+        if (feature.extras.beta.uberHandoff) UberHandoffCard(option, from, to, state.stations, now)
+
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(onClick = {
                 directions.preview({ DirectionsPlans.option(option, model.state.value, feature) }) {

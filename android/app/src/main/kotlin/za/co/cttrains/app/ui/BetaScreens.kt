@@ -71,6 +71,7 @@ internal fun shareText(context: android.content.Context,text: String) { context.
         HealthStepsSettings(s,m)
         Toggle("Nearby station suggestions","Use location while Home or Plan is open. Approximate location may be too broad for a station recommendation.",s.extras.beta.autoNearby) { v->m.beta { it.copy(autoNearby=v) } }
         Toggle("Hosted community & live trips","Optional Matrix account. Public reports are unverified; location sharing requires a separate start action.",s.extras.beta.hostedSharing) { v->m.beta { it.copy(hostedSharing=v) } }
+        Toggle("Uber ride handoff","Adds an optional Uber button to trips. It opens Uber with the pickup and drop-off filled in; you review and confirm the ride in Uber. Nothing is booked from CT Trains.",s.extras.beta.uberHandoff) { v->m.beta { it.copy(uberHandoff=v) } }
         Toggle("Learn walking times","Start an individual walk to measure its duration in the background. No raw location history is saved.",s.extras.beta.walkLearning) { v->m.beta { it.copy(walkLearning=v) } }
         Toggle("Nearby users","Optional approximate presence in your selected Matrix service room. Uses location permission, not Bluetooth. Requires a Matrix account, room and a separate sharing start action.",s.extras.beta.nearbyUsers) { v->m.beta { it.copy(nearbyUsers=v) } }
         OutlinedButton(onClick=onTrips) { Text("Safety trip files") }

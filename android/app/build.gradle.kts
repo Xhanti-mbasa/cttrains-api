@@ -41,6 +41,8 @@ android {
         versionName = configuredVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "TRANSIT_BASE_URL", quoted(transitUrl.trimEnd('/')))
+        // Uber's public client ID only (never the client secret); optional for the deep-link handoff.
+        buildConfigField("String", "UBER_CLIENT_ID", quoted((System.getenv("CTTRAINS_UBER_CLIENT_ID") ?: localSecrets.getProperty("CTTRAINS_UBER_CLIENT_ID", "")).trim().also { require(it.isEmpty() || Regex("[A-Za-z0-9_-]{8,64}").matches(it)) { "CTTRAINS_UBER_CLIENT_ID must be Uber's public client ID." } }))
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", quoted(System.getenv("CTTRAINS_GOOGLE_WEB_CLIENT_ID") ?: localSecrets.getProperty("CTTRAINS_GOOGLE_WEB_CLIENT_ID", "")))
     }
     signingConfigs {

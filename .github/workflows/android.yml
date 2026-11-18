@@ -64,6 +64,7 @@ jobs:
           CTTRAINS_USE_DEVELOPMENT_SIGNING: "true"
           CTTRAINS_TRANSIT_BASE_URL: ${{ vars.CTTRAINS_TRANSIT_BASE_URL }}
           CTTRAINS_GOOGLE_WEB_CLIENT_ID: ${{ vars.CTTRAINS_GOOGLE_WEB_CLIENT_ID }}
+          CTTRAINS_UBER_CLIENT_ID: ${{ vars.CTTRAINS_UBER_CLIENT_ID }}
         run: ./gradlew clean :core:test :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease --no-daemon
       - name: Verify and prepare CI APK
         env:
@@ -188,6 +189,7 @@ jobs:
           CTTRAINS_VERSION_CODE: ${{ steps.metadata.outputs.version_code }}
           CTTRAINS_TRANSIT_BASE_URL: ${{ vars.CTTRAINS_TRANSIT_BASE_URL }}
           CTTRAINS_GOOGLE_WEB_CLIENT_ID: ${{ vars.CTTRAINS_GOOGLE_WEB_CLIENT_ID }}
+          CTTRAINS_UBER_CLIENT_ID: ${{ vars.CTTRAINS_UBER_CLIENT_ID }}
         run: |
           set -euo pipefail
           for name in KEYSTORE_BASE64 CTTRAINS_KEYSTORE_PASSWORD CTTRAINS_KEY_ALIAS CTTRAINS_KEY_PASSWORD; do
