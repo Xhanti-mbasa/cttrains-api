@@ -211,7 +211,7 @@ import za.co.cttrains.core.*
                         Text(timetable.route.title,style=MaterialTheme.typography.titleMedium)
                         Text("Possible route · surveyed corridor near both places",style=MaterialTheme.typography.labelMedium)
                         Text("${timetable.day} · ${if(candidate.cached) "Saved timetable" else "Checked"} ${checked(timetable.fetchedAt)}",style=MaterialTheme.typography.labelSmall)
-                        Text("${timetable.trips.count { trip->trip.calls.lastOrNull()?.time.orEmpty()>=time }} published trips remaining in this timetable. Your roadside boarding time is not supplied.",style=MaterialTheme.typography.bodySmall)
+                        Text("${candidate.departures.size} published trips at timed points. Your roadside boarding time is not supplied.",style=MaterialTheme.typography.bodySmall)
                         FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                             TextButton(onClick={ manualService=service.name;m.chooseBus(service);m.timetable(timetable.route,timetable.day) }) { Text("Choose published timed stops") }
                             TextButton(onClick={ uri.openUri(timetable.route.url) }) { Text("View operator PDF") }

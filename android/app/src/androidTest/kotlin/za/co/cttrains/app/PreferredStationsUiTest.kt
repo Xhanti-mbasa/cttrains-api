@@ -44,20 +44,19 @@ class PreferredStationsUiTest {
         app.onNodeWithTag("journey-station-picker").performScrollToNode(hasTestTag("station-choice:${stationKey("Salt River")}"))
         app.onNodeWithTag("station-choice:${stationKey("Salt River")}").performClick()
         app.waitUntil(15000) { features.state.value.extras.spots.first { it.id==work.id }.preferredStation=="Salt River" }
-        app.onNodeWithTag("boarding-station").performScrollTo().assertTextContains("Board at · Salt River")
+        app.onNodeWithTag("boarding-station").assertDoesNotExist()
         app.onNodeWithTag("lab-plan").performScrollToNode(hasTestTag("final-spot:${home.id}"))
         UiScreenshots.closeSystemDialogs()
         // CI emulators can show "System UI isn't responding" over the app here; invoke the chip's click action directly.
         app.onNodeWithTag("final-spot:${home.id}").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         app.waitUntil(15000) { features.state.value.destination?.id=="spot:${home.id}" }
-        app.onNodeWithTag("lab-plan").performScrollToNode(hasTestTag("arrival-station"))
-        app.onNodeWithTag("arrival-station").assertTextContains("Get off at · Unibell")
+        app.onNodeWithTag("arrival-station").assertDoesNotExist()
         app.runOnIdle { assertEquals("spot:${work.id}",features.state.value.access?.id);assertEquals("spot:${home.id}",features.state.value.destination?.id);assertEquals("Salt River",train.state.value.from);assertEquals("Unibell",train.state.value.to) }
         UiScreenshots.save("work-salt-river-unibell-home")
         app.onNodeWithContentDescription("Swap start and destination").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         app.runOnIdle { assertEquals("Unibell",features.state.value.boardingStation);assertEquals("Salt River",features.state.value.arrivalStation);assertEquals("Home",features.state.value.access?.label);assertEquals("Work",features.state.value.destination?.label) }
-        app.onNodeWithTag("boarding-station").performScrollTo().assertTextContains("Board at · Unibell")
-        app.onNodeWithTag("arrival-station").performScrollTo().assertTextContains("Get off at · Salt River")
+        app.onNodeWithTag("lab-plan-to").performScrollTo().performClick()
+        app.onNodeWithTag("arrival-station").assertTextContains("Salt River")
     }
     @Test fun preferredStationSurvivesReselectionAndBackupRestore() {
         app.runOnUiThread { features.place(WalkEndpoint("spot:${work.id}",work.name,work.point),true);features.chooseStation("Salt River",true,true) }
@@ -67,7 +66,8 @@ class PreferredStationsUiTest {
         app.waitUntil(15000) { features.state.value.extras.spots.firstOrNull { it.id==work.id }?.preferredStation=="Salt River" }
         app.runOnUiThread { features.place(null,true);features.place(WalkEndpoint("spot:${work.id}",work.name,work.point),true) }
         app.runOnIdle { assertEquals("Salt River",features.state.value.boardingStation) }
-        app.onNodeWithTag("boarding-station").performScrollTo().assertTextContains("Board at · Salt River")
+        app.onNodeWithTag("lab-plan-from").performScrollTo().performClick()
+        app.onNodeWithTag("boarding-station").assertTextContains("Salt River")
         app.onNodeWithTag("boarding-station").performClick()
         app.onNodeWithText("Auto · find nearby usable stations").performClick()
         app.waitUntil(15000) { features.state.value.extras.spots.first { it.id==work.id }.preferredStation==null }

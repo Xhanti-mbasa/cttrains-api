@@ -33,16 +33,24 @@ class PenelopePlanTest {
         var date = LocalDate.now(CapeTownZone).plusDays(1)
         while (date.dayOfWeek.value == 7) date = date.plusDays(1)
         app.runOnUiThread { train.chooseDate(date.toString()); train.chooseTime("14:00") }
-        app.onNodeWithTag("lab-time-all").performScrollTo().performClick().assertIsSelected()
+        app.onNodeWithTag("lab-time-choice-all").assertDoesNotExist()
+        app.onNodeWithTag("lab-time-depart").performScrollTo().performClick()
+        app.onNodeWithTag("lab-time-choice-all").performClick().assertIsSelected()
+        app.onNodeWithText("Apply").performClick()
+        app.onNodeWithTag("lab-time-depart").assertTextContains("Any time · All day")
         app.onNodeWithTag("lab-plan-from").assertTextContains("Salt River")
         app.onNodeWithTag("lab-plan-to").assertTextContains("Unibell")
         app.onNodeWithTag("lab-mode-PRASA").performScrollTo().assertIsSelected()
         assertEquals(date.toString(), train.state.value.date)
-        app.onNodeWithTag("lab-time-now").performScrollTo().performClick().assertIsSelected()
-        assertEquals(date.toString(), train.state.value.date)
         app.onNodeWithTag("lab-time-depart").performScrollTo().performClick()
-        app.onNodeWithText("Choose time").performClick()
-        app.onNodeWithTag("lab-time-depart").assertIsSelected()
+        app.onNodeWithTag("lab-time-choice-auto").performClick()
+        app.onNodeWithText("Apply").performClick()
+        app.onNodeWithTag("lab-time-depart").assertTextContains("Next available")
+        assertEquals(date.toString(), train.state.value.date)
+        app.onNodeWithTag("lab-time-depart").performClick()
+        app.onNodeWithTag("lab-time-choice-depart").assertIsSelected()
+        app.onNodeWithText("Apply").performClick()
+        app.onNodeWithTag("lab-time-depart").assertTextContains("Leave after 00:00")
         app.onNodeWithTag("lab-plan-from").assertTextContains("Salt River")
     }
     @Test fun cachedAllDayIncludesEarlierAndLaterTransfersAndPagesWithoutAnotherSearch() {
@@ -56,7 +64,9 @@ class PenelopePlanTest {
         }.reversed()
         runBlocking { train.repository.store.cache(CachedSearch(query, journeys, System.currentTimeMillis(), null, train.state.value.preferences.sourceId)) }
         app.runOnUiThread { train.chooseDate(date.toString()); train.chooseTime("17:00") }
-        app.onNodeWithTag("lab-time-all").performScrollTo().performClick()
+        app.onNodeWithTag("lab-time-depart").performScrollTo().performClick()
+        app.onNodeWithTag("lab-time-choice-all").performClick()
+        app.onNodeWithText("Apply").performClick()
         app.onNodeWithTag("lab-plan-search").performScrollTo().performClick()
         val planner = ViewModelProvider(app.activity)[JourneyPlannerModel::class.java]
         app.waitUntil(15_000) { !planner.state.value.loading && planner.state.value.sections.isNotEmpty() }

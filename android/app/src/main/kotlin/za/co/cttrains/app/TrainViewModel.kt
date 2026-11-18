@@ -170,6 +170,11 @@ class TrainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Plan spans rail and buses, so its default date follows the clock instead of rail's 19:00 cutoff.
+    fun refreshPlanDate() {
+        if (!manualDate) mutableState.update { it.copy(date = java.time.LocalDate.now(CapeTownZone).toString()) }
+    }
+
     fun chooseDate(value: String) { manualDate = true; edit { it.copy(date = value) }; refreshSearchDefaults() }
     fun chooseTime(value: String) { manualTime = true; edit { it.copy(time = value) } }
     fun keepOrigin() { manualOrigin = true }

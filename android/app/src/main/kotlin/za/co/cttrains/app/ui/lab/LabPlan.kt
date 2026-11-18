@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -26,19 +27,20 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import za.co.cttrains.app.FeatureState
 import za.co.cttrains.app.FeatureViewModel
+import za.co.cttrains.app.GoldenTimetableCandidate
 import za.co.cttrains.app.JourneyPlannerModel
 import za.co.cttrains.app.PlannerOption
 import za.co.cttrains.app.PlannerRequest
 import za.co.cttrains.app.TrainState
 import za.co.cttrains.app.TrainViewModel
-import za.co.cttrains.app.ui.DepartureTimePicker
 import za.co.cttrains.app.ui.ModeOrder
 import za.co.cttrains.app.ui.TravelDatePicker
 import za.co.cttrains.app.ui.money
-import za.co.cttrains.app.ui.JourneyStationField
 import za.co.cttrains.app.ui.JourneyStationPicker
 import za.co.cttrains.app.ui.SaveJourneyPlace
 import za.co.cttrains.core.*
@@ -52,7 +54,8 @@ internal fun TransportService.labMode() = when (this) {
 
 /** Minutes walked from the trip's start to its first stop, when the walk was calculated. */
 internal fun PlannerOption.accessMinutes(from: WalkEndpoint?): Int? =
-    if (from?.id?.startsWith("station:") == true) 0 else walks.firstOrNull { it.from == from }?.minutes
+    if (service == TransportService.PRASA && from?.id?.startsWith("station:") == true && stationKey(from.label) == stationKey(board)) 0
+    else walks.firstOrNull { it.from == from }?.minutes
 
 /** Leave time: departure minus the known walk minus the same 5-minute boarding buffer saved plans use. */
 internal fun PlannerOption.leaveAt(from: WalkEndpoint?): Long? = accessMinutes(from)?.let { estimate.departureAt - (it + 5) * 60_000L }
@@ -73,7 +76,7 @@ fun LabPlanScreen(
     var timePicker by remember { mutableStateOf(false) }
     var stationPicker by remember { mutableStateOf<Boolean?>(null) }
     var savePlace by remember { mutableStateOf<Boolean?>(null) }
-    var timeMode by rememberSaveable { mutableStateOf("depart") }
+    var timeMode by rememberSaveable { mutableStateOf("auto") }
     val allDay = timeMode == "all"
     var visibleCount by remember(result.request) { mutableIntStateOf(24) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -88,8 +91,7 @@ fun LabPlanScreen(
             while (true) { now = System.currentTimeMillis(); delay(60_000) }
         }
     }
-    // Keep the default search time current, as the regular planner does, without sampling location here.
-    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { model.refreshSearchDefaults(); onPauseOrDispose {} }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { model.refreshPlanDate(); onPauseOrDispose {} }
     LaunchedEffect(state.currentPosition, state.stations, feature.access, feature.boardingStation, feature.extras.beta.autoNearby) {
         if (feature.extras.beta.autoNearby && feature.access == null && feature.boardingStation == null) model.defaultNearbyOrigin()
     }
@@ -101,24 +103,27 @@ fun LabPlanScreen(
     val arrive = if (feature.destination == null) state.to else feature.arrivalStation
     val request = result.request
     // Results stay when you come back from a trip; they clear only when the question changes.
-    val stale = request != null && (request.from != from || request.to != to || request.date != state.date || request.time != (if(allDay) "00:00" else state.time) || request.allDay != allDay ||
+    val stale = request != null && (request.from != from || request.to != to || request.date != state.date || (timeMode == "depart" && request.time != state.time) || request.allDay != allDay || request.nextAvailable != (timeMode == "auto") ||
         request.services != services || request.walking != walking || request.boardingStation != board || request.arrivalStation != arrive)
     LaunchedEffect(stale) { if (stale) planner.clear() }
-    LaunchedEffect(result.loading, result.sections.isEmpty()) {
-        while (!result.loading && result.sections.isEmpty()) {
-            delay(60_000)
-            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) model.refreshSearchDefaults()
-        }
-    }
+    val localNow = Instant.ofEpochMilli(now).atZone(CapeTownZone)
+    val today = localNow.toLocalDate().toString()
+    val currentTime = if (state.date == today) localNow.toLocalTime().withSecond(0).withNano(0) else LocalTime.MIDNIGHT
     val canSearch = from != null && to != null && from != to && services.isNotEmpty() && !result.loading
     fun search() {
         if (from != null && to != null) {
-            val time = when { allDay -> "00:00"; timeMode == "now" -> java.time.LocalTime.now(CapeTownZone).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")); else -> state.time }
-            if (timeMode == "now") model.chooseTime(time)
-            planner.find(PlannerRequest(from, to, state.date, time, services, walking, 5000, board, arrive, allDay), model.state.value)
+            model.refreshPlanDate()
+            val current = model.state.value
+            val clock = java.time.LocalDateTime.now(CapeTownZone)
+            val time = when {
+                allDay -> "00:00"
+                timeMode == "depart" -> current.time
+                current.date == clock.toLocalDate().toString() -> clock.toLocalTime().withSecond(0).withNano(0).toString()
+                else -> "00:00"
+            }
+            planner.find(PlannerRequest(from, to, current.date, time, services, walking, 5000, board, arrive, allDay, nextAvailable = timeMode == "auto"), current)
         }
     }
-    val today = LocalDate.now(CapeTownZone).toString()
 
     LazyColumn(Modifier.fillMaxSize().background(c.ground).testTag("lab-plan"), contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -140,14 +145,13 @@ fun LabPlanScreen(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(true, { datePicker = true }, label = { Text(if (state.date == today) "Today" else LabTiming.day(state.date)) },
                         leadingIcon = { Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(18.dp)) }, modifier = Modifier.heightIn(min = LabTouch).testTag("lab-plan-date"))
-                    FilterChip(timeMode == "depart", { timePicker = true }, label = { Text("Depart after ${state.time}") },
+                    val timeLabel = when (timeMode) {
+                        "all" -> "Any time · All day"
+                        "depart" -> "Leave after ${state.time}"
+                        else -> "Next available"
+                    }
+                    FilterChip(true, { timePicker = true }, label = { Text(timeLabel) },
                         leadingIcon = { Icon(Icons.Outlined.Schedule, null, Modifier.size(18.dp)) }, modifier = Modifier.heightIn(min = LabTouch).testTag("lab-time-depart"))
-                    FilterChip(timeMode == "now", {
-                        timeMode = "now"
-                        model.chooseTime(java.time.LocalTime.now(CapeTownZone).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")))
-                    }, label = { Text("Now") }, modifier = Modifier.heightIn(min = LabTouch).testTag("lab-time-now"))
-                    FilterChip(allDay, { timeMode = "all" }, label = { Text("Any time · All day") },
-                        modifier = Modifier.heightIn(min = LabTouch).testTag("lab-time-all"))
                 }
                 if (TransportService.PRASA in services && feature.destination == null) {
                     state.stations.firstOrNull { it.mapped && stationKey(it.name) == arrive?.let(::stationKey) }?.let { station ->
@@ -159,10 +163,6 @@ fun LabPlanScreen(
                         }
                     }
                 }
-                if (TransportService.PRASA in services && feature.access != null)
-                    JourneyStationField(true, board, from, state, { stationPicker = true }, { features.place(null, true) })
-                if (TransportService.PRASA in services && feature.destination != null)
-                    JourneyStationField(false, arrive, to, state, { stationPicker = false }, { features.place(null, false) })
                 if (feature.access != null && !feature.access.id.startsWith("spot:"))
                     TextButton(onClick = { savePlace = true }) { Text("Save start as a place") }
                 if (feature.destination != null && !feature.destination.id.startsWith("spot:"))
@@ -187,14 +187,14 @@ fun LabPlanScreen(
         }
         if (allDay) item {
             Text("Penelope · All-day departures", style = LabType.bodyStrong, color = c.ink)
-            Text("Browse the selected date in departure order. Past departures are for reference. Coverage is limited to the published source response: trains from 03:00; bus searches check up to 6 routes and 3 stop pairs per route, with direct trips only. This is not a complete network timetable.", style = LabType.small, color = c.muted)
+            Text("Browse published departures for the selected date, including earlier services. Bus searches cover direct trips, within the available timetable data.", style = LabType.small, color = c.muted)
         }
         if (request == null && !result.loading) {
             if (state.preferences.routes.isNotEmpty()) {
                 item { LabSectionTitle("Your routes") }
                 items(state.preferences.routes.take(4), key = { "r-${it.from}-${it.to}" }) { route ->
                     ActionRow(Icons.Outlined.Route, "${route.from} → ${route.to}", "Tap to fill in and search") {
-                        features.place(null, true); features.place(null, false); model.useRoute(route)
+                        features.place(null, true); features.place(null, false); model.useRoute(route); model.refreshPlanDate()
                     }
                 }
             }
@@ -229,20 +229,28 @@ fun LabPlanScreen(
                     OptionCard(option, request?.from, option.id == fastest, past = option.estimate.departureAt <= now) { onOpenTrip(option) }
                 }
             }
-            if (section.options.isEmpty()) item(key = "e-${service.name}") {
+            if (section.options.isEmpty() && section.candidates.isEmpty()) item(key = "e-${service.name}") {
                 LabStateCard(service.labMode().label, "No ${service.labMode().label} trip found",
-                    section.issue ?: if(allDay) "No journeys were returned for this date. Missing source coverage does not prove there is no service." else "Nothing you can catch is listed after ${state.time}.",
+                    section.issue ?: if(allDay) "No journeys were returned for this date. Missing source coverage does not prove there is no service." else "Nothing you can catch is listed after ${request?.time ?: state.time}.",
                     "Choose another time" to { timePicker = true })
             } else section.issue?.let { note -> item(key = "n-${service.name}") { Text(note, style = LabType.small, color = c.muted) } }
+            items(section.candidates, key = { "golden:${it.timetable.route.id}" }) { candidate ->
+                GoldenDepartureCard(candidate, allDay, request?.date == today, currentTime)
+            }
         }
         if (result.sections.isNotEmpty()) item {
-            Text(if(allDay) "Showing ${all.size} published options returned by this search. Timetable coverage and service calendars may be incomplete." else "Fastest counts only complete, timed trips. Times are published schedules; confirm platforms at the station.",
+            val count = all.size + result.sections.values.sumOf { section -> section.candidates.sumOf { it.departures.size } }
+            Text(if(allDay) "Showing ${count} published options returned by this search. Timetable coverage and service calendars may be incomplete." else "Fastest counts only complete, timed trips. Times are published schedules; confirm platforms at the station.",
                 style = LabType.small, color = c.muted)
         }
     }
 
     picker?.let { start ->
-        LabPlacePicker(state, model, feature, features, start, onDismiss = { picker = null }) { endpoint ->
+        val preferred = (if (start) feature.access else feature.destination)
+            ?.takeIf { TransportService.PRASA in services }
+        LabPlacePicker(state, model, feature, features, start, onDismiss = { picker = null },
+            station = preferred?.let { (if (start) board else arrive) ?: "Automatic" },
+            onStation = { picker = null; stationPicker = start }) { endpoint ->
             if (start) model.keepOrigin()
             if (endpoint.id.startsWith("station:")) {
                 features.place(null, start)
@@ -277,9 +285,14 @@ fun LabPlanScreen(
     if (datePicker) TravelDatePicker(state.date, state.catalog.holidays, { datePicker = false }, trainOnly = services == setOf(TransportService.PRASA)) {
         model.chooseDate(it); datePicker = false
     }
-    if (timePicker) DepartureTimePicker(state.time, { timePicker = false }, trainOnly = services == setOf(TransportService.PRASA)) {
-        model.chooseTime(it); timeMode = "depart"; timePicker = false
-    }
+    if (timePicker) PlanTimePicker(
+        time = if (timeMode == "depart") LocalTime.parse(state.time) else currentTime,
+        mode = timeMode,
+        onDismiss = { timePicker = false },
+        onAuto = { timeMode = "auto"; timePicker = false },
+        onAllDay = { timeMode = "all"; timePicker = false },
+        onSelected = { model.chooseTime(it); timeMode = "depart"; timePicker = false },
+    )
     if (consent) AlertDialog(onDismissRequest = { consent = false }, title = { Text("Calculate walking times?") },
         text = { Text("FOSSGIS / OSRM receives your start, destination and nearby stop coordinates to check footpaths. Results are cached on this phone. Transit times stay published schedules.") },
         confirmButton = { TextButton(onClick = { walking = true; consent = false }) { Text("Calculate") } },
@@ -303,6 +316,27 @@ private fun PlaceField(label: String, value: String?, hint: String, modifier: Mo
             Text(label, style = LabType.small, color = c.muted)
             Text(value ?: hint, style = LabType.bodyStrong, color = if (value == null) c.muted else c.ink)
         }
+    }
+}
+
+@Composable
+private fun GoldenDepartureCard(candidate: GoldenTimetableCandidate, allDay: Boolean, isToday: Boolean, currentTime: LocalTime) {
+    val c = LocalLab.current
+    val uri = LocalUriHandler.current
+    var visible by remember(candidate) { mutableIntStateOf(if (allDay) 8 else 4) }
+    LabCard(Modifier.testTag("lab-golden-timetable")) {
+        ModeBadge(LabMode.GOLDEN_ARROW)
+        Text(candidate.timetable.route.title, style = LabType.bodyStrong, color = c.ink)
+        Text(if (candidate.cached) "Saved timetable · published times" else "Published timetable times", style = LabType.small, color = c.muted)
+        for (option in candidate.departures.take(visible)) {
+            val past = allDay && isToday && LocalTime.parse(option.departure.time) <= currentTime
+            Text("${option.departure.time} ${option.departure.name} → ${option.arrival.time} ${option.arrival.name}" +
+                if (past) " · Departed" else "", style = LabType.body, color = if (past) c.muted else c.ink)
+        }
+        if (visible < candidate.departures.size)
+            LabSecondaryButton("Show more times", { visible += 8 }, Modifier.fillMaxWidth())
+        if (candidate.departures.isEmpty()) Text("No timed departures match this search.", style = LabType.small, color = c.muted)
+        LabSecondaryButton("Open Golden Arrow timetable", { runCatching { uri.openUri(candidate.timetable.route.url) } }, Modifier.fillMaxWidth())
     }
 }
 
@@ -348,7 +382,7 @@ internal fun OptionCard(option: PlannerOption, from: WalkEndpoint?, fastest: Boo
 /** Where to: your places, current location, stations, stops and (optionally) addresses. */
 @Composable
 internal fun LabPlacePicker(state: TrainState, model: TrainViewModel, feature: FeatureState, features: FeatureViewModel, start: Boolean,
-                            onDismiss: () -> Unit, onSelect: (WalkEndpoint) -> Unit) {
+                            onDismiss: () -> Unit, station: String? = null, onStation: () -> Unit = {}, onSelect: (WalkEndpoint) -> Unit) {
     val c = LocalLab.current
     var query by remember { mutableStateOf("") }
     var online by rememberSaveable { mutableStateOf(true) }
@@ -396,6 +430,10 @@ internal fun LabPlacePicker(state: TrainState, model: TrainViewModel, feature: F
                 OutlinedTextField(query, { query = it.take(120) }, placeholder = { Text("Station, stop, place or address") },
                     leadingIcon = { Icon(Icons.Outlined.Search, null) }, singleLine = true, shape = LabControlShape,
                     modifier = Modifier.fillMaxWidth().testTag("lab-place-search"))
+            }
+            if (station != null) item {
+                ActionRow(Icons.Outlined.Train, if (start) "Boarding station" else "Arrival station", station,
+                    modifier = Modifier.testTag(if (start) "boarding-station" else "arrival-station"), onClick = onStation)
             }
             if (start) item {
                 ActionRow(Icons.Outlined.MyLocation, if (waiting) "Finding your location…" else "Current location", "Nearest stations and stops are chosen for you") {

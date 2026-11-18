@@ -38,6 +38,21 @@ class JourneyComparisonTest {
         assertTrue(BusDiscovery.journeys(timetable(s.service),s,a,b,date.plusDays(1),"07:00",emptyList()).isEmpty())
         assertTrue(BusDiscovery.journeys(timetable(s.service),s,a,b,date,"08:01",emptyList()).isEmpty())
     }
+    @Test fun myCitiChecksNearbyRoutesFirstAndSkipsRoutesWithOnlyOneSharedStop() {
+        val nearby = route.copy(id = "near")
+        val shared = route.copy(id = "shared")
+        val s = snapshot(TransportService.MYCITI).copy(
+            routes = listOf(route, nearby, shared),
+            stops = listOf(
+                BusStopPoint("fara", "Far start", a.copy(latitude = -33.905), listOf(route.id), "Test"),
+                BusStopPoint("farb", "Far end", b.copy(latitude = -33.905), listOf(route.id), "Test"),
+                BusStopPoint("a", "Near start", a, listOf(nearby.id), "Test"),
+                BusStopPoint("b", "Near end", b, listOf(nearby.id), "Test"),
+                BusStopPoint("c", "Shared stop", GeoPoint(-33.9,18.45), listOf(shared.id), "Test"),
+            )
+        )
+        assertEquals(listOf(nearby, route), BusDiscovery.routes(s, a, b, date, emptyList(), 5000.0))
+    }
     @Test fun surveyRouteCodeDoesNotInventGoldenTimetableConnection() {
         val s=snapshot(TransportService.GOLDEN_ARROW)
         assertTrue(BusDiscovery.routes(s,a,b,date,emptyList(),500.0).isEmpty())

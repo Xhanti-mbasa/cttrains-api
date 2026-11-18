@@ -6,7 +6,7 @@ Native **Kotlin, Jetpack Compose and Google Material 3** transit planner. The ap
 
 The owner-approved Lab design is now the default production UI: **Now · Plan · Mine**. Open maps from Now, and find saved trips, places, widgets, privacy, backups and updates in Mine. Production keeps its package, signing certificate and local data; the optional Lab installation remains separate. To move Lab data into production, export an encrypted backup in Lab and restore it in CT Trains.
 
-Plan offers **Now**, **Depart after** and **Any time · All day**. Penelope's all-day mode preserves the selected route/date/modes, orders the returned departures chronologically and pages them locally. Past services are labelled for reference. The published source's response and supported dates limit coverage; this is not a complete downloaded network timetable. See [release notes and rollback](docs/release-1.15.0.md).
+Plan defaults to **Next available**. Its time selector offers hour and minute wheels for **Leave after**, plus **Any time · All day**. All-day browsing keeps the selected route, date and modes, shows departures in time order and labels past services. For saved places, train station preferences are inside the From and To selectors. See [release notes and rollback](docs/release-1.15.0.md).
 
 ## Optional beta features in 1.4.0
 
@@ -174,7 +174,7 @@ Plan has a single **Mode of transport** selector for Trains, Golden Arrow, MyCiT
 
 Calendar/time selectors and complete From/To swapping are available in Plan. **Auto estimate** searches nearby usable stops and mapped walks; leave reminders can calculate access time and preview the leave-by clock. See [1.8 changes](docs/QUALITY_OF_LIFE_1_8.md).
 
-Golden Arrow survey route codes are not an authoritative join to published PDF timed points. **Manual bus setup** lets the user personally bind boarding and alighting timed points to surveyed map pins. Later searches reuse those explicit bindings, with an unverified-current-operation label. Without bindings, matching surveyed corridors surface published timetable candidates and clearly explain missing roadside times. The catalogue includes the publisher's advertised letter pages; continuation PDF pages and late weekday notes are parsed. The app never invents schedules or cash fares from weekly/monthly passes. Choose the actual bus fare band/payment product, or enter a personal correction in Bus schedules → Fares. The bus browser uses one scrolling list, with collapsed filters/source details; map time badges hide at low zoom and avoid overlap.
+Golden Arrow survey route codes are not an authoritative join to published PDF timed points. **Manual bus setup** lets the user personally bind boarding and alighting timed points to surveyed map pins. Later searches reuse those explicit bindings, with an unverified-current-operation label. Without bindings, Plan shows published times for matching corridors and names the timed points where those times apply. The catalogue includes the publisher's advertised letter pages; continuation PDF pages and late weekday notes are parsed. The app never invents schedules or cash fares from weekly/monthly passes. Choose the actual bus fare band/payment product, or enter a personal correction in Bus schedules → Fares. The bus browser uses one scrolling list, with collapsed filters/source details; map time badges hide at low zoom and avoid overlap.
 
 ## WhatsApp updates (optional alpha)
 

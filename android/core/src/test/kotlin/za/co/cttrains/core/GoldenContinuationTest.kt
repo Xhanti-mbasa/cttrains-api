@@ -43,6 +43,7 @@ MONDAYS TO FRIDAYS EFFECTIVE DATE: 2026/09/28 TIMETABLE NUMBER: 0030 01
         val s=BusSnapshot(TransportService.GOLDEN_ARROW,1,listOf(route),emptyList(),listOf(shape),emptyList(),"Survey only")
         val date=java.time.LocalDate.parse("2026-10-02")
         assertEquals(listOf(route),BusDiscovery.goldenCandidates(s,a,b,date,500.0))
+        assertEquals(listOf(route),BusDiscovery.goldenCandidates(s.copy(shapes=emptyList()),a,b,date,500.0,"Unibell","Cape Town"))
         assertTrue(BusDiscovery.routes(s,a,b,date,emptyList(),500.0).isEmpty())
         assertTrue(BusDiscovery.goldenCandidates(s,a,b,date.plusDays(3),500.0).isEmpty())
         assertTrue(BusDiscovery.goldenCandidates(s,a,GeoPoint(-34.2,18.8),date,500.0).isEmpty())

@@ -114,5 +114,11 @@ class NativeDataFeaturesTest {
         assertTrue(friday.trips.any { it.calls.first().name=="CAPE TOWN" && it.calls.first().time=="11:00" && it.calls.last().time=="12:25" })
         assertTrue(friday.trips.all { it.calls.zipWithNext().all { (a,b)->a.time<=b.time } })
         assertTrue(friday.trips.none { trip->trip.calls.any { it.name=="ROBERT SOBUKWE RD" } })
+        val date = java.time.LocalDate.parse("2026-10-02")
+        val toCity = BusDiscovery.goldenDepartures(friday, "Unibell", "Cape Town", date, "07:45")
+        assertTrue(toCity.any { it.departure.time == "08:30" && it.arrival.time == "10:00" })
+        assertTrue(toCity.all { it.departure.name == "BELHAR" && it.arrival.name == "CAPE TOWN" &&
+            it.departure.time >= "07:45" && it.board == null && it.alight == null })
+        assertTrue(BusDiscovery.goldenDepartures(friday, "Unibell", "Cape Town", date, "23:00").isEmpty())
     }
 }
