@@ -51,8 +51,7 @@ class StationBoardUiTest {
         app.onNodeWithTag("lab-train-row").performScrollTo().performClick()
         app.onNodeWithTag("lab-station-search").performTextInput("Unibell")
         app.onNodeWithTag("lab-station-choice:unibell").performClick()
-        app.waitUntil(15_000) { app.onAllNodesWithTag("lab-station-count").fetchSemanticsNodes().any { node ->
-            node.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString() == "2" } }
+        app.waitUntil(15_000) { app.onAllNodes(hasTestTag("lab-station-count") and hasText("2")).fetchSemanticsNodes().isNotEmpty() }
         app.onNodeWithTag("lab-station").performScrollToNode(hasTestTag("lab-departure:3504"))
         app.onNodeWithTag("lab-departure:3504").assertIsDisplayed()
         app.onNodeWithTag("lab-station").performScrollToNode(hasTestTag("lab-departure:3600"))
