@@ -7,18 +7,21 @@ const linesRouter     = require('./routes/lines');
 const stationsRouter  = require('./routes/stations');
 const schedulesRouter = require('./routes/schedules');
 const updatesRouter   = require('./routes/updates');
-const { errorHandler, notFound, rateLimiter } = require('./middleware');
+const { errorHandler, notFound, rateLimiter, readIntegerSetting } = require('./middleware');
 const { scrapeServiceUpdates } = require('./scrapers/cttrains');
 const cache = require('./utils/cache');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const startedAt = new Date().toISOString();
+const proxyHops = readIntegerSetting('TRUST_PROXY_HOPS', 0, 0);
+if (proxyHops > 0) app.set('trust proxy', proxyHops);
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean);
 
 // ── Middleware ──────────────────────────────────────────────────────────────
-app.use(cors());
-app.use(express.json());
+if (allowedOrigins.length > 0) app.use(cors({ origin: allowedOrigins }));
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 app.use(rateLimiter);
+app.use(express.json());
 
 // ── Root ────────────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
@@ -40,26 +43,6 @@ app.get('/', (req, res) => {
     },
     source: 'https://github.com/Xhanti-mbasa/cttrains-api',
     data_source: 'https://cttrains.co.za',
-  });
-});
-
-// ── Health ──────────────────────────────────────────────────────────────────
-app.get('/health', async (req, res) => {
-  const memUsage = process.memoryUsage();
-  const cacheStats = await cache.stats();
-
-  res.json({
-    status: 'ok',
-    uptime_seconds: Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
-    started_at: startedAt,
-    cache: cacheStats,
-    system: {
-      memory_usage_mb: Math.round(memUsage.rss / 1024 / 1024),
-      cpu_cores: require('os').cpus().length,
-      platform: process.platform,
-    },
-    source: 'https://github.com/Xhanti-mbasa/cttrains-api',
   });
 });
 

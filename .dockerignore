@@ -1,0 +1,15 @@
+.git
+.github
+.env*
+**/.env*
+**/*.jks
+**/*.keystore
+**/*.p12
+android
+node_modules
+*.log
+**/*.log
+.timetable-snapshots
+.llm
+.logs
+src/gemini-client.js

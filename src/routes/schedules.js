@@ -88,7 +88,6 @@ router.get('/', async (req, res) => {
     console.error('[schedules]', err.message);
     res.status(502).json({
       error: 'Failed to fetch schedule from cttrains.co.za.',
-      detail: err.message,
     });
   }
 });
@@ -156,7 +155,6 @@ router.get('/lines/:lineId', async (req, res) => {
     console.error('[schedules/lines]', err.message);
     res.status(502).json({
       error: `Failed to fetch timetable for line '${lineId}' from cttrains.co.za.`,
-      detail: err.message,
     });
   }
 });

@@ -66,6 +66,13 @@ To run the API directly on your host machine without Docker:
    npm start
    ```
 
+API deployment settings work in both Docker Compose and native setups.
+
+- `CORS_ALLOWED_ORIGINS` is a comma-separated list of browser origins. By default the API sends no CORS headers.
+- `RATE_LIMIT_RPM` defaults to 60 requests per minute per client on each API instance.
+- `TRUST_PROXY_HOPS` defaults to 0. Set it to the exact reverse-proxy hop count only when the API port is reachable exclusively through that proxy chain and the edge proxy replaces forwarded headers.
+- `GET /health` returns `{"status":"ok"}` for service health checks.
+
 ---
 
 ## 🤖 AI / MCP Integration (Gemini, Claude, etc.)

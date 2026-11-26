@@ -1,45 +1,45 @@
-/**
- * Global error handler middleware.
- */
+const { STATUS_CODES } = require('node:http');
+const { rateLimit } = require('express-rate-limit');
+
 function errorHandler(err, req, res, next) {
-  console.error(`[error] ${req.method} ${req.path} —`, err.message);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal server error',
-    path: req.path,
-  });
+  if (res.headersSent) return next(err);
+  const requestedStatus = err.status || err.statusCode;
+  const status = Number.isInteger(requestedStatus) && requestedStatus >= 400 && requestedStatus <= 599
+    ? requestedStatus
+    : 500;
+  console.error('[request error]', req.method, status, err.message);
+  res.status(status).json({ error: status >= 500 ? 'Internal server error' : STATUS_CODES[status] || 'Request failed' });
 }
 
-/**
- * 404 handler for unmatched routes.
- */
-function notFound(req, res) {
-  res.status(404).json({
-    error: `Route not found: ${req.method} ${req.path}`,
-    docs: '/api-docs',
-  });
+function notFound(_req, res) {
+  res.status(404).json({ error: 'Route not found' });
 }
 
-/**
- * Lightweight in-process rate limiter (per IP, per minute).
- * Not a replacement for a proper API gateway but keeps scrapers polite.
- */
-const RATE_LIMIT = parseInt(process.env.RATE_LIMIT_RPM || '60', 10);
-const ipHits = new Map();
-
-setInterval(() => ipHits.clear(), 60 * 1000); // reset every minute
-
-function rateLimiter(req, res, next) {
-  const ip = req.ip || req.socket.remoteAddress;
-  const hits = (ipHits.get(ip) || 0) + 1;
-  ipHits.set(ip, hits);
-
-  if (hits > RATE_LIMIT) {
-    return res.status(429).json({
-      error: 'Rate limit exceeded. Maximum 60 requests per minute.',
-      retry_after_seconds: 60,
-    });
+function readIntegerSetting(name, fallback, minimum) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < minimum) {
+    throw new Error(`${name} must be an integer of at least ${minimum}.`);
   }
-  next();
+  return value;
 }
 
-module.exports = { errorHandler, notFound, rateLimiter };
+const limit = readIntegerSetting('RATE_LIMIT_RPM', 60, 1);
+const rateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler(req, res) {
+    const retryAfter = req.rateLimit.resetTime
+      ? Math.max(1, Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000))
+      : 60;
+    res.status(429).json({
+      error: `Rate limit exceeded. Maximum ${limit} requests per minute.`,
+      retry_after_seconds: retryAfter,
+    });
+  },
+});
+
+module.exports = { errorHandler, notFound, rateLimiter, readIntegerSetting };

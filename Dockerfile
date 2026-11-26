@@ -4,7 +4,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts
 
 # ── Stage 2: Runtime image ───────────────────────────────────────────────────
 FROM node:22-alpine
@@ -18,7 +18,8 @@ WORKDIR /app
 RUN addgroup -S cttrains && adduser -S cttrains -G cttrains
 
 COPY --from=builder /app/node_modules ./node_modules
-COPY . .
+COPY package*.json ./
+COPY src ./src
 
 # Snapshot directory must be writable
 RUN mkdir -p .timetable-snapshots && chown -R cttrains:cttrains /app

@@ -1,5 +1,13 @@
 node_modules/
 .env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+local.properties
+.gradle/
+android/**/build/
 *.log
 openapi.yaml
 
